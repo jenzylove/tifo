@@ -42,3 +42,9 @@ main { max-width: 1040px; margin: 0 auto; padding: 0 16px 64px; }
 .proposal .sides { margin: 12px 0; } .proposal .sides b { font-size: 1.6rem; }
 .hint { color: var(--muted); }
 .badge { font-size: .75rem; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); margin-left: 8px; }
+.walletbar { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin: 16px 0; display: flex; flex-direction: column; gap: 10px; }
+.walletbar .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.walletbar code { font-size: .9em; }
+.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; cursor: pointer; font-size: .95rem; }
+.link { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font-size: .85rem; }
+.fund p { margin: 0 0 8px; }

@@ -11,12 +11,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
+    "@circle-fin/modular-wallets-core": "^1.0.16",
     "@tifo/core": "*",
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "server-only": "^0.0.1",
-    "viem": "^2.37.0",
+    "viem": "2.55.11",
     "zod": "^4.1.0"
   },
   "devDependencies": {

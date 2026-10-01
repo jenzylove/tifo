@@ -1,7 +1,7 @@
 import { isAddress, type Address } from "viem";
 import { notFound } from "next/navigation";
 import AutoRefresh from "@/components/AutoRefresh";
-import Checkout from "@/components/Checkout";
+import Checkout, { WalletBar } from "@/components/Checkout";
 import { explorerAddr, explorerTx, usd } from "@/lib/chain";
 import { listPromos, promoActivity, promoState } from "@/lib/promos";
 import { shortTeam } from "@/lib/matches";
@@ -46,6 +46,8 @@ export default async function PromoPage({ params }: { params: Promise<{ address:
       ) : st.proposed !== "None" ? (
         <div className="result"><h2>Result in: {st.proposed === "A" ? A : st.proposed === "B" ? B : st.proposed}. Refunds go out at {new Date((st.proposedAt + 900) * 1000).toUTCString().slice(17, 22)} UTC.</h2></div>
       ) : null}
+
+      {!closed && st.finalOutcome === "None" && <WalletBar priceUsd={p.meta.priceUsd} />}
 
       <div className="sides">
         {[0, 1].map((s) => (
