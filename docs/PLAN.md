@@ -1,4 +1,4 @@
-# Derby — Plan
+# Tifo — Plan
 
 Today: Thu 1 Oct 2026. Deadline: Sat 10 Oct, 11:59 PM ET (Sun 11 Oct, 03:59 UTC).
 
@@ -61,4 +61,4 @@ Results are written up in `docs/spikes/<name>.md`.
 | Passkey checkout on mainnet | Needs a spike (S3) |
 | Polymarket hedge | Needs a spike (S4). It can be cut without breaking the product |
 | X posting | Needs a spike (S5). Share-link fallback |
-| GitHub repo creation | Known. This session can't create repos; the user creates `jenzylove/derby` |
+| GitHub repo creation | Known. This session can't create repos; the user creates `jenzylove/tifo` |

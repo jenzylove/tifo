@@ -1,4 +1,4 @@
-# Derby — PRD
+# Tifo — PRD
 
 Status: LOCKED 2026-10-01. Tameion Agents Hackathon (Canteen × Circle, on Arc).
 Deadline: Sat 10 Oct 2026, 11:59 PM ET (Sun 11 Oct, 03:59 UTC). Target code freeze: Fri 9 Oct.
