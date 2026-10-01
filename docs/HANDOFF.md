@@ -9,7 +9,7 @@ Read this first in the next session, then `docs/PRD.md`, `docs/PLAN.md` and `doc
 - Scheduler: GitHub Actions `tick.yml`, every 10 minutes, calls `/api/tick` (secrets `TIFO_URL` and `TICK_SECRET` are set). The first manual run succeeded.
 
 ## Keys and config (never commit)
-- `/home/user/tifo/.env`: deployer, agent and operator keys, RPCs, `TICK_SECRET`, Circle test client key. **This container is temporary. Recreate it from Vercel env vars and the user if it's lost.** The agent key lives in Vercel as `AGENT_PRIVATE_KEY`. The deployer and operator keys exist only in this `.env`. If they're lost, deploy a new factory with new keys (the testnet promo is disposable).
+- `/home/user/tifo/.env`: deployer, agent and operator keys, RPCs, `TICK_SECRET`, Circle test client key. **This container is temporary. Recreate it from Vercel env vars and the user if it's lost.** The agent key lives in Vercel as `AGENT_PRIVATE_KEY`. Backups of the deployer, operator and test-wallet keys are in Vercel env as `BACKUP_*` (development target only, never injected into production). Restore with `npx vercel env pull --environment=development`.
 - `/home/user/tifo-launch/testnet-wallets.env`: seller and fan test wallets
 - Vercel project `tifo` (team jenzyloves-projects): env `NEXT_PUBLIC_NETWORK=testnet`, `NEXT_PUBLIC_FACTORY`, `NEXT_PUBLIC_FACTORY_BLOCK`, `AGENT_PRIVATE_KEY`, `TICK_SECRET`, `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_CIRCLE_CLIENT_KEY`
 - Deploying: Vercel blocks git-linked CLI deploys, so deploy from a clean copy: `git archive HEAD | tar -x -C /tmp/tifo-deploy && cp -r .vercel /tmp/tifo-deploy && cd /tmp/tifo-deploy && npx vercel deploy --prod --yes --token $VERCEL_TOKEN`
