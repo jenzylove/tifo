@@ -1,0 +1,18 @@
+name: agent tick
+# Wakes the agent every 10 minutes: propose results once two sources agree,
+# finalize after the challenge window, push refunds, return leftover reserve.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call /api/tick
+        env:
+          TIFO_URL: ${{ secrets.TIFO_URL }}
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+        run: |
+          curl -sS --fail-with-body -m 240 -H "Authorization: Bearer $TICK_SECRET" "$TIFO_URL/api/tick"
