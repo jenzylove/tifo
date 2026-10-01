@@ -36,15 +36,15 @@ Evidence still to add during the build (sourced only): real sellers' current pro
    - When a buyer pays, the rebate rate is fixed for that order at that moment.
    - From each sale, the contract keeps just enough in reserve so the reserve always covers the larger of the two possible refund bills, after counting any reserve the seller topped up. The rest goes to the seller immediately.
    - The agent's role is limited to three things: change the offer for **future** orders within limits the seller sets, close the promo at kickoff, and submit the result. It can never withdraw funds.
-   - The result settles only when two independent sources agree. If they disagree, the seller must sign it.
+   - The agent proposes the result only when two independent sources (ESPN and TheSportsDB) agree. It's final after a 15-minute challenge window. During the window, an operator key (the team, not the seller, since the seller pays the refunds) can correct it. If the sources disagree, the agent proposes nothing and escalates. A postponed or abandoned match is voided: no rebates, and the reserve returns to the seller.
    - On settlement, the winning side's buyers are refunded automatically and the leftover reserve returns to the seller.
    - One side per wallet.
 2. **The agent's decisions** (each logged with its reasons):
    - Picks the match: live fixtures, filtered by the seller's audience and timing.
-   - Prices both sides from live odds (the Polymarket public API, plus a second odds source), the seller's budget and their margin.
+   - Prices both sides from live odds (the Polymarket public API, cross-checked with the DraftKings odds on ESPN), the seller's budget and their margin.
    - Rebalances live: as sales skew toward one side, it raises the other side's offer and lowers or caps the heavy side, so neither refund bill exceeds the cap.
-   - Decides how to cover any imbalance left at kickoff: the capped reserve, a seller top-up, or a small prediction-market hedge (only if the spike passes).
-   - Settles: checks the final result against two sources, triggers refunds, and asks the seller when the sources disagree.
+   - Decides when to stop taking orders on the heavy side. The contract never lets the larger refund bill exceed the seller's cap, and the reserve always covers it. (The prediction-market hedge was cut after spike S4.)
+   - Settles: checks the final result against two sources, proposes it on chain with the source evidence hashed, and pushes refunds the moment the window closes. It escalates to the operator when the sources disagree.
    - Writes the promo copy and the result post.
 3. **Business-money frame (RFB 4).** The shop's books show revenue in, promo budget, reserve held, refunds owed and paid, and surplus. The agent checks cash against the refunds owed before launching or raising an offer. It escalates to the seller only above their limits.
 4. **Payments.**
@@ -93,7 +93,7 @@ Any number shown on the site is read live from the chain or the API, or not show
 | Legal framing of picking a side | Known. Mitigated by framing it as a rebate, tying the side to the product edition where possible, clear terms, and no betting language. Stated plainly in Scope and limits |
 | Recruiting 3–5 real sellers by Oct 4 | Known. The user owns this; the build has to be seller-ready by Oct 3 |
 | Fan bases badly lopsided | Known. The agent rebalances and caps, and the reserve covers the rest; replay tests prove the cap holds |
-| Polymarket hedge from an agent wallet (geoblock, settlement path) | Needs a spike. If it fails, the hedge is cut and the reserve covers everything (listed as cut, with the reason) |
+| Polymarket hedge from an agent wallet | **Cut** after spike S4: Polymarket blocks trading from our server region (`blocked: true`). Coverage is the two-sided balance plus the capped reserve |
 | Second result source and a free fixtures API | Needs a spike: football-data.org needs a free key, plus a second source |
 | Passkey wallet + gasless checkout on Arc mainnet | Needs a spike |
 | Auto-posting to X (API access and cost) | Needs a spike. The fallback is a drafted post with one-click share |

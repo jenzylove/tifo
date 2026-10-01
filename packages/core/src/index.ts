@@ -1,0 +1,163 @@
+// Tifo core: pure promo math. No network, no clocks.
+// Amounts are USDC base units (6 decimals) as bigint. Rates are basis points (1 bps = 0.01%).
+// The promo contract mirrors applyOrder and settle exactly; these functions are the reference.
+
+export type Side = 0 | 1;
+export type Outcome = "A" | "B" | "DRAW" | "VOID";
+
+export const BPS = 10_000n;
+
+export interface Odds {
+  pA: number;
+  pB: number;
+  pDraw: number;
+}
+
+export interface Order {
+  buyer: string;
+  side: Side;
+  amount: bigint;
+  rateBps: bigint; // fixed at purchase time
+}
+
+export interface Book {
+  cap: bigint; // the most the seller will ever owe on either result
+  liability: [bigint, bigint]; // refund bill if side A wins / if side B wins
+  reserve: bigint; // USDC held by the contract
+  orders: Order[];
+  sideOf: Record<string, Side>; // one side per wallet
+}
+
+export function emptyBook(cap: bigint): Book {
+  return { cap, liability: [0n, 0n], reserve: 0n, orders: [], sideOf: {} };
+}
+
+/**
+ * Turn raw market prices into probabilities. Refuses thin or broken markets
+ * instead of guessing: a promo priced off bad odds is worse than no promo.
+ */
+export function normalizeOdds(
+  prices: { a: number; draw: number; b: number },
+  liquidityUsd: number,
+  minLiquidityUsd = 2_000,
+): Odds {
+  const { a, draw, b } = prices;
+  for (const p of [a, draw, b]) {
+    if (!Number.isFinite(p) || p <= 0 || p >= 1) throw new Error(`price out of range: ${p}`);
+  }
+  const sum = a + draw + b;
+  if (sum < 0.9 || sum > 1.15) throw new Error(`prices do not add up (sum ${sum.toFixed(3)})`);
+  if (liquidityUsd < minLiquidityUsd) throw new Error(`market too thin ($${Math.round(liquidityUsd)})`);
+  return { pA: a / sum, pB: b / sum, pDraw: draw / sum };
+}
+
+/**
+ * Starting offers: every fan gets the same expected discount (`effectiveBps`),
+ * so the underdog's fans are offered a bigger rebate. rate = effective / p, clamped.
+ */
+export function initialRates(
+  odds: Odds,
+  effectiveBps: number,
+  minBps: number,
+  maxBps: number,
+): [bigint, bigint] {
+  const r = (p: number) => BigInt(Math.round(clamp(effectiveBps / p, minBps, maxBps)));
+  return [r(odds.pA), r(odds.pB)];
+}
+
+export function requiredReserve(liability: [bigint, bigint]): bigint {
+  return liability[0] > liability[1] ? liability[0] : liability[1];
+}
+
+export interface OrderResult {
+  book: Book;
+  hold: bigint; // kept in reserve from this sale
+  toSeller: bigint; // forwarded to the seller immediately
+  refundIfWins: bigint;
+}
+
+/**
+ * Apply one sale. The reserve only grows by the increase in the larger refund bill,
+ * so sales on the lighter side usually go to the seller in full.
+ */
+export function applyOrder(book: Book, buyer: string, side: Side, amount: bigint, rateBps: bigint): OrderResult {
+  if (amount <= 0n) throw new Error("amount must be positive");
+  if (rateBps < 0n || rateBps > BPS) throw new Error("rate out of range");
+  const key = buyer.toLowerCase();
+  const existing = book.sideOf[key];
+  if (existing !== undefined && existing !== side) throw new Error("one side per wallet");
+
+  const refundIfWins = (amount * rateBps) / BPS;
+  const liability: [bigint, bigint] = [...book.liability] as [bigint, bigint];
+  liability[side] += refundIfWins;
+  const newReserve = requiredReserve(liability);
+  if (newReserve > book.cap) throw new Error("over cap: side is full at this rate");
+
+  const hold = newReserve - book.reserve;
+  return {
+    book: {
+      cap: book.cap,
+      liability,
+      reserve: newReserve,
+      orders: [...book.orders, { buyer: key, side, amount, rateBps }],
+      sideOf: { ...book.sideOf, [key]: side },
+    },
+    hold,
+    toSeller: amount - hold,
+    refundIfWins,
+  };
+}
+
+/**
+ * Live rebalancing. When one side's refund bill runs ahead, raise the lighter side's
+ * offer and lower the heavier side's, in proportion to the gap. Never leaves [min, max].
+ */
+export function rebalance(
+  liability: [bigint, bigint],
+  base: [bigint, bigint],
+  minBps: number,
+  maxBps: number,
+  strength = 0.5,
+): [bigint, bigint] {
+  const [la, lb] = liability.map(Number);
+  const top = Math.max(la, lb);
+  if (top === 0) return base;
+  const gap = (la - lb) / top; // +ve: A heavy, -ve: B heavy
+  const heavy: Side = gap > 0 ? 0 : 1;
+  const light: Side = heavy === 0 ? 1 : 0;
+  const g = Math.abs(gap) * strength;
+  const out: [number, number] = [Number(base[0]), Number(base[1])];
+  out[light] = out[light] * (1 + g);
+  out[heavy] = out[heavy] * (1 - g);
+  return [BigInt(Math.round(clamp(out[0], minBps, maxBps))), BigInt(Math.round(clamp(out[1], minBps, maxBps)))];
+}
+
+export interface Settlement {
+  refunds: { buyer: string; amount: bigint }[];
+  totalRefunds: bigint;
+  toSeller: bigint; // reserve left over
+}
+
+/** Pay the winning side; draws and voided matches pay no rebates. */
+export function settle(book: Book, outcome: Outcome): Settlement {
+  const winner: Side | null = outcome === "A" ? 0 : outcome === "B" ? 1 : null;
+  const refunds =
+    winner === null
+      ? []
+      : book.orders
+          .filter((o) => o.side === winner)
+          .map((o) => ({ buyer: o.buyer, amount: (o.amount * o.rateBps) / BPS }))
+          .filter((r) => r.amount > 0n);
+  const totalRefunds = refunds.reduce((s, r) => s + r.amount, 0n);
+  if (totalRefunds > book.reserve) throw new Error("reserve short: invariant broken");
+  return { refunds, totalRefunds, toSeller: book.reserve - totalRefunds };
+}
+
+/** What the promo costs the seller on average, given the odds. */
+export function expectedCost(liability: [bigint, bigint], odds: Odds): number {
+  return Number(liability[0]) * odds.pA + Number(liability[1]) * odds.pB;
+}
+
+function clamp(x: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, x));
+}
