@@ -12,3 +12,4 @@ broadcast/
 keypair*.json
 wallet*.json
 .DS_Store
+.vercel
