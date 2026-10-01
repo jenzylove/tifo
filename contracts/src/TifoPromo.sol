@@ -5,6 +5,7 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function balanceOf(address who) external view returns (uint256);
+    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
 }
 
 /// @title TifoPromo
@@ -60,7 +61,8 @@ contract TifoPromo {
     bool public remainderReleased;
 
     event Sale(address indexed buyer, uint8 side, uint256 amount, uint16 rateBps, uint256 held, uint256 toSeller, bytes32 orderRef);
-    event RatesChanged(uint16 rateA, uint16 rateB);
+    event RatesChanged(uint16 rateA, uint16 rateB, string reason);
+    event Decision(string kind, string reason);
     event ResultProposed(Outcome outcome, bytes32 evidence);
     event ResultCorrected(Outcome outcome, bytes32 evidence);
     event Finalized(Outcome outcome);
@@ -114,15 +116,32 @@ contract TifoPromo {
     // ---------------------------------------------------------------- buying
 
     function buy(uint8 side, uint256 amount, bytes32 orderRef) external {
-        _buy(msg.sender, side, amount, orderRef);
+        _buy(msg.sender, msg.sender, side, amount, orderRef);
     }
 
     /// @notice Pay on behalf of `buyer` (a checkout relayer or a smart-account batch). The rebate goes to `buyer`.
     function buyFor(address buyer, uint8 side, uint256 amount, bytes32 orderRef) external {
-        _buy(buyer, side, amount, orderRef);
+        _buy(msg.sender, buyer, side, amount, orderRef);
     }
 
-    function _buy(address buyer, uint8 side, uint256 amount, bytes32 orderRef) internal {
+    /// @notice Gasless checkout: the buyer signs a USDC permit, anyone (our relayer) submits it.
+    /// Funds can only come from the buyer who signed, and the rebate can only go back to them.
+    function buyWithPermit(
+        address buyer,
+        uint8 side,
+        uint256 amount,
+        bytes32 orderRef,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        // A front-run permit leaves the allowance in place, so a failed permit is not fatal.
+        try usdc.permit(buyer, address(this), amount, deadline, v, r, s) {} catch {}
+        _buy(buyer, buyer, side, amount, orderRef);
+    }
+
+    function _buy(address payer, address buyer, uint8 side, uint256 amount, bytes32 orderRef) internal {
         if (block.timestamp >= closesAt || finalOutcome != Outcome.None || proposed != Outcome.None) revert Closed();
         if (side > 1) revert BadSide();
         require(amount > 0 && buyer != address(0), "amount");
@@ -143,19 +162,25 @@ contract TifoPromo {
         sideOf[buyer] = side + 1;
         orders.push(Order(buyer, side, amount, rate));
 
-        _pull(msg.sender, amount);
+        _pull(payer, amount);
         if (toSeller > 0) _send(seller, toSeller);
         emit Sale(buyer, side, amount, rate, held, toSeller, orderRef);
     }
 
     // ---------------------------------------------------------------- agent
 
-    function setRates(uint16 rateA, uint16 rateB) external {
+    function setRates(uint16 rateA, uint16 rateB, string calldata reason) external {
         if (msg.sender != agent) revert NotAgent();
         if (block.timestamp >= closesAt) revert Closed();
         if (rateA < minBps || rateA > maxBps || rateB < minBps || rateB > maxBps) revert RateOutOfBounds();
         rateBps = [rateA, rateB];
-        emit RatesChanged(rateA, rateB);
+        emit RatesChanged(rateA, rateB, reason);
+    }
+
+    /// @notice The agent's decision log, on chain: why it priced, held, settled or escalated.
+    function note(string calldata kind, string calldata reason) external {
+        if (msg.sender != agent) revert NotAgent();
+        emit Decision(kind, reason);
     }
 
     /// @notice The agent proposes the result once two independent sources agree. `evidence` hashes their payloads.
