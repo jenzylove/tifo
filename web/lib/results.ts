@@ -46,7 +46,7 @@ function verdictFrom(home: number, away: number): Verdict {
 async function espn(m: Match): Promise<SourceResult> {
   try {
     const d = new Date(m.kickoff);
-    const days = [0, 1].map((k) => new Date(d.getTime() + k * 86_400_000).toISOString().slice(0, 10).replace(/-/g, ""));
+    const days = [-1, 0, 1].map((k) => new Date(d.getTime() + k * 86_400_000).toISOString().slice(0, 10).replace(/-/g, ""));
     for (const day of days) {
       const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${m.league.espn}/scoreboard?dates=${day}`, { cache: "no-store" });
       if (!r.ok) continue;
@@ -114,13 +114,14 @@ async function polymarket(m: Match): Promise<SourceResult> {
 export async function checkResult(m: Match): Promise<Consensus> {
   const sources = await Promise.all([espn(m), theSportsDb(m), polymarket(m)]);
   const evidence = keccak256(toBytes(JSON.stringify(sources.map((s) => [s.source, s.status, s.verdict ?? null, s.raw ?? null]))));
-  const [e, ...others] = sources;
-  if (e.status === "postponed" && others.some((o) => o.status === "postponed"))
-    return { verdict: "VOID", reason: "Postponed or abandoned, confirmed by two sources", sources, evidence };
-  if (e.status !== "final") return { verdict: null, reason: `ESPN not final (${e.status})`, sources, evidence };
-  const agree = others.filter((o) => o.status === "final" && o.verdict === e.verdict);
-  const disagree = others.filter((o) => o.status === "final" && o.verdict !== e.verdict);
-  if (disagree.length) return { verdict: null, reason: `Sources disagree: ${sources.map((s) => `${s.source}=${s.verdict ?? s.status}`).join(", ")}`, sources, evidence };
-  if (!agree.length) return { verdict: null, reason: "Waiting for a second source to confirm", sources, evidence };
-  return { verdict: e.verdict!, reason: `ESPN ${e.score} confirmed by ${agree.map((a) => a.source).join(" and ")}`, sources, evidence };
+  const postponed = sources.filter((s) => s.status === "postponed");
+  if (postponed.length >= 2) return { verdict: "VOID", reason: "Postponed or abandoned, confirmed by two sources", sources, evidence };
+  const finals = sources.filter((s) => s.status === "final" && s.verdict && s.verdict !== "VOID");
+  const verdicts = new Set(finals.map((s) => s.verdict));
+  const list = sources.map((s) => `${s.source}=${s.verdict ?? s.status}`).join(", ");
+  if (verdicts.size > 1) return { verdict: null, reason: `Sources disagree: ${list}`, sources, evidence };
+  if (finals.length < 2) return { verdict: null, reason: `Waiting for two sources to agree (${list})`, sources, evidence };
+  const v = finals[0].verdict as Verdict;
+  const score = finals.find((s) => s.score)?.score;
+  return { verdict: v, reason: `${finals.length} independent sources agree${score ? ` (${score})` : ""}: ${finals.map((f) => f.source).join(", ")}`, sources, evidence };
 }

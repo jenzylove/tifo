@@ -96,7 +96,7 @@ contract TifoPromoTest is Test {
         // a rate change applies only to future orders
         vm.prank(agent);
         promo.setRates(1000, 5000, "x");
-        (, , , uint16 locked) = promo.orders(0);
+        (, , , uint16 locked, ) = promo.orders(0);
         assertEq(locked, 3000);
     }
 
@@ -127,6 +127,15 @@ contract TifoPromoTest is Test {
         promo.releaseRemainder();
         assertEq(usdc.balanceOf(seller), 35e6 + 30e6 + 3e6);
         assertEq(usdc.balanceOf(address(promo)), 0);
+        assertEq(promo.refundedTotal(), 12e6);
+        TifoPromo.Entry[] memory j = promo.getJournal(0, 10);
+        assertEq(j.length, 3); // proposed, final, remainder
+        assertEq(j[0].kind, "proposed");
+        assertEq(j[1].text, "B");
+        assertEq(promo.getOrders(0, 10).length, 2);
+        TifoFactory.PromoInfo[] memory infos = factory.getPromos(0, 10);
+        assertEq(infos.length, 1);
+        assertEq(infos[0].seller, seller);
     }
 
     function test_operatorCorrectsWrongProposal_sellerCannot() public {

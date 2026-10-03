@@ -20,6 +20,7 @@ export interface Proposal {
   product: string;
   priceUsd: number;
   link?: string;
+  image?: string;
   effectiveBps: number;
   capUsd: number;
   minBps: number;
@@ -39,7 +40,7 @@ How the money works (explain it plainly when it helps the seller decide):
 - As sales come in, you shift offers toward the lighter side so the book stays balanced.
 
 Your job in this chat:
-1. Find out what the shop sells, the price, roughly how many orders they expect this week, and which teams their buyers follow (ask briefly if missing; one question at a time).
+1. Find out what the shop sells, the price, a photo link of the product (optional but it makes the drop page sell), roughly how many orders they expect this week, and which teams their buyers follow (ask briefly if missing; one question at a time).
 2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience. Only use matches that have live odds.
 3. Use price_promo to test terms. Pick an expected discount (usually 5–15%) and a cap the seller is comfortable owing. Show the offers for each side and the worst case.
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
@@ -114,6 +115,7 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]):
       product: z.string().min(1).max(80),
       price_usd: z.number().min(1).max(10000),
       link: z.string().url().optional(),
+      image_url: z.string().url().optional().describe("Direct link to a photo of the product, if the seller gave one"),
       expected_discount_pct: z.number().min(1).max(30),
       cap_usd: z.number().min(5).max(5000),
       min_pct: z.number().min(1).max(50).default(5),
@@ -135,6 +137,7 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]):
         product: i.product,
         priceUsd: i.price_usd,
         link: i.link,
+        image: i.image_url,
         effectiveBps: Math.round(i.expected_discount_pct * 100),
         capUsd: i.cap_usd,
         minBps: Math.round(i.min_pct * 100),

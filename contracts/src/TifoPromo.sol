@@ -29,6 +29,15 @@ contract TifoPromo {
         uint8 side; // 0 = A, 1 = B
         uint256 amount;
         uint16 rateBps; // fixed at purchase
+        uint64 at;
+    }
+
+    /// The agent's decision log and the promo's lifecycle, kept in storage so any app can read the
+    /// whole story with a few view calls, without scanning logs.
+    struct Entry {
+        uint64 at;
+        string kind; // rates | note | proposed | corrected | final | refunds | remainder
+        string text;
     }
 
     uint256 public constant BPS = 10_000;
@@ -51,6 +60,8 @@ contract TifoPromo {
     uint256 public reserve;
 
     Order[] public orders;
+    Entry[] internal journal;
+    uint256 public refundedTotal;
     mapping(address => uint8) public sideOf; // 0 = none, 1 = A, 2 = B
 
     Outcome public proposed;
@@ -160,7 +171,7 @@ contract TifoPromo {
         liability = l;
         reserve = newReserve;
         sideOf[buyer] = side + 1;
-        orders.push(Order(buyer, side, amount, rate));
+        orders.push(Order(buyer, side, amount, rate, uint64(block.timestamp)));
 
         _pull(payer, amount);
         if (toSeller > 0) _send(seller, toSeller);
@@ -174,12 +185,14 @@ contract TifoPromo {
         if (block.timestamp >= closesAt) revert Closed();
         if (rateA < minBps || rateA > maxBps || rateB < minBps || rateB > maxBps) revert RateOutOfBounds();
         rateBps = [rateA, rateB];
+        journal.push(Entry(uint64(block.timestamp), "rates", reason));
         emit RatesChanged(rateA, rateB, reason);
     }
 
     /// @notice The agent's decision log, on chain: why it priced, held, settled or escalated.
     function note(string calldata kind, string calldata reason) external {
         if (msg.sender != agent) revert NotAgent();
+        journal.push(Entry(uint64(block.timestamp), kind, reason));
         emit Decision(kind, reason);
     }
 
@@ -196,6 +209,7 @@ contract TifoPromo {
         proposed = o;
         proposedAt = uint64(block.timestamp);
         evidence = evidence_;
+        journal.push(Entry(uint64(block.timestamp), "proposed", _name(o)));
         emit ResultProposed(o, evidence_);
     }
 
@@ -208,6 +222,7 @@ contract TifoPromo {
         if (o != Outcome.Void && block.timestamp < settleNotBefore) revert TooEarly();
         proposed = o;
         evidence = evidence_;
+        journal.push(Entry(uint64(block.timestamp), "corrected", _name(o)));
         _finalize(o);
         emit ResultCorrected(o, evidence_);
     }
@@ -226,6 +241,7 @@ contract TifoPromo {
 
     function _finalize(Outcome o) internal {
         finalOutcome = o;
+        journal.push(Entry(uint64(block.timestamp), "final", _name(o)));
         emit Finalized(o);
     }
 
@@ -246,6 +262,7 @@ contract TifoPromo {
                 uint256 amt = (ord.amount * ord.rateBps) / BPS;
                 if (amt == 0) continue;
                 reserve -= amt;
+                refundedTotal += amt;
                 _send(ord.buyer, amt);
                 emit Refunded(ord.buyer, amt);
                 paid++;
@@ -264,6 +281,7 @@ contract TifoPromo {
         uint256 amt = reserve;
         reserve = 0;
         if (amt > 0) _send(seller, amt);
+        journal.push(Entry(uint64(block.timestamp), "remainder", ""));
         emit RemainderReleased(amt);
     }
 
@@ -271,6 +289,30 @@ contract TifoPromo {
 
     function ordersCount() external view returns (uint256) {
         return orders.length;
+    }
+
+    function journalCount() external view returns (uint256) {
+        return journal.length;
+    }
+
+    function getOrders(uint256 start, uint256 n) external view returns (Order[] memory out) {
+        uint256 end = start + n > orders.length ? orders.length : start + n;
+        out = new Order[](end > start ? end - start : 0);
+        for (uint256 i = start; i < end; i++) out[i - start] = orders[i];
+    }
+
+    function getJournal(uint256 start, uint256 n) external view returns (Entry[] memory out) {
+        uint256 end = start + n > journal.length ? journal.length : start + n;
+        out = new Entry[](end > start ? end - start : 0);
+        for (uint256 i = start; i < end; i++) out[i - start] = journal[i];
+    }
+
+    function _name(Outcome o) internal pure returns (string memory) {
+        if (o == Outcome.A) return "A";
+        if (o == Outcome.B) return "B";
+        if (o == Outcome.Draw) return "Draw";
+        if (o == Outcome.Void) return "Void";
+        return "None";
     }
 
     function book()

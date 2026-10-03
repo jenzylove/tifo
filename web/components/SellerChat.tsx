@@ -51,6 +51,7 @@ export default function SellerChat() {
         product: proposal.product,
         priceUsd: proposal.priceUsd,
         link: proposal.link,
+        image: proposal.image,
         baseRates: proposal.rates,
         minBps: proposal.minBps,
         maxBps: proposal.maxBps,

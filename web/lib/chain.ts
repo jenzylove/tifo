@@ -25,7 +25,9 @@ export const USDC: Address = "0x3600000000000000000000000000000000000000";
 export const FACTORY = (process.env.NEXT_PUBLIC_FACTORY ?? "0x0000000000000000000000000000000000000000") as Address;
 export const FACTORY_BLOCK = BigInt(process.env.NEXT_PUBLIC_FACTORY_BLOCK ?? "0");
 
-export const publicClient = createPublicClient({ chain, transport: http() });
+// Override with a dedicated provider (Alchemy, QuickNode, dRPC) if the public RPC throttles.
+export const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || chain.rpcUrls.default.http[0];
+export const publicClient = createPublicClient({ chain, transport: http(RPC_URL, { batch: true, retryCount: 3 }) });
 
 export const explorerTx = (h: string) => `${chain.blockExplorers.default.url}/tx/${h}`;
 export const explorerAddr = (a: string) => `${chain.blockExplorers.default.url}/address/${a}`;

@@ -1,8 +1,9 @@
-// Everything about a promo is read from chain: the factory event carries its metadata,
-// the promo contract carries the book, orders, decisions and refunds.
-import { parseAbiItem, type Address } from "viem";
-import { tifoPromoAbi } from "./abi";
-import { FACTORY, FACTORY_BLOCK, publicClient } from "./chain";
+// Everything about a promo is read from contract storage: the factory holds each promo's metadata,
+// the promo holds its book, orders and the agent's decision journal. No log scanning, so reads stay
+// a few batched calls however old a promo is.
+import type { Address } from "viem";
+import { tifoFactoryAbi, tifoPromoAbi } from "./abi";
+import { FACTORY, publicClient } from "./chain";
 
 export interface PromoMeta {
   slug: string;
@@ -13,6 +14,7 @@ export interface PromoMeta {
   shop: string;
   product: string;
   priceUsd: number;
+  image?: string;
   link?: string;
   baseRates: [number, number];
   minBps: number;
@@ -24,46 +26,30 @@ export interface PromoSummary {
   address: Address;
   seller: Address;
   closesAt: number;
+  createdAt: number;
   cap: bigint;
   meta: PromoMeta;
-  createdTx: `0x${string}`;
-}
-
-const created = parseAbiItem(
-  "event PromoCreated(address indexed promo, address indexed seller, bytes32 indexed fixtureId, uint64 closesAt, uint256 cap, string meta)",
-);
-
-const CHUNK = 9_000n;
-
-async function getLogsChunked<T>(fn: (from: bigint, to: bigint) => Promise<T[]>, from: bigint): Promise<T[]> {
-  const latest = await publicClient.getBlockNumber();
-  const out: T[] = [];
-  for (let start = from; start <= latest; start += CHUNK + 1n) {
-    const end = start + CHUNK > latest ? latest : start + CHUNK;
-    out.push(...(await fn(start, end)));
-  }
-  return out;
 }
 
 export async function listPromos(): Promise<PromoSummary[]> {
   if (/^0x0+$/.test(FACTORY)) return [];
-  const logs = await getLogsChunked(
-    (fromBlock, toBlock) => publicClient.getLogs({ address: FACTORY, event: created, fromBlock, toBlock }),
-    FACTORY_BLOCK,
-  );
+  const count = Number(await publicClient.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "promosCount" }));
   const out: PromoSummary[] = [];
-  for (const l of logs) {
-    try {
-      out.push({
-        address: l.args.promo!,
-        seller: l.args.seller!,
-        closesAt: Number(l.args.closesAt),
-        cap: l.args.cap!,
-        meta: JSON.parse(l.args.meta!) as PromoMeta,
-        createdTx: l.transactionHash,
-      });
-    } catch {
-      // metadata that doesn't parse is skipped, never guessed
+  for (let start = 0; start < count; start += 100) {
+    const page = await publicClient.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "getPromos", args: [BigInt(start), 100n] });
+    for (const p of page) {
+      try {
+        out.push({
+          address: p.promo,
+          seller: p.seller,
+          closesAt: Number(p.closesAt),
+          createdAt: Number(p.createdAt),
+          cap: p.cap,
+          meta: JSON.parse(p.meta) as PromoMeta,
+        });
+      } catch {
+        // metadata that doesn't parse is skipped, never guessed
+      }
     }
   }
   return out.sort((a, b) => b.closesAt - a.closesAt);
@@ -77,10 +63,12 @@ export interface PromoState {
   reserve: bigint;
   cap: bigint;
   ordersCount: number;
+  journalCount: number;
   proposed: (typeof OUTCOMES)[number];
   proposedAt: number;
   finalOutcome: (typeof OUTCOMES)[number];
   refundCursor: number;
+  refundedTotal: bigint;
   remainderReleased: boolean;
   settleNotBefore: number;
   closesAt: number;
@@ -88,7 +76,7 @@ export interface PromoState {
 
 export async function promoState(address: Address): Promise<PromoState> {
   const c = { address, abi: tifoPromoAbi } as const;
-  const [book, proposed, proposedAt, finalOutcome, refundCursor, remainderReleased, settleNotBefore, closesAt] = await publicClient.multicall({
+  const r = await publicClient.multicall({
     allowFailure: false,
     contracts: [
       { ...c, functionName: "book" },
@@ -99,73 +87,56 @@ export async function promoState(address: Address): Promise<PromoState> {
       { ...c, functionName: "remainderReleased" },
       { ...c, functionName: "settleNotBefore" },
       { ...c, functionName: "closesAt" },
+      { ...c, functionName: "journalCount" },
+      { ...c, functionName: "refundedTotal" },
     ],
   });
-  const [rateA, rateB, la, lb, reserve, cap, count] = book as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
+  const [rateA, rateB, la, lb, reserve, cap, count] = r[0] as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
   return {
     rates: [rateA, rateB],
     liability: [la, lb],
     reserve,
     cap,
     ordersCount: Number(count),
-    proposed: OUTCOMES[Number(proposed)],
-    proposedAt: Number(proposedAt),
-    finalOutcome: OUTCOMES[Number(finalOutcome)],
-    refundCursor: Number(refundCursor),
-    remainderReleased: remainderReleased as boolean,
-    settleNotBefore: Number(settleNotBefore),
-    closesAt: Number(closesAt),
+    proposed: OUTCOMES[Number(r[1])],
+    proposedAt: Number(r[2]),
+    finalOutcome: OUTCOMES[Number(r[3])],
+    refundCursor: Number(r[4]),
+    remainderReleased: r[5] as boolean,
+    settleNotBefore: Number(r[6]),
+    closesAt: Number(r[7]),
+    journalCount: Number(r[8]),
+    refundedTotal: r[9] as bigint,
   };
 }
 
-export interface ActivityItem {
-  kind: "sale" | "rates" | "decision" | "proposed" | "corrected" | "final" | "refund" | "remainder";
-  tx: `0x${string}`;
-  block: bigint;
-  text: string;
-  buyer?: Address;
-  side?: number;
-  amount?: bigint;
-  rateBps?: number;
-  held?: bigint;
-  toSeller?: bigint;
+export interface Order {
+  buyer: Address;
+  side: 0 | 1;
+  amount: bigint;
+  rateBps: number;
+  at: number;
+  refund: bigint; // what this order gets back if its side wins
 }
 
-export async function promoActivity(address: Address, fromBlock = FACTORY_BLOCK): Promise<ActivityItem[]> {
-  const logs = await getLogsChunked(
-    (from, to) => publicClient.getContractEvents({ address, abi: tifoPromoAbi, fromBlock: from, toBlock: to }),
-    fromBlock,
-  );
-  const items: ActivityItem[] = [];
-  for (const l of logs) {
-    const a = l.args as Record<string, unknown>;
-    const base = { tx: l.transactionHash, block: l.blockNumber };
-    switch (l.eventName) {
-      case "Sale":
-        items.push({ ...base, kind: "sale", text: "", buyer: a.buyer as Address, side: Number(a.side), amount: a.amount as bigint, rateBps: Number(a.rateBps), held: a.held as bigint, toSeller: a.toSeller as bigint });
-        break;
-      case "RatesChanged":
-        items.push({ ...base, kind: "rates", text: `Offers set to ${Number(a.rateA) / 100}% / ${Number(a.rateB) / 100}%. ${a.reason as string}` });
-        break;
-      case "Decision":
-        items.push({ ...base, kind: "decision", text: `${a.kind as string}: ${a.reason as string}` });
-        break;
-      case "ResultProposed":
-        items.push({ ...base, kind: "proposed", text: `Result proposed: ${OUTCOMES[Number(a.outcome)]}` });
-        break;
-      case "ResultCorrected":
-        items.push({ ...base, kind: "corrected", text: `Result corrected by operator: ${OUTCOMES[Number(a.outcome)]}` });
-        break;
-      case "Finalized":
-        items.push({ ...base, kind: "final", text: `Final: ${OUTCOMES[Number(a.outcome)]}` });
-        break;
-      case "Refunded":
-        items.push({ ...base, kind: "refund", text: "Refund paid", buyer: a.buyer as Address, amount: a.amount as bigint });
-        break;
-      case "RemainderReleased":
-        items.push({ ...base, kind: "remainder", text: "Leftover reserve returned to the seller", amount: a.amount as bigint });
-        break;
-    }
+export interface JournalEntry {
+  at: number;
+  kind: string;
+  text: string;
+}
+
+export async function promoOrders(address: Address, count: number): Promise<Order[]> {
+  const out: Order[] = [];
+  for (let start = 0; start < count; start += 200) {
+    const page = await publicClient.readContract({ address, abi: tifoPromoAbi, functionName: "getOrders", args: [BigInt(start), 200n] });
+    for (const o of page)
+      out.push({ buyer: o.buyer, side: o.side as 0 | 1, amount: o.amount, rateBps: o.rateBps, at: Number(o.at), refund: (o.amount * BigInt(o.rateBps)) / 10_000n });
   }
-  return items;
+  return out;
+}
+
+export async function promoJournal(address: Address, count: number): Promise<JournalEntry[]> {
+  if (!count) return [];
+  const page = await publicClient.readContract({ address, abi: tifoPromoAbi, functionName: "getJournal", args: [0n, BigInt(count)] });
+  return page.map((e) => ({ at: Number(e.at), kind: e.kind, text: e.text }));
 }
