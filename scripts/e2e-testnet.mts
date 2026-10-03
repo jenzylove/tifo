@@ -26,7 +26,7 @@ console.log(`${m.title} · kickoff ${m.kickoff} · odds ${m.odds.pA.toFixed(2)}/
 const seller = createWalletClient({ account: privateKeyToAccount(env.SELLER_PK as Hex), chain: arcTestnet, transport: http() });
 const meta = {
   slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
-  shop: "Tifo test shop", product: "Matchday scarf (testnet run)", priceUsd: 2,
+  shop: env.SHOP ?? "Tifo test shop", product: env.PRODUCT ?? "Matchday scarf (testnet run)", priceUsd: Number(env.PRICE ?? 2), image: env.IMAGE || undefined,
   baseRates: [ra, rb], minBps: 500, maxBps: 6000, effectiveBps: 1000,
 };
 const createHash = await seller.writeContract({
@@ -37,7 +37,8 @@ const rc = await pub.waitForTransactionReceipt({ hash: createHash });
 const promo = `0x${rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase())!.topics[1]!.slice(26)}` as Hex;
 console.log("promo", promo, "created", createHash);
 
-const fans: [string, 0 | 1, bigint][] = [["FAN1_PK", 0, 2_000_000n], ["FAN2_PK", 0, 2_000_000n], ["FAN3_PK", 1, 2_000_000n]];
+const unit = BigInt(Math.round(Number(env.PRICE ?? 2) * 1e6));
+const fans: [string, 0 | 1, bigint][] = (env.FANS ?? "FAN1_PK:0,FAN2_PK:0,FAN3_PK:1").split(",").map((f) => { const [k, s] = f.split(":"); return [k, Number(s) as 0 | 1, unit]; });
 for (const [key, side, amount] of fans) {
   const acct = privateKeyToAccount(env[key] as Hex);
   const nonce = (await pub.readContract({ address: USDC, abi: erc20Abi, functionName: "nonces", args: [acct.address] })) as bigint;

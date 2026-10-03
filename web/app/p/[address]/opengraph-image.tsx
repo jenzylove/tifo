@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { isAddress, type Address } from "viem";
 import { listPromos, promoState } from "@/lib/promos";
@@ -13,7 +15,7 @@ export const revalidate = 60;
 // Before kickoff it sells the drop; after full time it shows what the winners got back.
 export default async function Image({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  const font = await fetch("https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf").then((r) => r.arrayBuffer()).catch(() => null);
+  const font = await readFile(join(process.cwd(), "assets/anton.woff")).catch(() => null);
   const p = isAddress(address) ? (await listPromos()).find((x) => x.address.toLowerCase() === address.toLowerCase()) : undefined;
   if (!p) return new ImageResponse(<div style={{ display: "flex", width: "100%", height: "100%", background: "#0c0d0f", color: "#fff", fontSize: 120, alignItems: "center", justifyContent: "center" }}>TIFO</div>, size);
   const st = await promoState(p.address as Address);
@@ -48,8 +50,8 @@ export default async function Image({ params }: { params: Promise<{ address: str
             >
               <div style={{ fontSize: 84, lineHeight: 1 }}>{team[s].toUpperCase()}</div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: s === 0 ? "flex-start" : "flex-end" }}>
-                <div style={{ fontSize: 190, lineHeight: 0.9 }}>{st.rates[s] / 100}%</div>
-                <div style={{ fontSize: 30 }}>BACK IF {team[s].toUpperCase()} WIN</div>
+                <div style={{ fontSize: 150, lineHeight: 0.9 }}>{`${st.rates[s] / 100}%`}</div>
+                <div style={{ fontSize: 30 }}>{`BACK IF ${team[s].toUpperCase()} WIN`}</div>
               </div>
             </div>
           ))}

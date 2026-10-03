@@ -30,7 +30,7 @@ describe("normalizeOdds", () => {
 describe("initialRates", () => {
   it("gives the underdog's fans the bigger rebate for the same expected discount", () => {
     const [ra, rb] = initialRates({ pA: 0.6, pB: 0.2, pDraw: 0.2 }, 1000, 500, 5000);
-    expect(ra).toBe(1667n); // 10% / 0.6
+    expect(ra).toBe(1700n); // 10% / 0.6 = 16.67%, shown as a whole 17%
     expect(rb).toBe(5000n); // 10% / 0.2 = 50%, at the cap
   });
 });

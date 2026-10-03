@@ -9,6 +9,10 @@
     "test": "npm test --workspaces --if-present"
   },
   "overrides": {
+    "viem": "$viem"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
     "viem": "2.55.11"
   }
 }

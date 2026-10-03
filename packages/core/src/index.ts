@@ -61,7 +61,8 @@ export function initialRates(
   minBps: number,
   maxBps: number,
 ): [bigint, bigint] {
-  const r = (p: number) => BigInt(Math.round(clamp(effectiveBps / p, minBps, maxBps)));
+  // Offers are shown to fans, so keep them whole percentages.
+  const r = (p: number) => BigInt(roundPct(clamp(effectiveBps / p, minBps, maxBps), minBps, maxBps));
   return [r(odds.pA), r(odds.pB)];
 }
 
@@ -129,7 +130,7 @@ export function rebalance(
   const out: [number, number] = [Number(base[0]), Number(base[1])];
   out[light] = out[light] * (1 + g);
   out[heavy] = out[heavy] * (1 - g);
-  return [BigInt(Math.round(clamp(out[0], minBps, maxBps))), BigInt(Math.round(clamp(out[1], minBps, maxBps)))];
+  return [BigInt(roundPct(clamp(out[0], minBps, maxBps), minBps, maxBps)), BigInt(roundPct(clamp(out[1], minBps, maxBps), minBps, maxBps))];
 }
 
 export interface Settlement {
@@ -156,6 +157,12 @@ export function settle(book: Book, outcome: Outcome): Settlement {
 /** What the promo costs the seller on average, given the odds. */
 export function expectedCost(liability: [bigint, bigint], odds: Odds): number {
   return Number(liability[0]) * odds.pA + Number(liability[1]) * odds.pB;
+}
+
+/** Round to a whole percent (100 bps), staying inside the bounds. */
+function roundPct(x: number, lo: number, hi: number) {
+  const r = Math.round(x / 100) * 100;
+  return Math.min(hi, Math.max(lo, r));
 }
 
 function clamp(x: number, lo: number, hi: number) {
