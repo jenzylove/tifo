@@ -23,7 +23,6 @@ export const NETWORK = process.env.NEXT_PUBLIC_NETWORK === "testnet" ? "testnet"
 export const chain = NETWORK === "testnet" ? arcTestnet : arcMainnet;
 export const USDC: Address = "0x3600000000000000000000000000000000000000";
 export const FACTORY = (process.env.NEXT_PUBLIC_FACTORY ?? "0x0000000000000000000000000000000000000000") as Address;
-export const SHOPS = (process.env.NEXT_PUBLIC_SHOPS ?? "0x30444d0006e530cc76418275A421E2665828666d") as Address;
 export const FACTORY_BLOCK = BigInt(process.env.NEXT_PUBLIC_FACTORY_BLOCK ?? "0");
 
 // Override with a dedicated provider (Alchemy, QuickNode, dRPC) if the public RPC throttles.

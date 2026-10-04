@@ -16,9 +16,6 @@ export interface PromoMeta {
   priceUsd: number;
   image?: string;
   link?: string;
-  handle?: string; // the shop's page on Tifo
-  productId?: string;
-  description?: string;
   baseRates: [number, number];
   minBps: number;
   maxBps: number;
