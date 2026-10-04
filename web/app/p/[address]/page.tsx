@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import { isAddress, type Address } from "viem";
 import { notFound } from "next/navigation";
 import AutoRefresh from "@/components/AutoRefresh";
-import Checkout, { WalletBar } from "@/components/Checkout";
+import Checkout from "@/components/Checkout";
 import Countdown from "@/components/Countdown";
 import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { shortTeam } from "@/lib/matches";
-import { inkOn, teamColors } from "@/lib/teams";
+import { shopOf } from "@/lib/shops";
+import { teamColors } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,9 @@ async function load(address: string) {
   if (!isAddress(address)) return null;
   const p = (await listPromos()).find((x) => x.address.toLowerCase() === address.toLowerCase());
   if (!p) return null;
-  const st = await promoState(p.address as Address);
+  const [st, shop] = await Promise.all([promoState(p.address as Address), shopOf(p.seller).catch(() => null)]);
   const [orders, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
-  return { p, st, orders, journal };
+  return { p, st, orders, journal, shop };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ address: string }> }): Promise<Metadata> {
@@ -26,144 +27,233 @@ export async function generateMetadata({ params }: { params: Promise<{ address: 
   if (!d) return { title: "Tifo" };
   const A = shortTeam(d.p.meta.teamA), B = shortTeam(d.p.meta.teamB);
   return {
-    title: `${A} v ${B} · ${d.p.meta.shop} · Tifo`,
-    description: `${A} fans get ${d.st.rates[0] / 100}% back if ${A} win. ${B} fans get ${d.st.rates[1] / 100}% back if ${B} win. ${d.p.meta.product}, $${d.p.meta.priceUsd}.`,
+    title: `${d.p.meta.product} · ${A} v ${B} drop · ${d.p.meta.shop}`,
+    description: `${d.p.meta.product}, $${d.p.meta.priceUsd}. ${A} fans get ${d.st.rates[0] / 100}% back if ${A} win, ${B} fans get ${d.st.rates[1] / 100}% back if ${B} win.`,
   };
 }
 
-const TILE_SLOTS = 48;
+const TILE_SLOTS = 36;
 
-export default async function PromoPage({ params }: { params: Promise<{ address: string }> }) {
+export default async function DropPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
   const d = await load(address);
   if (!d) notFound();
-  const { p, st, orders, journal } = d;
+  const { p, st, orders, journal, shop } = d;
   const A = shortTeam(p.meta.teamA), B = shortTeam(p.meta.teamB);
-  const [ca, cb] = teamColors(p.meta.teamA, p.meta.teamB);
-  const team = [A, B];
+  const team: [string, string] = [A, B];
+  const colors = teamColors(p.meta.teamA, p.meta.teamB) as [string, string];
   const closed = Date.now() / 1000 >= st.closesAt;
   const decided = st.finalOutcome !== "None" ? st.finalOutcome : st.proposed;
   const winner = decided === "A" ? 0 : decided === "B" ? 1 : null;
   const settled = st.finalOutcome !== "None";
   const fans = [0, 1].map((s) => orders.filter((o) => o.side === s));
-  const raised = [0, 1].map((s) => fans[s].reduce((t, o) => t + o.amount, 0n));
   const owedIfWin = [0, 1].map((s) => fans[s].reduce((t, o) => t + o.refund, 0n));
   const phase = settled ? "settled" : st.proposed !== "None" ? "result" : closed ? "live" : "open";
+  const shopName = shop?.profile.name ?? p.meta.shop;
+  const product = shop?.profile.products.find((x) => x.id === p.meta.productId);
+  const description = product?.description ?? p.meta.description;
+  const image = product?.image ?? p.meta.image;
+  const kick = new Date(p.meta.kickoff);
+
+  const feed = [
+    ...orders.map((o) => ({ at: o.at, sale: true, text: `${team[o.side]} fan bought for ${usd(o.amount)} at ${o.rateBps / 100}% back` })),
+    ...journal.map((j) => ({ at: j.at, sale: false, text: label(j.kind, j.text, A, B) })),
+  ].sort((a, b) => b.at - a.at);
 
   return (
-    <div className={`drop phase-${phase}`} style={{ ["--ca" as string]: ca, ["--cb" as string]: cb, ["--ia" as string]: inkOn(ca), ["--ib" as string]: inkOn(cb) }}>
-      <AutoRefresh />
-      <div className="drop-top">
-        <span>{p.meta.league}</span>
-        <span>
-          {phase === "open" ? (
-            <>
-              Kickoff in <Countdown to={st.closesAt * 1000} />
-            </>
-          ) : phase === "live" ? (
-            "Match in progress · orders closed"
-          ) : phase === "result" ? (
-            "Result in · refunds after a 15-minute check"
-          ) : (
-            "Full time"
-          )}
-        </span>
-      </div>
-
-      <section className="banner">
-        {[0, 1].map((s) => (
-          <div key={s} className={`half half-${s} ${winner === s ? "won" : winner !== null ? "lost" : ""}`}>
-            <h1 className="team">{team[s]}</h1>
-            <div className="offer">
-              <b>{st.rates[s] / 100}%</b>
-              <span>back if {team[s]} win</span>
-            </div>
-            <div className="tifo" aria-label={`${fans[s].length} ${team[s]} fans in`}>
-              {Array.from({ length: Math.max(TILE_SLOTS, fans[s].length) }).map((_, i) => {
-                const o = fans[s][i];
-                return (
-                  <i key={i} className={o ? "in" : ""} title={o ? `${o.buyer.slice(0, 6)}… · ${usd(o.amount)}` : ""}>
-                    {o && winner === s && settled ? <em>+{usd(o.refund)}</em> : null}
-                  </i>
-                );
-              })}
-            </div>
-            <p className="count">
-              <b>{fans[s].length}</b> {team[s]} {fans[s].length === 1 ? "fan" : "fans"} in · {usd(raised[s])}
-            </p>
-            {phase === "open" && (
-              <Checkout promo={p.address} side={s as 0 | 1} team={team[s]} rateBps={st.rates[s]} priceUsd={p.meta.priceUsd} product={p.meta.product} closed={closed} />
-            )}
-          </div>
-        ))}
-        <div className="versus">v</div>
-      </section>
+    <div className="wrap" style={{ ["--ca" as string]: colors[0], ["--cb" as string]: colors[1] }}>
+      {phase !== "settled" && <AutoRefresh />}
 
       {settled && (
-        <section className="reveal">
-          {winner !== null ? (
-            <h2>
-              {team[winner]} won. {fans[winner].length} {team[winner]} {fans[winner].length === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
-            </h2>
-          ) : (
-            <h2>{st.finalOutcome === "Draw" ? "A draw. No rebates this time." : "Match voided. No rebates, and the reserve went back to the shop."}</h2>
-          )}
+        <section className="reveal" style={{ ["--win" as string]: winner !== null ? colors[winner] : undefined }}>
+          <h2>
+            {winner !== null ? (
+              <>
+                {team[winner]} won. {fans[winner].length} {team[winner]} {fans[winner].length === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
+              </>
+            ) : st.finalOutcome === "Draw" ? (
+              "A draw. No rebates this time."
+            ) : (
+              "Match voided. No rebates, and the set-aside went back to the shop."
+            )}
+          </h2>
         </section>
       )}
 
-      <section className="product">
-        {p.meta.image ? <img src={p.meta.image} alt={p.meta.product} /> : <div className="noimg">{p.meta.product.slice(0, 1)}</div>}
-        <div>
-          <p className="kicker">{p.meta.shop}</p>
-          <h2>{p.meta.product}</h2>
-          <p className="price">${p.meta.priceUsd.toFixed(2)} · full price, delivered by the shop as usual</p>
-          {p.meta.link && (
-            <a href={p.meta.link} target="_blank" rel="noreferrer" className="ghost">
-              See the shop
-            </a>
+      <a className="crumb" href={shop ? `/s/${shop.handle}` : p.meta.link ?? "#"}>
+        <span className="mini-logo">{shop?.profile.logo ? <img src={shop.profile.logo} alt="" /> : shopName.slice(0, 1)}</span>
+        <b>{shopName}</b>
+        {shop && <span>Visit shop →</span>}
+      </a>
+
+      <div className="pdp">
+        <div className="gallery">
+          {image ? <img src={image} alt={p.meta.product} /> : <div className="noimg"><span className="ph-name">{p.meta.product}</span></div>}
+          <div className="ribbon">
+            <span>
+              <b>
+                {A} v {B}
+              </b>
+              <br />
+              <span style={{ opacity: 0.8 }}>
+                {p.meta.league} · {kick.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC
+              </span>
+            </span>
+            {phase === "open" ? (
+              <span style={{ textAlign: "right" }}>
+                Kicks off in
+                <br />
+                <Countdown to={st.closesAt * 1000} />
+              </span>
+            ) : phase === "live" ? (
+              <span className="pill live">Match on</span>
+            ) : phase === "result" ? (
+              <span>Result in, final check</span>
+            ) : (
+              <span>Full time</span>
+            )}
+          </div>
+        </div>
+
+        <div className="info">
+          <span className="eyebrow">Match drop</span>
+          <h1>{p.meta.product}</h1>
+          <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
+          {description && <p className="desc">{description}</p>}
+          <div className="scarf" style={{ margin: "20px 0 0", maxWidth: 160 }} />
+          {phase === "open" ? (
+            <Checkout
+              promo={p.address}
+              teams={team}
+              colors={colors}
+              rates={st.rates}
+              priceUsd={p.meta.priceUsd}
+              product={p.meta.product}
+              shop={shopName}
+              closed={closed}
+              whatsapp={shop?.profile.links?.whatsapp}
+            />
+          ) : (
+            <div className="buybox">
+              <div className="sides">
+                {[0, 1].map((s) => (
+                  <div key={s} className={`side ${winner === s ? "on" : ""}`} style={{ ["--c" as string]: colors[s] }}>
+                    <span className="t">{team[s]}</span>
+                    <span className="pct">{st.rates[s] / 100}%</span>
+                    <span className="back">{fans[s].length} {fans[s].length === 1 ? "order" : "orders"}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="fine">Orders closed at kickoff. {phase === "result" ? "Refunds go out after a 15-minute check." : ""}</p>
+              {shop && (
+                <a className="btn ghost" href={`/s/${shop.handle}`}>
+                  See more from {shopName}
+                </a>
+              )}
+            </div>
           )}
         </div>
+      </div>
+
+      <section className="terrace">
+        <h2 className="h">
+          The stands <small>every tile is an order</small>
+        </h2>
+        <div className="stands">
+          {[0, 1].map((s) => (
+            <div key={s} className={`stand ${winner === s ? "won" : winner !== null ? "lost" : ""}`} style={{ ["--c" as string]: colors[s] }}>
+              <header>
+                <b>{team[s]}</b>
+                <span>
+                  {fans[s].length} {fans[s].length === 1 ? "order" : "orders"} · {st.rates[s] / 100}% back now
+                </span>
+              </header>
+              <div className="tifo">
+                {Array.from({ length: Math.max(TILE_SLOTS, fans[s].length) }).map((_, i) => {
+                  const o = fans[s][i];
+                  return (
+                    <i key={i} className={o ? "in" : ""} title={o ? `${usd(o.amount)} at ${o.rateBps / 100}%` : ""}>
+                      {o && winner === s && settled ? <em>+{usd(o.refund)}</em> : null}
+                    </i>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
-      {phase === "open" && <WalletBar priceUsd={p.meta.priceUsd} />}
-
-      <section className="how">
-        <div>
-          <b>1</b> Pick your team and buy at full price.
-        </div>
-        <div>
-          <b>2</b> Your % is locked the moment you buy.
-        </div>
-        <div>
-          <b>3</b> If your team wins, the rebate lands in your wallet after full time. A draw pays no rebate.
+      <section style={{ marginTop: 40 }}>
+        <div className="steps3">
+          <div>
+            <b>1</b>
+            <h4>Pick your team, pay full price</h4>
+            <p>Your % is locked the moment you buy. {shopName} delivers your order as usual.</p>
+          </div>
+          <div>
+            <b>2</b>
+            <h4>The underdog pays more</h4>
+            <p>Offers come from live odds, so every fan gets the same expected discount. They shift as one side fills up.</p>
+          </div>
+          <div>
+            <b>3</b>
+            <h4>Paid after full time</h4>
+            <p>When two of three result sources agree, winning fans are refunded in USDC. A draw pays no rebate.</p>
+          </div>
         </div>
       </section>
 
-      <section className="ledger">
-        <h3>The shop&apos;s book</h3>
-        <p>
-          Owed if {A} win: <b>{usd(owedIfWin[0])}</b> · owed if {B} win: <b>{usd(owedIfWin[1])}</b> · held for refunds: <b>{usd(st.reserve)}</b> of a{" "}
-          {usd(st.cap)} cap. Everything else went to the shop the moment each order landed.
-        </p>
-        <h3>What the agent decided</h3>
-        <ol className="journal">
-          {journal.length === 0 && <li>No changes yet. Offers move when one side runs ahead.</li>}
-          {journal
-            .slice()
-            .reverse()
-            .map((j, i) => (
-              <li key={i}>
-                <time>{new Date(j.at * 1000).toUTCString().slice(5, 22)}</time> {label(j.kind, j.text, A, B)}
-              </li>
-            ))}
-        </ol>
-        <p className="fine">
-          Every number here is read from the promo contract on Arc:{" "}
-          <a href={explorerAddr(p.address)} target="_blank" rel="noreferrer">
-            {p.address}
-          </a>
-        </p>
-      </section>
+      <details className="behind">
+        <summary>Behind this drop: the shop&apos;s book and every decision</summary>
+        <div className="cols">
+          <div>
+            <h4>The book</h4>
+            <div className="mini-row">
+              <span>Owed if {A} win</span>
+              <b>{usd(owedIfWin[0])}</b>
+            </div>
+            <div className="mini-row">
+              <span>Owed if {B} win</span>
+              <b>{usd(owedIfWin[1])}</b>
+            </div>
+            <div className="mini-row">
+              <span>Set aside for refunds</span>
+              <b>{usd(st.reserve)}</b>
+            </div>
+            <div className="mini-row">
+              <span>Most the shop can owe</span>
+              <b>{usd(st.cap)}</b>
+            </div>
+            {settled && (
+              <div className="mini-row">
+                <span>Refunded to fans</span>
+                <b>{usd(st.refundedTotal)}</b>
+              </div>
+            )}
+            <p className="fine" style={{ marginTop: 10 }}>
+              Everything else went to the shop the moment each order landed. Read live from the{" "}
+              <a href={explorerAddr(p.address)} target="_blank" rel="noreferrer">
+                drop contract on Arc
+              </a>
+              .
+            </p>
+          </div>
+          <div>
+            <h4>Timeline</h4>
+            <ul className="timeline">
+              {feed.length === 0 && <li>No orders yet. The manager moves the offers when one side runs ahead.</li>}
+              {feed.slice(0, 30).map((f, i) => (
+                <li key={i} className={f.sale ? "sale" : ""}>
+                  <span>
+                    <time>{new Date(f.at * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC</time>
+                    {f.text}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -172,17 +262,17 @@ function label(kind: string, text: string, A: string, B: string) {
   const out = (o: string) => (o === "A" ? `${A} won` : o === "B" ? `${B} won` : o === "Draw" ? "draw" : o === "Void" ? "voided" : o);
   switch (kind) {
     case "rates":
-      return `Moved the offers. ${text}`;
+      return `Manager moved the offers. ${text}`;
     case "result":
-      return `Checked the result. ${text}`;
+      return `Manager checked the result. ${text}`;
     case "proposed":
-      return `Proposed the result: ${out(text)}. Final after a 15-minute challenge window.`;
+      return `Result in: ${out(text)}. Final after a 15-minute check.`;
     case "corrected":
-      return `Operator corrected the result: ${out(text)}.`;
+      return `Result corrected: ${out(text)}.`;
     case "final":
       return `Result final: ${out(text)}. Refunds sent.`;
     case "remainder":
-      return "Returned the unused reserve to the shop.";
+      return "Returned the unused set-aside to the shop.";
     default:
       return `${kind}: ${text}`;
   }

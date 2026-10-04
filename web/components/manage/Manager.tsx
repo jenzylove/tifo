@@ -1,0 +1,445 @@
+"use client";
+// The shop owner's side of Tifo: an AI manager that reads the shop's books, plans drops and runs the money.
+import { useCallback, useEffect, useState } from "react";
+import { isAddress, type Address } from "viem";
+import { setAccount, useAccount } from "@/lib/account";
+import { NETWORK, explorerTx } from "@/lib/chain";
+import { circleEnabled, connectCircle, savedCredential, sendUsdcWithCircle, usdcBalance } from "@/lib/circleWallet";
+import type { Brief } from "@/lib/brief";
+import type { ManagerData } from "@/lib/manager";
+import { shortTeam } from "@/lib/matches";
+import { teamColors } from "@/lib/teams";
+import Launch, { type Prefill } from "./Launch";
+import ShopEditor from "./ShopEditor";
+
+type Tab = "overview" | "drops" | "shop" | "money";
+const $ = (units: string | bigint | number) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+export default function Manager() {
+  const acct = useAccount();
+  const [data, setData] = useState<ManagerData | null>(null);
+  const [err, setErr] = useState("");
+  const [tab, setTab] = useState<Tab>("overview");
+  const [prefill, setPrefill] = useState<Prefill>();
+
+  const load = useCallback(async () => {
+    if (!acct) return;
+    try {
+      const r = await fetch(`/api/manager?address=${acct.address}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      setData(j);
+      setErr("");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }, [acct]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!acct) return <SignIn />;
+  if (!data) return <div className="wrap" style={{ padding: "60px 16px" }}>{err ? <p className="status err">{err}</p> : <div className="skeleton" style={{ maxWidth: 420, height: 28 }} />}</div>;
+
+  if (!data.shop)
+    return (
+      <div className="wrap" style={{ maxWidth: 860 }}>
+        <div className="pagehead">
+          <span className="eyebrow">Step 1 of 2</span>
+          <h1>Set up your shop</h1>
+          <p>This becomes your public page and the catalog your manager sells from. You can change it any time.</p>
+        </div>
+        <ShopEditor account={acct} shop={null} onSaved={load} />
+      </div>
+    );
+
+  const shop = data.shop;
+  const go = (t: Tab) => {
+    setTab(t);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  return (
+    <div className="wrap mgr">
+      <nav className="side-nav">
+        <div className="me">
+          <div className="logo">{shop.profile.logo ? <img src={shop.profile.logo} alt="" /> : shop.profile.name.slice(0, 1)}</div>
+          <div>
+            <b>{shop.profile.name}</b>
+            <a href={`/s/${shop.handle}`} target="_blank" rel="noreferrer">/s/{shop.handle} ↗</a>
+          </div>
+        </div>
+        {(
+          [
+            ["overview", "Overview"],
+            ["drops", "Match drops"],
+            ["shop", "Shop & products"],
+            ["money", "Money"],
+          ] as [Tab, string][]
+        ).map(([t, l]) => (
+          <button key={t} className={tab === t ? "on" : ""} onClick={() => go(t)}>
+            {l}
+            {t === "drops" && data.totals.live > 0 && <span className="pill live">{data.totals.live}</span>}
+          </button>
+        ))}
+      </nav>
+
+      <div>
+        {tab === "overview" && (
+          <Overview
+            data={data}
+            seller={acct.address}
+            onMove={(p) => {
+              setPrefill(p);
+              go("drops");
+            }}
+            goShop={() => go("shop")}
+          />
+        )}
+        {tab === "drops" && (
+          <>
+            <div className="mgr-head">
+              <div>
+                <h1>Match drops</h1>
+                <p className="muted">Pick a product and a match. The offers come from live odds, and your cap is enforced on chain.</p>
+              </div>
+            </div>
+            <Launch account={acct} shop={shop} prefill={prefill} onLaunched={load} />
+            <div className="panel" style={{ marginTop: 18 }}>
+              <h3>All drops</h3>
+              <DropList data={data} />
+            </div>
+          </>
+        )}
+        {tab === "shop" && (
+          <>
+            <div className="mgr-head">
+              <div>
+                <h1>Shop & products</h1>
+                <p className="muted">Your public page, your links and your catalog. Prices here are the prices fans pay.</p>
+              </div>
+            </div>
+            <ShopEditor account={acct} shop={shop} onSaved={load} />
+          </>
+        )}
+        {tab === "money" && <Money data={data} />}
+      </div>
+    </div>
+  );
+}
+
+function Overview({ data, seller, onMove, goShop }: { data: ManagerData; seller: Address; onMove: (p: Prefill) => void; goShop: () => void }) {
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [bErr, setBErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const fetchBrief = useCallback(
+    async (fresh = false) => {
+      setLoading(true);
+      setBErr("");
+      try {
+        const r = await fetch(`/api/brief?address=${seller}${fresh ? "&fresh=1" : ""}`);
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error);
+        setBrief(j);
+      } catch (e) {
+        setBErr((e as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [seller],
+  );
+  useEffect(() => {
+    fetchBrief();
+  }, [fetchBrief]);
+
+  const t = data.totals;
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  return (
+    <>
+      <div className="mgr-head">
+        <div>
+          <p className="muted">{hello}</p>
+          <h1>{data.shop!.profile.name}</h1>
+        </div>
+        <a className="btn sm ghost" href={`/s/${data.shop!.handle}`} target="_blank" rel="noreferrer">
+          View your page
+        </a>
+      </div>
+
+      <section className="brief">
+        <header>
+          <span className="orb" />
+          <div>
+            <b>Your manager&apos;s briefing</b>
+            <span>{brief ? `Updated ${new Date(brief.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Reading your books and the coming fixtures…"}</span>
+          </div>
+          <button className="link" onClick={() => fetchBrief(true)} disabled={loading}>
+            {loading ? "Thinking…" : "Refresh"}
+          </button>
+        </header>
+        {bErr && <p className="status err">{bErr}</p>}
+        {!brief && !bErr && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div className="skeleton" style={{ width: "90%" }} />
+            <div className="skeleton" style={{ width: "70%" }} />
+          </div>
+        )}
+        {brief && (
+          <>
+            <p className="summary">{brief.summary}</p>
+            {brief.moves.length > 0 && (
+              <div className="moves">
+                {brief.moves.map((m, i) => (
+                  <div key={i} className="move">
+                    <b>{m.title}</b>
+                    <p>{m.why}</p>
+                    {m.match_slug ? (
+                      <button className="btn sm" onClick={() => onMove({ slug: m.match_slug, productId: m.product_id, discountPct: m.discount_pct, capUsd: m.cap_usd })}>
+                        Set it up
+                      </button>
+                    ) : /photo|catalog|product|page|price/i.test(m.title + m.why) ? (
+                      <button className="btn sm ghost" onClick={goShop}>
+                        Open shop settings
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+            {brief.watch.length > 0 && (
+              <ul className="watch">
+                {brief.watch.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+
+      <div className="kpis">
+        <div className="kpi">
+          <span>Sales</span>
+          <b>{$(t.sales)}</b>
+        </div>
+        <div className="kpi">
+          <span>In your wallet</span>
+          <b>{$(t.received)}</b>
+        </div>
+        <div className="kpi">
+          <span>Set aside for refunds</span>
+          <b>{$(t.held)}</b>
+        </div>
+        <div className="kpi">
+          <span>Paid back to fans</span>
+          <b>{$(t.refunded)}</b>
+        </div>
+        <div className="kpi">
+          <span>Fans reached</span>
+          <b>{t.fans}</b>
+        </div>
+      </div>
+
+      <div className="two">
+        <div className="panel">
+          <h3>Your drops</h3>
+          <DropList data={data} limit={6} />
+        </div>
+        <div className="panel">
+          <h3>Activity</h3>
+          {data.feed.length === 0 ? (
+            <p className="empty">Sales and your manager&apos;s decisions show up here.</p>
+          ) : (
+            <ul className="timeline">
+              {data.feed.slice(0, 12).map((f, i) => (
+                <li key={i} className={f.kind === "sale" ? "sale" : ""}>
+                  <a href={`/p/${f.drop}`}>
+                    <time>
+                      {new Date(f.at * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {f.match}
+                    </time>
+                    {f.kind === "sale" ? f.text : `Manager: ${f.kind === "rates" ? "moved the offers. " : f.kind === "final" ? "result final, refunds sent. " : ""}${f.kind === "final" ? "" : f.text}`}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DropList({ data, limit }: { data: ManagerData; limit?: number }) {
+  if (data.drops.length === 0) return <p className="empty">No drops yet. Your first one takes a minute.</p>;
+  return (
+    <>
+      {data.drops.slice(0, limit ?? 100).map((d) => {
+        const [ca, cb] = teamColors(d.meta.teamA, d.meta.teamB);
+        const status =
+          d.phase === "open" ? <span className="pill ac">Open</span> : d.phase === "live" ? <span className="pill live">Match on</span> : d.phase === "result" ? <span className="pill">Result in</span> : <span className="pill ok">Settled</span>;
+        return (
+          <a key={d.address} className="droprow" href={`/p/${d.address}`} style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+            <div className="th">{d.meta.image && <img src={d.meta.image} alt="" />}</div>
+            <div>
+              <b>{d.meta.product}</b>
+              <span>
+                {shortTeam(d.meta.teamA)} v {shortTeam(d.meta.teamB)} · {d.orders} {d.orders === 1 ? "order" : "orders"} {status}
+              </span>
+            </div>
+            <div className="r">
+              <b>{$(d.sales)}</b>
+              <span>{BigInt(d.refunded) > 0n ? `${$(d.refunded)} paid back` : BigInt(d.held) > 0n ? `${$(d.held)} set aside` : "sales"}</span>
+            </div>
+          </a>
+        );
+      })}
+    </>
+  );
+}
+
+function Money({ data }: { data: ManagerData }) {
+  const acct = useAccount()!;
+  const [bal, setBal] = useState<bigint | null>(null);
+  const [to, setTo] = useState("");
+  const [amt, setAmt] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<{ kind: "idle" | "working" | "ok" | "err"; text?: string; hash?: string }>({ kind: "idle" });
+  useEffect(() => {
+    usdcBalance(acct.address).then(setBal).catch(() => {});
+  }, [acct, status.kind]);
+  async function send() {
+    const n = Number(amt);
+    if (!isAddress(to)) return setStatus({ kind: "err", text: "That isn't an Arc address." });
+    if (!(n > 0) || (bal !== null && BigInt(Math.round(n * 1e6)) > bal)) return setStatus({ kind: "err", text: "Check the amount." });
+    setStatus({ kind: "working", text: "Confirm with your fingerprint…" });
+    try {
+      const hash = await sendUsdcWithCircle(acct, to, BigInt(Math.round(n * 1e6)));
+      setStatus({ kind: "ok", text: "Sent.", hash });
+      setAmt("");
+    } catch (e) {
+      setStatus({ kind: "err", text: (e as Error).message.split("\n")[0] });
+    }
+  }
+  const t = data.totals;
+  return (
+    <>
+      <div className="mgr-head">
+        <div>
+          <h1>Money</h1>
+          <p className="muted">Your sales land in this Circle wallet as USDC on Arc. Send them to your exchange account to cash out.</p>
+        </div>
+      </div>
+      <div className="two" style={{ marginTop: 0 }}>
+        <div className="panel money">
+          <span className="fine">Wallet balance</span>
+          <div className="bal">{bal === null ? "…" : $(bal)}</div>
+          <div className="walletline">
+            <code>{acct.address}</code>
+            <button
+              className="link"
+              onClick={() => {
+                navigator.clipboard?.writeText(acct.address);
+                setCopied(true);
+              }}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <h3 style={{ marginTop: 10 }}>Send USDC</h3>
+          <label className="field">
+            To <small>an Arc address, like your exchange deposit address (pick the Arc network there)</small>
+            <input value={to} onChange={(e) => setTo(e.target.value.trim())} placeholder="0x…" />
+          </label>
+          <label className="field">
+            Amount
+            <input type="number" min={0} step="0.01" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="0.00" />
+          </label>
+          <button className="btn" onClick={send} disabled={status.kind === "working"}>
+            Send
+          </button>
+          {status.text && (
+            <p className={`status ${status.kind === "err" ? "err" : status.kind === "ok" ? "ok" : ""}`}>
+              {status.text}{" "}
+              {status.hash && (
+                <a href={explorerTx(status.hash)} target="_blank" rel="noreferrer">
+                  Receipt
+                </a>
+              )}
+            </p>
+          )}
+        </div>
+        <div className="panel">
+          <h3>Where your money is</h3>
+          <div className="mini-row">
+            <span>Total sales from drops</span>
+            <b>{$(t.sales)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Paid to your wallet</span>
+            <b>{$(t.received)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Set aside in live drops</span>
+            <b>{$(t.held)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Refunded to winning fans</span>
+            <b>{$(t.refunded)}</b>
+          </div>
+          <div className="mini-row">
+            <span>What drops cost you so far</span>
+            <b>{Number(t.sales) > 0 ? `${((Number(t.refunded) / Number(t.sales)) * 100).toFixed(1)}% of sales` : "–"}</b>
+          </div>
+          <p className="fine" style={{ marginTop: 12 }}>
+            Money set aside goes back to you after each match, minus any refunds. Nobody but your wallet can move what&apos;s in it.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SignIn() {
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [hasSaved, setHasSaved] = useState(false);
+  useEffect(() => setHasSaved(!!savedCredential()), []);
+  async function go(mode: "register" | "login") {
+    setErr("");
+    setBusy(mode === "register" ? "Creating your shop wallet…" : "Signing in…");
+    try {
+      setAccount(await connectCircle(mode));
+    } catch (e) {
+      setErr((e as Error).message.split("\n")[0]);
+    } finally {
+      setBusy("");
+    }
+  }
+  return (
+    <div className="wrap signin">
+      <div className="panel">
+        <span className="orb" style={{ width: 54, height: 54 }} />
+        <h1>Your shop&apos;s manager</h1>
+        <p className="muted">
+          Sign in with your fingerprint or Face ID. Your shop runs on a Circle wallet that only you control. Sales land in it as USDC
+          {NETWORK === "testnet" ? " (testnet)" : ""}.
+        </p>
+        {!circleEnabled() ? (
+          <p className="status err">Wallets aren&apos;t configured on this deployment.</p>
+        ) : (
+          <>
+            <button className="btn" disabled={!!busy} onClick={() => go(hasSaved ? "login" : "register")}>
+              {hasSaved ? "Sign in" : "Create my shop wallet"}
+            </button>
+            <button className="link" disabled={!!busy} onClick={() => go(hasSaved ? "register" : "login")}>
+              {hasSaved ? "Create a new wallet instead" : "I already have one"}
+            </button>
+          </>
+        )}
+        {busy && <p className="status">{busy}</p>}
+        {err && <p className="status err">{err}</p>}
+      </div>
+    </div>
+  );
+}

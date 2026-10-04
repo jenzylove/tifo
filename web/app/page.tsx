@@ -1,84 +1,311 @@
-import { listPromos, promoState } from "@/lib/promos";
+import DropCard from "@/components/DropCard";
+import { dropCards } from "@/lib/board";
 import { shortTeam } from "@/lib/matches";
 import { inkOn, teamColors } from "@/lib/teams";
-import { usd } from "@/lib/chain";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
-  const promos = await listPromos();
-  const rows = await Promise.all(promos.slice(0, 24).map(async (p) => ({ p, st: await promoState(p.address) })));
-  const now = Date.now() / 1000;
-  const open = rows.filter((r) => r.st.closesAt > now);
-  const done = rows.filter((r) => r.st.closesAt <= now);
+export default async function Landing() {
+  const cards = await dropCards(undefined, 12).catch(() => []);
+  const open = cards.filter((c) => c.phase === "open");
+  const show = (open.length ? open : cards).slice(0, 3);
+  const hero = open[0] ?? cards[0];
+  const A = hero ? shortTeam(hero.p.meta.teamA) : "Arsenal";
+  const B = hero ? shortTeam(hero.p.meta.teamB) : "Spurs";
+  const [ca, cb] = hero ? teamColors(hero.p.meta.teamA, hero.p.meta.teamB) : ["#EF0107", "#132257"];
+  const rates = hero?.rates ?? [1700, 4700];
+  // Three chips in the headline: real product photos from live drops, or the clubs' colours as scarf swatches.
+  const chips = cards.slice(0, 3).map((c) => {
+    const [c1, c2] = teamColors(c.p.meta.teamA, c.p.meta.teamB);
+    return { image: c.p.meta.image, c1, c2 };
+  });
+  while (chips.length < 3) chips.push([{ image: undefined, c1: "#EF0107", c2: "#ffffff" }, { image: undefined, c1: "#034694", c2: "#DBA111" }, { image: undefined, c1: "#008751", c2: "#ffffff" }][chips.length]);
+
   return (
-    <section className="home">
-      <h1 className="hero">
-        Both sets of fans buy.
-        <br />
-        <em>The winners get paid back.</em>
-      </h1>
-      <p className="lede">
-        Tifo turns a weekend match into a sale for small shops. Fans of each team buy at full price, and the winning side gets a rebate in USDC on Arc seconds
-        after the final whistle. An AI agent prices both sides from live odds and keeps the shop&apos;s worst case capped before kickoff.
-      </p>
-      <p>
-        <a className="cta" href="/sell">
-          Run a drop for your shop
-        </a>
-      </p>
+    <>
+      <div className="wrap">
+        <section className="hero frame">
+          <span className="eyebrow">An AI manager for small shops</span>
+          <h1 className="mega">
+            <span className="line">
+              Every{" "}
+              <span className="chips" aria-hidden>
+                {chips.map((c, i) =>
+                  c.image ? (
+                    <i key={i}>
+                      <img src={c.image} alt="" />
+                    </i>
+                  ) : (
+                    <i key={i} className="scarf-chip" style={{ ["--c1" as string]: c.c1, ["--c2" as string]: c.c2 }} />
+                  ),
+                )}
+              </span>{" "}
+              big match
+            </span>
+            <span className="line">
+              is a sale{" "}
+              <svg className="arrow" viewBox="0 0 40 28" aria-hidden>
+                <path d="M2 14h32M22 3l12 11-12 11" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>{" "}
+              at
+            </span>
+            <span className="line">
+              <a className="inline-cta" href="/manage">
+                <span>Open your shop</span>
+              </a>{" "}
+              your shop
+            </span>
+          </h1>
+          <p className="sub">
+            Tifo picks the matches your buyers care about and runs a drop on your product. Fans of both teams buy at full price, and the winners get part of
+            it back in USDC after full time. It keeps your worst case capped, and it tracks your sales and cash and tells you what to do next.
+          </p>
+          <div className="ctas">
+            <a className="btn ghost" href={hero ? `/p/${hero.p.address}` : "/drops"}>
+              See a live drop
+            </a>
+          </div>
+          <div className="trust">
+            <span>Worst case capped before kickoff</span>
+            <span>Sign in with your fingerprint</span>
+            <span>No gas fees</span>
+          </div>
+        </section>
+      </div>
 
-      <h2 className="section-title">This matchday</h2>
-      {open.length === 0 && <p className="fine">No drops open right now. Start one from the next fixtures.</p>}
-      <div className="board">{open.map((r) => card(r))}</div>
+      <div className="logos wrap" aria-label="Built with">
+        <span>USDC on Arc</span>
+        <span>Circle Wallets</span>
+        <span>Claude</span>
+        <span>Live odds from Polymarket</span>
+      </div>
 
-      {done.length > 0 && (
-        <>
-          <h2 className="section-title">Full time</h2>
-          <div className="board">{done.map((r) => card(r))}</div>
-        </>
+      <section className="section wrap">
+        <div className="section-head">
+          <span className="eyebrow">What your manager does</span>
+          <h2>It works the match day so you can run the shop</h2>
+          <p>You set up your shop once. The manager handles the rest and writes down every decision where you can check it.</p>
+        </div>
+
+        <div className="feature">
+          <div>
+            <span className="pill ac">1 · Plans the drop</span>
+            <h3>Picks the match, prices both sides</h3>
+            <p>
+              It reads your catalog and the clubs your buyers follow, then picks a real fixture from the coming week. It prices each side from live market
+              odds, so every fan gets the same expected discount and the underdog&apos;s fans get the bigger %.
+            </p>
+            <ul>
+              <li>Your product at your price, nothing marked up</li>
+              <li>You choose the most you&apos;re willing to owe</li>
+              <li>Launch in one tap from your wallet</li>
+            </ul>
+          </div>
+          <div className="demo">
+            <div className="panel">
+              <div className="mini-row">
+                <span>Product</span>
+                <b>
+                  {hero?.p.meta.product ?? "Matchday hoodie"} · ${hero?.p.meta.priceUsd.toFixed(2) ?? "25.00"}
+                </b>
+              </div>
+              <div className="mini-row">
+                <span>Match</span>
+                <b>
+                  {A} v {B}
+                </b>
+              </div>
+              <div className="mini-row">
+                <span>{A} fans</span>
+                <b>{rates[0] / 100}% back if they win</b>
+              </div>
+              <div className="mini-row">
+                <span>{B} fans</span>
+                <b>{rates[1] / 100}% back if they win</b>
+              </div>
+              <div className="mini-row">
+                <span>Draw</span>
+                <b>No rebate</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="feature flip">
+          <div>
+            <span className="pill ac">2 · Keeps the book balanced</span>
+            <h3>Moves the offers while fans buy</h3>
+            <p>
+              When one side runs ahead, it raises the other side&apos;s offer to pull buyers over. It only ever sets aside enough to cover the bigger of the two
+              refund bills. The rest of each sale goes straight to your wallet.
+            </p>
+            <ul>
+              <li>Every change is written on chain with its reason</li>
+              <li>It can&apos;t take your money or go past your cap</li>
+            </ul>
+          </div>
+          <div className="demo">
+            <div className="panel">
+              <div className="mini-row">
+                <span className="pill ok">Sale</span>
+                <span>{A} fan · paid in full</span>
+              </div>
+              <div className="mini-row">
+                <span className="pill ok">Sale</span>
+                <span>{A} fan · paid in full</span>
+              </div>
+              <div className="mini-row">
+                <span className="pill ac">Manager</span>
+                <span>
+                  {A} side is ahead. Raised {B} to pull the book back level.
+                </span>
+              </div>
+              <div className="mini-row">
+                <span className="pill ok">Sale</span>
+                <span>{B} fan · paid in full</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="feature">
+          <div>
+            <span className="pill ac">3 · Pays out at full time</span>
+            <h3>Checks the result, then settles by itself</h3>
+            <p>
+              After the final whistle it waits for two of three independent sources to agree on the score. Then it sends the winning fans their money and
+              returns whatever was left over to you. You don&apos;t have to do anything.
+            </p>
+          </div>
+          <div className="demo">
+            <div className="panel">
+              <div className="mini-row">
+                <span>Result sources</span>
+                <b>ESPN · TheSportsDB · Polymarket</b>
+              </div>
+              <div className="mini-row">
+                <span>Agreement needed</span>
+                <b>2 of 3</b>
+              </div>
+              <div className="mini-row">
+                <span>Check window</span>
+                <b>15 minutes</b>
+              </div>
+              <div className="mini-row">
+                <span>Then</span>
+                <b className="ok">Refunds and leftovers sent</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="feature flip">
+          <div>
+            <span className="pill ac">4 · Runs your numbers</span>
+            <h3>A manager who reads your books every day</h3>
+            <p>
+              Your dashboard shows what came in, what&apos;s set aside, what each drop cost you and how many new fans it reached. Each time you open it, the
+              manager writes a short briefing and suggests your next moves. Each suggestion is one tap to set up.
+            </p>
+          </div>
+          <div className="demo">
+            <div className="panel">
+              <div style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 600, marginBottom: 10 }}>
+                <span className="orb" /> Example briefing
+              </div>
+              <p className="muted" style={{ fontSize: ".92rem" }}>
+                Two drops brought in 14 orders from 11 new fans, and refunds cost you 6% of those sales. Saturday&apos;s derby is the best fit for your
+                buyers. Your hoodie still has no photo, so add one first.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section wrap">
+        <div className="section-head">
+          <span className="eyebrow">For fans</span>
+          <h2>Back your team and keep what you bought</h2>
+          <p>You pay with your fingerprint. A wallet is created for you in seconds, with no app to install and no gas to pay.</p>
+        </div>
+        <div className="steps3">
+          <div>
+            <b>1</b>
+            <h4>Pick your team</h4>
+            <p>Your rebate % is locked the moment you buy. The shop delivers your order as usual.</p>
+          </div>
+          <div>
+            <b>2</b>
+            <h4>Watch the match</h4>
+            <p>Each order shows up as a tile in your team&apos;s stand on the drop page.</p>
+          </div>
+          <div>
+            <b>3</b>
+            <h4>Get paid if you win</h4>
+            <p>If your team wins, the money lands in your wallet after full time. A draw pays no rebate.</p>
+          </div>
+        </div>
+      </section>
+
+      {show.length > 0 && (
+        <section className="section wrap">
+          <h2 className="h">
+            Live drops{" "}
+            <a href="/drops" className="link">
+              See all
+            </a>
+          </h2>
+          <div className="drops">
+            {show.map((c) => (
+              <DropCard key={c.p.address} {...c} />
+            ))}
+          </div>
+        </section>
       )}
 
-      <h2 className="section-title">How it works</h2>
-      <div className="steps">
-        <div>
-          <b>The shop tells the agent what it sells.</b>
-          It picks a real match the shop&apos;s buyers care about and prices both sides from live market odds. Underdog fans get a bigger %.
+      <section className="section wrap">
+        <div className="section-head">
+          <h2>Questions shops ask</h2>
         </div>
-        <div>
-          <b>Fans buy with Face ID.</b>
-          A Circle wallet, USDC on Arc, no gas. Each fan&apos;s % is locked when they buy. The agent shifts offers as one side runs ahead.
+        <div className="faq">
+          <details>
+            <summary>Is this betting?</summary>
+            <p>
+              No. The fan buys your product at your normal price and keeps it whatever happens. The rebate is a discount that depends on the result, and
+              nobody can stake money without buying something.
+            </p>
+          </details>
+          <details>
+            <summary>What&apos;s the most I can lose?</summary>
+            <p>
+              The cap you set before kickoff. The contract won&apos;t take an order that would push either refund bill past it. In practice you owe much
+              less, because only one side can win and a draw pays nothing.
+            </p>
+          </details>
+          <details>
+            <summary>When do I get paid?</summary>
+            <p>
+              Straight away. Each sale goes to your wallet as soon as it lands, minus the small part set aside for refunds. Whatever is left of that comes
+              back to you after the match.
+            </p>
+          </details>
+          <details>
+            <summary>Do my customers need crypto?</summary>
+            <p>
+              They need USDC on Arc. They can withdraw it from most big exchanges, and the wallet is created with a fingerprint or Face ID. There are no gas
+              fees and no seed phrase.
+            </p>
+          </details>
         </div>
-        <div>
-          <b>Full time pays out by itself.</b>
-          Once two independent sources agree on the result, the winning fans are refunded in seconds. The shop never owes more than its cap.
-        </div>
-      </div>
-    </section>
-  );
-}
 
-function card({ p, st }: { p: Awaited<ReturnType<typeof listPromos>>[number]; st: Awaited<ReturnType<typeof promoState>> }) {
-  const [ca, cb] = teamColors(p.meta.teamA, p.meta.teamB);
-  const status =
-    st.finalOutcome !== "None"
-      ? st.finalOutcome === "A" || st.finalOutcome === "B"
-        ? `${usd(st.refundedTotal)} paid back`
-        : st.finalOutcome
-      : Date.now() / 1000 < st.closesAt
-        ? `${st.ordersCount} fans in · ${p.meta.shop}`
-        : "awaiting result";
-  return (
-    <a key={p.address} href={`/p/${p.address}`} className="card" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb, ["--ia" as string]: inkOn(ca), ["--ib" as string]: inkOn(cb) }}>
-      <div className="ca">
-        <span className="t">{shortTeam(p.meta.teamA)}</span>
-        <span className="o">{st.rates[0] / 100}%</span>
-      </div>
-      <div className="cb">
-        <span className="t">{shortTeam(p.meta.teamB)}</span>
-        <span className="o">{st.rates[1] / 100}%</span>
-      </div>
-      <span className="meta">{status}</span>
-    </a>
+        <div className="cta-band">
+          <h2>Give your shop a manager for match day</h2>
+          <p>Set up your page, add your products, and let it plan your first drop. It takes about five minutes.</p>
+          <a className="btn" href="/manage">
+            Open your shop
+          </a>
+        </div>
+      </section>
+    </>
   );
 }
