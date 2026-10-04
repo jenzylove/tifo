@@ -6,6 +6,7 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { initialRates } from "@tifo/core";
 import { matchBySlug, upcomingMatches, shortTeam, type Match } from "./matches";
+import type { Shop } from "./shops";
 
 const client = new Anthropic();
 export const MODEL = "claude-opus-5-5";
@@ -21,6 +22,9 @@ export interface Proposal {
   priceUsd: number;
   link?: string;
   image?: string;
+  handle?: string;
+  productId?: string;
+  description?: string;
   effectiveBps: number;
   capUsd: number;
   minBps: number;
@@ -40,7 +44,7 @@ How the money works (explain it plainly when it helps the seller decide):
 - As sales come in, you shift offers toward the lighter side so the book stays balanced.
 
 Your job in this chat:
-1. Find out what the shop sells, the price, a photo link of the product (optional but it makes the drop page sell), roughly how many orders they expect this week, and which teams their buyers follow (ask briefly if missing; one question at a time).
+1. Unless the shop is described below, find out what the shop sells, the price, a photo link of the product (optional but it makes the drop page sell), roughly how many orders they expect this week, and which teams their buyers follow (ask briefly if missing; one question at a time).
 2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience. Only use matches that have live odds.
 3. Use price_promo to test terms. Pick an expected discount (usually 5–15%) and a cap the seller is comfortable owing. Show the offers for each side and the worst case.
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
@@ -61,7 +65,16 @@ function matchLine(m: Match) {
   };
 }
 
-export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]): Promise<{ reply: string; proposal?: Proposal }> {
+function shopContext(shop: Shop | null) {
+  if (!shop) return "";
+  const p = shop.profile;
+  return `\n\nYou already manage this shop, so don't ask for what's here:
+Shop: ${p.name} (tifo page /s/${shop.handle})${p.city ? `, ${p.city}` : ""}. Buyers follow: ${(p.teams ?? []).join(", ") || "not set"}.
+Catalog (use product_id in propose_promo; the price is the catalog price, never change it):
+${p.products.map((x) => `- ${x.id}: ${x.name}, $${x.priceUsd}${x.image ? "" : " (no photo yet)"}`).join("\n") || "- empty: ask the seller to add a product on the Shop tab first"}`;
+}
+
+export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], shop: Shop | null = null): Promise<{ reply: string; proposal?: Proposal }> {
   let proposal: Proposal | undefined;
 
   const findMatches = betaZodTool({
@@ -111,9 +124,10 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]):
     description: "Finalize the promo terms for the seller to launch. Call once the seller agrees.",
     inputSchema: z.object({
       slug: z.string(),
-      shop: z.string().min(1).max(60),
-      product: z.string().min(1).max(80),
-      price_usd: z.number().min(1).max(10000),
+      product_id: z.string().optional().describe("Catalog product id, when the shop has a catalog"),
+      shop: z.string().min(1).max(60).optional(),
+      product: z.string().min(1).max(80).optional(),
+      price_usd: z.number().min(1).max(10000).optional(),
       link: z.string().url().optional(),
       image_url: z.string().url().optional().describe("Direct link to a photo of the product, if the seller gave one"),
       expected_discount_pct: z.number().min(1).max(30),
@@ -127,17 +141,23 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]):
       if (!m?.odds) return JSON.stringify({ error: "cannot price this match" });
       if (Date.parse(m.kickoff) < Date.now() + 30 * 60_000) return JSON.stringify({ error: "kickoff is too close" });
       const rates = initialRates(m.odds, i.expected_discount_pct * 100, i.min_pct * 100, i.max_pct * 100).map(Number) as [number, number];
+      const item = shop?.profile.products.find((x) => x.id === i.product_id);
+      if (shop && !item) return JSON.stringify({ error: "product_id is not in the catalog" });
+      if (!item && (!i.shop || !i.product || !i.price_usd)) return JSON.stringify({ error: "shop, product and price_usd are required" });
       proposal = {
         slug: m.slug,
         league: m.league.name,
         teamA: m.teamA,
         teamB: m.teamB,
         kickoff: m.kickoff,
-        shop: i.shop,
-        product: i.product,
-        priceUsd: i.price_usd,
+        shop: shop?.profile.name ?? i.shop!,
+        product: item?.name ?? i.product!,
+        priceUsd: item?.priceUsd ?? i.price_usd!,
         link: i.link,
-        image: i.image_url,
+        image: item?.image ?? i.image_url,
+        handle: shop?.handle,
+        productId: item?.id,
+        description: item?.description,
         effectiveBps: Math.round(i.expected_discount_pct * 100),
         capUsd: i.cap_usd,
         minBps: Math.round(i.min_pct * 100),
@@ -153,7 +173,7 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[]):
   const params = {
     model: MODEL,
     max_tokens: 16000,
-    system: SYSTEM,
+    system: SYSTEM + shopContext(shop),
     tools: [findMatches, pricePromo, propose],
     messages: history,
     output_config: { effort: "medium" },
