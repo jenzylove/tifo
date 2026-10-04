@@ -48,7 +48,7 @@ export default function Launch({ account, shop, prefill, onLaunched }: { account
     if (prefill.slug) setSlug(prefill.slug);
     if (prefill.productId) setProductId(prefill.productId);
     if (prefill.discountPct) setDiscount(Math.min(20, Math.max(3, Math.round(prefill.discountPct))));
-    if (prefill.capUsd) setCap(Math.max(5, Math.round(prefill.capUsd)));
+    if (prefill.capUsd) setCap(Math.round(prefill.capUsd));
   }, [prefill]);
 
   const teams = (shop.profile.teams ?? []).map((t) => t.toLowerCase());
