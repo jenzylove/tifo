@@ -39,7 +39,7 @@ Write a short briefing for the owner, like a sharp manager would on a Monday mor
   whose fan bases overlap the shop's teams and kick off in the next few days. Other moves can be about pricing, the catalog
   or the shop page (e.g. a product with no photo).
 - watch: up to three short things to keep an eye on (a drop awaiting its result, reserve held, a side running ahead).
-No betting language. No invented numbers. Short sentences.`;
+No betting language. No invented numbers. Short sentences. Plain text, no markdown. Caps are at least $5.
 
 export async function managerBrief(seller: Address, fresh = false): Promise<Brief> {
   const key = seller.toLowerCase();

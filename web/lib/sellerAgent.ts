@@ -50,7 +50,7 @@ Your job in this chat:
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
 
 Rules: never invent odds, prices, or numbers — quote only what the tools return. No betting language
-("bet", "wager", "odds boost", "win money"): it's a rebate on a purchase. Keep replies short and concrete.`;
+("bet", "wager", "odds boost", "win money"): it's a rebate on a purchase. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.
 
 function matchLine(m: Match) {
   const o = m.odds;
