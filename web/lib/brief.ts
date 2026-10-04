@@ -64,43 +64,46 @@ export async function managerBrief(seller: Address, fresh = false): Promise<Brie
     now_utc: new Date().toISOString(),
   };
 
-  const schema = {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      summary: { type: "string" },
-      moves: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            title: { type: "string" },
-            why: { type: "string" },
-            match_slug: { type: "string" },
-            product_id: { type: "string" },
-            discount_pct: { type: "number" },
-            cap_usd: { type: "number" },
-          },
-          required: ["title", "why"],
-        },
-      },
-      watch: { type: "array", items: { type: "string" } },
-    },
-    required: ["summary", "moves", "watch"],
-  };
   const res = await client.messages.create({
     model: MODEL,
     max_tokens: 4000,
     system: SYSTEM,
-    output_config: { format: { type: "json_schema", schema } },
+    tools: [
+      {
+        name: "brief",
+        description: "Deliver the briefing.",
+        input_schema: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            moves: {
+              type: "array",
+              maxItems: 3,
+              items: {
+                type: "object",
+                properties: {
+                  title: { type: "string" },
+                  why: { type: "string" },
+                  match_slug: { type: "string" },
+                  product_id: { type: "string" },
+                  discount_pct: { type: "number" },
+                  cap_usd: { type: "number" },
+                },
+                required: ["title", "why"],
+              },
+            },
+            watch: { type: "array", maxItems: 3, items: { type: "string" } },
+          },
+          required: ["summary", "moves", "watch"],
+        },
+      },
+    ],
+    tool_choice: { type: "tool", name: "brief" },
     messages: [{ role: "user", content: JSON.stringify(context) }],
-  } as Parameters<typeof client.messages.create>[0] & { stream?: false });
-  const text = res.content.find((b) => b.type === "text");
-  if (!text || text.type !== "text") throw new Error("no briefing");
-  const out = JSON.parse(text.text) as Omit<Brief, "at">;
-  out.moves = (out.moves ?? []).slice(0, 3);
-  out.watch = (out.watch ?? []).slice(0, 3);
+  });
+  const block = res.content.find((b) => b.type === "tool_use");
+  if (!block || block.type !== "tool_use") throw new Error("no briefing");
+  const out = block.input as Omit<Brief, "at">;
   // Keep only moves that point at real fixtures and real products.
   const slugs = new Set(list.map((m) => m.slug));
   const ids = new Set(p?.products.map((x) => x.id));
