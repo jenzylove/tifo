@@ -67,7 +67,7 @@ export default async function Landing() {
           </div>
           <div className="trust">
             <span>Worst case capped before kickoff</span>
-            <span>Sign in with your fingerprint</span>
+            <span>Sign in with Face ID or fingerprint</span>
             <span>No gas fees</span>
           </div>
         </section>
@@ -225,13 +225,13 @@ export default async function Landing() {
       <section className="section wrap">
         <div className="section-head">
           <span className="eyebrow">For fans</span>
-          <h2>Back your team and keep what you bought</h2>
-          <p>You pay with your fingerprint. A wallet is created for you in seconds, with no app to install and no gas to pay.</p>
+          <h2>Buy what you love. Get money back if your team wins</h2>
+          <p>You pay with Face ID or your fingerprint. A wallet is created for you in seconds, with no app to install and no gas to pay.</p>
         </div>
         <div className="steps3">
           <div>
             <b>1</b>
-            <h4>Pick your team</h4>
+            <h4>Buy with a matchday promo</h4>
             <p>Your rebate % is locked the moment you buy. The shop delivers your order as usual.</p>
           </div>
           <div>

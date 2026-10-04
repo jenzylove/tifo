@@ -128,6 +128,13 @@ export async function matchBySlug(slug: string): Promise<Match | null> {
   return e ? parseEvent(e) : null;
 }
 
+// Names the way fans say them.
+const NICK: Record<string, string> = {
+  "manchester united": "Man United", "manchester city": "Man City", "tottenham hotspur": "Spurs", "tottenham": "Spurs",
+  "united states": "USA", "wolverhampton wanderers": "Wolves", "brighton and hove albion": "Brighton", "newcastle united": "Newcastle",
+  "west ham united": "West Ham", "nottingham forest": "Forest", "paris saint-germain": "PSG", "internazionale": "Inter",
+};
 export function shortTeam(name: string): string {
-  return name.replace(/\b(FC|AFC|CF|SC|FK|SK|AC|SSC|CD|CA)\b/g, "").replace(/\s+/g, " ").trim();
+  const base = name.replace(/\b(FC|AFC|CF|SC|FK|SK|AC|SSC|CD|CA|WFC|W\.F\.C\.)\b/g, "").replace(/\s+/g, " ").trim();
+  return NICK[base.toLowerCase()] ?? base;
 }

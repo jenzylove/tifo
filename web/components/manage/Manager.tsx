@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { isAddress, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerTx } from "@/lib/chain";
-import { circleEnabled, connectCircle, savedCredential, sendUsdcWithCircle, usdcBalance } from "@/lib/circleWallet";
+import { handleTap, type Retry } from "@/lib/tap";
+import { biometric, circleEnabled, connectCircle, preparePasskey, savedCredential, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import type { Brief } from "@/lib/brief";
 import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
@@ -305,6 +306,7 @@ function Money({ data }: { data: ManagerData }) {
   const [amt, setAmt] = useState("");
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "ok" | "err"; text?: string; hash?: string }>({ kind: "idle" });
+  const [retry, setRetry] = useState<Retry>(null);
   useEffect(() => {
     usdcBalance(acct.address).then(setBal).catch(() => {});
   }, [acct, status.kind]);
@@ -312,13 +314,17 @@ function Money({ data }: { data: ManagerData }) {
     const n = Number(amt);
     if (!isAddress(to)) return setStatus({ kind: "err", text: "That isn't an Arc address." });
     if (!(n > 0) || (bal !== null && BigInt(Math.round(n * 1e6)) > bal)) return setStatus({ kind: "err", text: "Check the amount." });
-    setStatus({ kind: "working", text: "Confirm with your fingerprint…" });
-    try {
-      const hash = await sendUsdcWithCircle(acct, to, BigInt(Math.round(n * 1e6)));
+    setStatus({ kind: "working", text: `Confirm with ${biometric()}…` });
+    const finish = (hash: `0x${string}`) => {
       setStatus({ kind: "ok", text: "Sent.", hash });
       setAmt("");
+    };
+    try {
+      finish(await sendUsdcWithCircle(acct, to, BigInt(Math.round(n * 1e6))));
     } catch (e) {
-      setStatus({ kind: "err", text: (e as Error).message.split("\n")[0] });
+      const fail = (text: string) => setStatus({ kind: "err", text });
+      if (handleTap(e, finish, fail, setRetry)) return setStatus({ kind: "idle" });
+      fail((e as Error).message.split("\n")[0]);
     }
   }
   const t = data.totals;
@@ -355,9 +361,15 @@ function Money({ data }: { data: ManagerData }) {
             Amount
             <input type="number" min={0} step="0.01" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="0.00" />
           </label>
-          <button className="btn" onClick={send} disabled={status.kind === "working"}>
-            Send
-          </button>
+          {retry ? (
+            <button className="btn" onClick={retry}>
+              Confirm with {biometric()}
+            </button>
+          ) : (
+            <button className="btn" onClick={send} disabled={status.kind === "working"}>
+              Send
+            </button>
+          )}
           {status.text && (
             <p className={`status ${status.kind === "err" ? "err" : status.kind === "ok" ? "ok" : ""}`}>
               {status.text}{" "}
@@ -404,14 +416,19 @@ function SignIn() {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [hasSaved, setHasSaved] = useState(false);
-  useEffect(() => setHasSaved(!!savedCredential()), []);
+  const [bio, setBio] = useState("Face ID or fingerprint");
+  useEffect(() => {
+    setHasSaved(!!savedCredential());
+    setBio(biometric());
+    if (circleEnabled()) preparePasskey().catch(() => {});
+  }, []);
   async function go(mode: "register" | "login") {
     setErr("");
     setBusy(mode === "register" ? "Creating your shop wallet…" : "Signing in…");
     try {
       setAccount(await connectCircle(mode));
     } catch (e) {
-      setErr((e as Error).message.split("\n")[0]);
+      setErr(walletError(e));
     } finally {
       setBusy("");
     }
@@ -422,7 +439,7 @@ function SignIn() {
         <span className="orb" style={{ width: 54, height: 54 }} />
         <h1>Your shop&apos;s manager</h1>
         <p className="muted">
-          Sign in with your fingerprint or Face ID. Your shop runs on a Circle wallet that only you control. Sales land in it as USDC
+          Sign in with {bio}. Your shop runs on a Circle wallet that only you control. Sales land in it as USDC
           {NETWORK === "testnet" ? " (testnet)" : ""}.
         </p>
         {!circleEnabled() ? (

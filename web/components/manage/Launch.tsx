@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { keccak256, toBytes } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
 import { initialRates, type Odds } from "@tifo/core";
-import { createPromoWithCircle } from "@/lib/circleWallet";
+import { biometric, createPromoWithCircle } from "@/lib/circleWallet";
+import { handleTap, type Retry } from "@/lib/tap";
 import type { Shop } from "@/lib/shops";
 import { shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
@@ -39,6 +40,7 @@ export default function Launch({ account, shop, prefill, onLaunched }: { account
   const [cap, setCap] = useState(prefill?.capUsd ?? 25);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "err"; text?: string; promo?: string }>({ kind: "idle" });
+  const [retry, setRetry] = useState<Retry>(null);
 
   useEffect(() => {
     fetch("/api/matches").then((r) => r.json()).then(setMatches).catch(() => setMatches([]));
@@ -65,7 +67,7 @@ export default function Launch({ account, shop, prefill, onLaunched }: { account
 
   async function launch() {
     if (!m || !rates || !product) return;
-    setStatus({ kind: "working", text: "Confirm with your fingerprint. Gas is covered." });
+    setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
     try {
       const kickoff = Math.floor(Date.parse(m.kickoff) / 1000);
       const meta = JSON.stringify({
@@ -80,7 +82,9 @@ export default function Launch({ account, shop, prefill, onLaunched }: { account
       setStatus({ kind: "done", promo });
       onLaunched();
     } catch (e) {
-      setStatus({ kind: "err", text: (e as Error).message.split("\n")[0] });
+      const fail = (text: string) => setStatus({ kind: "err", text });
+      if (handleTap<{ promo: string }>(e, ({ promo }) => { setStatus({ kind: "done", promo }); onLaunched(); }, fail, setRetry)) return setStatus({ kind: "idle" });
+      fail((e as Error).message.split("\n")[0]);
     }
   }
 
@@ -155,7 +159,12 @@ export default function Launch({ account, shop, prefill, onLaunched }: { account
             </p>
           </div>
         )}
-        <button className="btn" disabled={!m || !rates || !product || status.kind === "working"} onClick={launch}>
+        {retry && (
+          <button className="btn" onClick={retry}>
+            Confirm with {biometric()}
+          </button>
+        )}
+        <button className="btn" hidden={!!retry} disabled={!m || !rates || !product || status.kind === "working"} onClick={launch}>
           {m ? `Launch ${product?.name ?? "drop"} on ${short(m.teamA)} v ${short(m.teamB)}` : "Pick a match"}
         </button>
         {status.text && <p className={`status ${status.kind === "err" ? "err" : ""}`}>{status.text}</p>}

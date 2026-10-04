@@ -116,7 +116,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
 
         <div className="info">
-          <span className="eyebrow">Match drop</span>
+          <span className="eyebrow">Matchday promo · up to {Math.max(...st.rates) / 100}% back</span>
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
           {description && <p className="desc">{description}</p>}
@@ -157,7 +157,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
 
       <section className="terrace">
         <h2 className="h">
-          The stands <small>every tile is an order</small>
+          Promo so far <small>each tile is an order</small>
         </h2>
         <div className="stands">
           {[0, 1].map((s) => (
@@ -187,17 +187,17 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         <div className="steps3">
           <div>
             <b>1</b>
-            <h4>Pick your team, pay full price</h4>
-            <p>Your % is locked the moment you buy. {shopName} delivers your order as usual.</p>
+            <h4>Buy at full price</h4>
+            <p>Choose which result your discount rides on. Your % is locked the moment you buy, and {shopName} delivers as usual.</p>
           </div>
           <div>
             <b>2</b>
-            <h4>The underdog pays more</h4>
+            <h4>Bigger % on the underdog</h4>
             <p>Offers come from live odds, so every fan gets the same expected discount. They shift as one side fills up.</p>
           </div>
           <div>
             <b>3</b>
-            <h4>Paid after full time</h4>
+            <h4>Money back after full time</h4>
             <p>When two of three result sources agree, winning fans are refunded in USDC. A draw pays no rebate.</p>
           </div>
         </div>

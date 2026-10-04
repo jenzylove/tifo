@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import type { SmartAccount } from "viem/account-abstraction";
-import { saveShopWithCircle } from "@/lib/circleWallet";
+import { biometric, saveShopWithCircle } from "@/lib/circleWallet";
+import { handleTap, type Retry } from "@/lib/tap";
 import type { Product, Shop, ShopProfile } from "@/lib/shops";
 import ImageUpload from "./ImageUpload";
 
@@ -13,6 +14,7 @@ export default function ShopEditor({ account, shop, onSaved }: { account: SmartA
   const [p, setP] = useState<ShopProfile>(shop?.profile ?? { name: "", products: [{ id: newId(), name: "", priceUsd: 0 }], links: {}, teams: [] });
   const [teamsText, setTeamsText] = useState((shop?.profile.teams ?? []).join(", "));
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "ok" | "err"; text?: string }>({ kind: "idle" });
+  const [retry, setRetry] = useState<Retry>(null);
   const set = (patch: Partial<ShopProfile>) => setP((x) => ({ ...x, ...patch }));
   const setLink = (k: keyof NonNullable<ShopProfile["links"]>, v: string) => setP((x) => ({ ...x, links: { ...x.links, [k]: v } }));
   const setProduct = (i: number, patch: Partial<Product>) => setP((x) => ({ ...x, products: x.products.map((pr, j) => (j === i ? { ...pr, ...patch } : pr)) }));
@@ -25,15 +27,17 @@ export default function ShopEditor({ account, shop, onSaved }: { account: SmartA
     if (!products.length) return setStatus({ kind: "err", text: "Add at least one product with a name and a price." });
     const teams = teamsText.split(",").map((t) => t.trim()).filter(Boolean).slice(0, 8);
     const clean: ShopProfile = JSON.parse(JSON.stringify({ ...p, teams, products }, (_k, v) => (v === "" ? undefined : v)));
-    setStatus({ kind: "working", text: "Confirm with your fingerprint to publish your page…" });
+    setStatus({ kind: "working", text: `Confirm with ${biometric()} to publish your page…` });
     try {
       await saveShopWithCircle(account, h, clean);
       setHandle(h);
       setStatus({ kind: "ok", text: "Saved. Your page is live." });
       onSaved();
     } catch (e) {
-      const m = (e as Error).message;
-      setStatus({ kind: "err", text: /HandleTaken/.test(m) ? "That link is taken. Try another." : m.split("\n")[0] });
+      const fail = (m: string) => setStatus({ kind: "err", text: /HandleTaken/.test(m) ? "That link is taken. Try another." : m.split("\n")[0] });
+      const finish = () => { setHandle(h); setStatus({ kind: "ok", text: "Saved. Your page is live." }); onSaved(); };
+      if (handleTap(e, finish, fail, setRetry)) return setStatus({ kind: "idle", text: `Almost there: tap "Confirm with ${biometric()}".` });
+      fail((e as Error).message);
     }
   }
 
@@ -153,7 +157,12 @@ export default function ShopEditor({ account, shop, onSaved }: { account: SmartA
               View page
             </a>
           )}
-          <button className="btn sm" onClick={save} disabled={status.kind === "working"}>
+          {retry && (
+            <button className="btn sm" onClick={retry}>
+              Confirm with {biometric()}
+            </button>
+          )}
+          <button className="btn sm" hidden={!!retry} onClick={save} disabled={status.kind === "working"}>
             {shop ? "Save changes" : "Create my shop"}
           </button>
         </div>

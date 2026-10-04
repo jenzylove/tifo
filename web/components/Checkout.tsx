@@ -1,11 +1,12 @@
 "use client";
-// The buy box on a drop page: pick a team, pick a quantity, pay with a Circle passkey wallet.
+// The buy box on a drop page: the product at full price, plus a promo that pays back a % if the chosen team wins.
 import { useEffect, useState } from "react";
 import { keccak256, parseSignature, toBytes, type Address } from "viem";
 import { erc20Abi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
-import { buyWithCircle, circleEnabled, connectCircle, savedCredential, usdcBalance } from "@/lib/circleWallet";
+import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
+import { precheck, walletSide } from "@/lib/precheck";
 import { connect } from "@/lib/wallet";
 
 interface Props {
@@ -32,8 +33,24 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [hasSaved, setHasSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [locked, setLocked] = useState<0 | 1 | null>(null); // the offer this wallet already took
+  const [bio, setBio] = useState("Face ID or fingerprint");
+  const [tap, setTap] = useState<null | (() => Promise<`0x${string}`>)>(null);
 
-  useEffect(() => setHasSaved(!!savedCredential()), []);
+  useEffect(() => {
+    setHasSaved(!!savedCredential());
+    setBio(biometric());
+    if (circleEnabled() && !closed) preparePasskey().catch(() => {});
+  }, [closed]);
+  useEffect(() => {
+    if (!acct) return;
+    walletSide(promo, acct.address)
+      .then((s) => {
+        setLocked(s);
+        if (s !== null) setSide(s);
+      })
+      .catch(() => {});
+  }, [acct, promo, status.kind]);
   useEffect(() => {
     if (!acct) return;
     let live = true;
@@ -58,18 +75,40 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       setAccount(await connectCircle(mode));
       setStatus({ kind: "idle" });
     } catch (e) {
-      setStatus({ kind: "error", text: friendly((e as Error).message) });
+      setStatus({ kind: "error", text: walletError(e) });
     }
   }
 
   async function pay() {
     if (!acct || side === null) return;
     try {
-      setStatus({ kind: "working", text: "Confirm with your fingerprint or Face ID…" });
-      const hash = await buyWithCircle(acct, promo, side, amount);
-      setStatus({ kind: "done", hash, side, qty });
-      fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
+      setStatus({ kind: "working", text: "Checking the promo…" });
+      const why = await precheck(promo, acct.address, side, amount, teams);
+      if (why) return setStatus({ kind: "error", text: why });
+      setStatus({ kind: "working", text: `Confirm with ${bio}…` });
+      done(await buyWithCircle(acct, promo, side, amount));
     } catch (e) {
+      if (e instanceof NeedsTap) {
+        setTap(() => e.go);
+        return setStatus({ kind: "idle" });
+      }
+      setStatus({ kind: "error", text: friendly((e as Error).message) });
+    }
+  }
+
+  function done(hash: `0x${string}`) {
+    setTap(null);
+    setStatus({ kind: "done", hash, side: side!, qty });
+    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
+  }
+
+  async function confirmTap() {
+    if (!tap) return;
+    try {
+      setStatus({ kind: "working", text: `Confirm with ${bio}…` });
+      done(await tap());
+    } catch (e) {
+      setTap(null);
       setStatus({ kind: "error", text: friendly((e as Error).message) });
     }
   }
@@ -81,6 +120,8 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       const { address, client } = await connect();
       const bal = (await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] })) as bigint;
       if (bal < amount) throw new Error(`This wallet has ${money(Number(bal) / 1e6)} USDC on Arc. You need ${money(total)}.`);
+      const why = await precheck(promo, address, side, amount, teams);
+      if (why) throw new Error(why);
       const nonce = (await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "nonces", args: [address] })) as bigint;
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
       setStatus({ kind: "working", text: "Sign to pay. No gas needed." });
@@ -126,13 +167,13 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
 
   if (status.kind === "done") {
     const t = teams[status.side];
-    const msg = `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo (backing ${t}). Receipt: ${explorerTx(status.hash)}`;
+    const msg = `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
     const wa = whatsapp ? (/^https?:/.test(whatsapp) ? whatsapp : `https://wa.me/${whatsapp.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
     return (
       <div className="done">
-        <b>Order paid. You&apos;re in the {t} stand.</b>
+        <b>Order paid.</b>
         <p className="fine">
-          If {t} win, {money(back(status.side))} comes back to this wallet after full time. Your % is locked.
+          Your promo is locked: if {t} win, {money(back(status.side))} comes back to this wallet after full time.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {wa && (
@@ -150,20 +191,28 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
 
   return (
     <div className="buybox">
-      <div>
-        <h4>Pick your team</h4>
-        <div className="sides" style={{ marginTop: 8 }}>
+      <div className="promo">
+        <h4>Matchday promo</h4>
+        <div className="offers-list">
           {[0, 1].map((i) => {
             const s = i as 0 | 1;
+            const off = locked !== null && locked !== s;
             return (
-              <button key={s} className={`side ${side === s ? "on" : ""}`} style={{ ["--c" as string]: colors[s] }} onClick={() => setSide(s)} disabled={closed}>
-                <span className="t">{teams[s]}</span>
-                <span className="pct">{rates[s] / 100}%</span>
-                <span className="back">back if they win · {money(back(s))}</span>
+              <button key={s} className={`offer ${side === s ? "on" : ""}`} style={{ ["--c" as string]: colors[s] }} onClick={() => setSide(s)} disabled={closed || off}>
+                <span className="radio" aria-hidden />
+                <span className="txt">
+                  Get <b>{rates[s] / 100}% back</b> if {teams[s]} win
+                </span>
+                <span className="amt">{money(back(s))}</span>
               </button>
             );
           })}
         </div>
+        <p className="fine">
+          {locked !== null
+            ? `This wallet already took the ${teams[locked]} offer, so more orders ride on ${teams[locked]} too.`
+            : "Choose the result your discount rides on. A draw pays no rebate, and you keep the product either way."}
+        </p>
       </div>
 
       <div className="totals">
@@ -179,16 +228,16 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
 
       {closed ? (
         <button className="btn block" disabled>
-          Orders closed at kickoff
+          Promo closed at kickoff
         </button>
       ) : !circleEnabled() ? (
         <button className="btn block" disabled={side === null || busy} onClick={payOtherWallet}>
-          {side === null ? "Pick a team to continue" : `Pay ${money(total)}`}
+          {side === null ? "Choose a promo to continue" : `Buy for ${money(total)}`}
         </button>
       ) : !acct ? (
         <div style={{ display: "grid", gap: 8 }}>
           <button className="btn block" disabled={busy} onClick={() => wallet(hasSaved ? "login" : "register")}>
-            {hasSaved ? "Sign in with fingerprint to pay" : "Create a wallet with your fingerprint"}
+            {hasSaved ? `Sign in with ${bio} to buy` : `Create a wallet with ${bio}`}
           </button>
           <p className="fine" style={{ textAlign: "center" }}>
             {hasSaved ? (
@@ -237,9 +286,15 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
               </button>
             </div>
           )}
-          <button className="btn block" disabled={side === null || !enough || busy} onClick={pay}>
-            {side === null ? "Pick a team to continue" : `Pay ${money(total)} as a ${teams[side]} fan`}
-          </button>
+          {tap ? (
+            <button className="btn block" disabled={busy} onClick={confirmTap}>
+              Confirm {money(total)} with {bio}
+            </button>
+          ) : (
+            <button className="btn block" disabled={side === null || !enough || busy} onClick={pay}>
+              {side === null ? "Choose a promo to continue" : `Buy for ${money(total)}`}
+            </button>
+          )}
         </div>
       )}
       {circleEnabled() && !closed && (
@@ -249,19 +304,14 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       )}
       {status.kind === "working" && <p className="status">{status.text}</p>}
       {status.kind === "error" && <p className="status err">{status.text}</p>}
-
-      <div className="assure">
-        <div>You pay {shop}&apos;s normal price and keep the product whatever the score.</div>
-        <div>A draw pays no rebate. The rebate goes to the wallet you paid from.</div>
-      </div>
     </div>
   );
 }
 
 function friendly(msg: string) {
-  if (/OverCap/i.test(msg)) return "This team's side is full at the current offer. Try the other side, or fewer items.";
-  if (/OneSidePerWallet/i.test(msg)) return "This wallet already backed the other team in this drop.";
-  if (/Closed/i.test(msg)) return "This drop closed at kickoff.";
-  if (/NotAllowed|abort|cancel/i.test(msg)) return "Cancelled.";
-  return msg.split("\n")[0];
+  if (/OverCap/i.test(msg)) return "The shop's budget for this offer is used up at this size. Try fewer items or the other offer.";
+  if (/OneSidePerWallet/i.test(msg)) return "This wallet already took the other offer in this promo.";
+  if (/Closed/i.test(msg)) return "This promo closed at kickoff.";
+  if (/reverted/i.test(msg)) return "The payment didn't go through and nothing was charged. Refresh the page and try again.";
+  return walletError(new Error(msg));
 }
