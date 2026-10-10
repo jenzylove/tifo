@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { isAddress, type Address } from "viem";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import AutoRefresh from "@/components/AutoRefresh";
 import Checkout from "@/components/Checkout";
 import Countdown from "@/components/Countdown";
 import Purchase from "@/components/Purchase";
+import { settleNow } from "@/lib/agent";
 import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { offerLabel } from "@/lib/precheck";
@@ -12,6 +14,7 @@ import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 async function load(address: string) {
   if (!isAddress(address)) return null;
@@ -60,6 +63,9 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const spots = [0, 1].map((s) => (free && priceUnits > 0n ? Number((st.cap > st.liability[s] ? st.cap - st.liability[s] : 0n) / priceUnits) : null));
   const drawLine = st.drawBps > 0 ? `On a draw every buyer gets ${st.drawBps / 100}% back as a thank you.` : "A draw pays no rebate.";
   const kick = new Date(p.meta.kickoff);
+  // Once the match is over, anyone watching this page moves the settlement along: result, final check, refunds.
+  const fullTime = Date.now() / 1000 >= st.settleNotBefore || st.proposed !== "None";
+  if (fullTime && !(settled && st.remainderReleased)) after(() => settleNow(p).then(() => undefined));
 
   const feed = [
     ...orders.map((o) => ({ at: o.at, sale: true, text: `${team[o.side]} fan bought for ${usd(o.amount)} at ${o.rateBps / 100}% back` })),

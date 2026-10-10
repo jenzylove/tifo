@@ -76,43 +76,41 @@ export interface TickResult {
   hash?: Hex;
 }
 
+/** The next settlement step for one promo, if one is due: propose the result, finalize, pay, release. */
+async function step(p: PromoSummary, now: number): Promise<TickResult | null> {
+  const st = await promoState(p.address);
+  if (st.finalOutcome !== "None") {
+    // A win pays the winning side; a draw pays every buyer the thank you. Only a voided match pays nobody.
+    const owed = st.finalOutcome !== "Void";
+    if (owed && st.refundCursor < st.ordersCount) return { promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) };
+    if (!st.remainderReleased) return { promo: p.address, action: "release remainder", hash: await send(p.address, "releaseRemainder", []) };
+    return null;
+  }
+  if (st.proposed !== "None") {
+    if (now >= st.proposedAt + 15 * 60) return { promo: p.address, action: "finalize", hash: await send(p.address, "finalize", []) };
+    return null;
+  }
+  if (now < st.closesAt) return null;
+  const m = await matchBySlug(p.meta.slug);
+  if (!m) return { promo: p.address, action: "match not found; waiting" };
+  const c = await checkResult(m);
+  if (c.verdict === "VOID" || (c.verdict && now >= st.settleNotBefore)) {
+    const code = { A: 1, B: 2, DRAW: 3, VOID: 4 }[c.verdict];
+    await send(p.address, "note", ["result", `${c.reason}. Sources: ${c.sources.map((s) => `${s.source}=${s.verdict ?? s.status}`).join(", ")}`]);
+    return { promo: p.address, action: `propose ${c.verdict}`, hash: await send(p.address, "proposeResult", [code, c.evidence]) };
+  }
+  if (now > st.settleNotBefore + 6 * 3600 && /disagree/.test(c.reason)) return { promo: p.address, action: `escalate: ${c.reason}` };
+  return { promo: p.address, action: `wait: ${c.reason}` };
+}
+
 /** One pass over every promo: settle what's ready, finalize what's past the window, push refunds. */
 export async function tick(): Promise<TickResult[]> {
   const out: TickResult[] = [];
   const now = Math.floor(Date.now() / 1000);
   for (const p of await listPromos()) {
     try {
-      const st = await promoState(p.address);
-      if (st.finalOutcome !== "None") {
-        // A win pays the winning side; a draw pays every buyer the thank you. Only a voided match pays nobody.
-        const owed = st.finalOutcome !== "Void";
-        if (owed && st.refundCursor < st.ordersCount) {
-          out.push({ promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) });
-        } else if (!st.remainderReleased) {
-          out.push({ promo: p.address, action: "release remainder", hash: await send(p.address, "releaseRemainder", []) });
-        }
-        continue;
-      }
-      if (st.proposed !== "None") {
-        if (now >= st.proposedAt + 15 * 60) out.push({ promo: p.address, action: "finalize", hash: await send(p.address, "finalize", []) });
-        continue;
-      }
-      if (now < st.closesAt) continue;
-      const m = await matchBySlug(p.meta.slug);
-      if (!m) {
-        out.push({ promo: p.address, action: "match not found; waiting" });
-        continue;
-      }
-      const c = await checkResult(m);
-      if (c.verdict === "VOID" || (c.verdict && now >= st.settleNotBefore)) {
-        const code = { A: 1, B: 2, DRAW: 3, VOID: 4 }[c.verdict];
-        await send(p.address, "note", ["result", `${c.reason}. Sources: ${c.sources.map((s) => `${s.source}=${s.verdict ?? s.status}`).join(", ")}`]);
-        out.push({ promo: p.address, action: `propose ${c.verdict}`, hash: await send(p.address, "proposeResult", [code, c.evidence]) });
-      } else if (now > st.settleNotBefore + 6 * 3600 && /disagree/.test(c.reason)) {
-        out.push({ promo: p.address, action: `escalate: ${c.reason}` });
-      } else {
-        out.push({ promo: p.address, action: `wait: ${c.reason}` });
-      }
+      const r = await step(p, now);
+      if (r) out.push(r);
     } catch (e) {
       out.push({ promo: p.address, action: `error: ${(e as Error).message.slice(0, 200)}` });
     }
@@ -120,21 +118,45 @@ export async function tick(): Promise<TickResult[]> {
   return out;
 }
 
+const lastNudge = new Map<string, number>();
+
 /**
- * Once every six hours per seller, the agent decides whether to run a drop. Inside the seller's rule it opens
- * the drop itself; outside it, the contract refuses and the agent can only leave a proposal for the seller.
- * The schedule is a pure function of the clock and the address, so parallel or repeated ticks agree.
+ * Settle one promo as far as it can go right now. The drop page calls this after it responds, so refunds
+ * land while fans are watching instead of waiting for the scheduler. Each step is safe to repeat: the
+ * contract refuses a second proposal, a second finalize and a second payout.
+ */
+export async function settleNow(p: PromoSummary): Promise<TickResult[]> {
+  const key = p.address.toLowerCase();
+  if (Date.now() - (lastNudge.get(key) ?? 0) < 20_000) return [];
+  lastNudge.set(key, Date.now());
+  const out: TickResult[] = [];
+  try {
+    for (let i = 0; i < 4; i++) {
+      const r = await step(p, Math.floor(Date.now() / 1000));
+      if (!r) break;
+      out.push(r);
+      if (!r.hash) break; // waiting on a result or the correction window
+    }
+  } catch (e) {
+    out.push({ promo: p.address, action: `error: ${(e as Error).message.slice(0, 200)}` });
+  }
+  return out;
+}
+
+/**
+ * On each scheduler run, the agent decides for every seller with an account whether to run a drop. Inside the
+ * seller's rule it opens the drop itself; outside it, the contract refuses and the agent can only leave a
+ * proposal. A seller with a drop running or a proposal waiting is skipped before the model is asked.
  */
 export async function autopilotTick(force?: Address): Promise<TickResult[]> {
   const out: TickResult[] = [];
-  const slot = Math.floor(Date.now() / 600_000); // the scheduler runs every ten minutes
   const sellers = [...new Set((await listPromos()).map((p) => p.seller.toLowerCase() as Address))];
   for (const seller of sellers) {
     try {
       // A drop opened through an account has the account as its seller; the owner is who we plan for.
       const owner = (await publicClient.readContract({ address: seller, abi: tifoAccountAbi, functionName: "owner" }).catch(() => null)) as Address | null;
       if (!owner || (await accountOf(owner))?.toLowerCase() !== seller) continue;
-      if (force ? force.toLowerCase() !== owner.toLowerCase() : slot % 36 !== Number(BigInt(owner) % 36n)) continue;
+      if (force && force.toLowerCase() !== owner.toLowerCase()) continue;
       out.push(await act(await planFor(owner, true)));
     } catch (e) {
       out.push({ promo: seller, action: `autopilot error: ${(e as Error).message.slice(0, 200)}` });
