@@ -1,311 +1,249 @@
-import DropCard from "@/components/DropCard";
+import type { CSSProperties } from "react";
+import Reveal from "@/components/Reveal";
 import { dropCards } from "@/lib/board";
+import { usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
-import { inkOn, teamColors } from "@/lib/teams";
+import { offerLabel } from "@/lib/precheck";
+import { promoState } from "@/lib/promos";
+import { teamColors } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
 
+const HEAD = ["Turn", "any", "big", "match", "into"];
+const i = (n: number) => ({ ["--i" as string]: n }) as CSSProperties;
+
 export default async function Landing() {
-  const cards = await dropCards(undefined, 12).catch(() => []);
-  const open = cards.filter((c) => c.phase === "open");
-  const show = (open.length ? open : cards).slice(0, 3);
-  const hero = open[0] ?? cards[0];
-  const A = hero ? shortTeam(hero.p.meta.teamA) : "Arsenal";
-  const B = hero ? shortTeam(hero.p.meta.teamB) : "Spurs";
-  const [ca, cb] = hero ? teamColors(hero.p.meta.teamA, hero.p.meta.teamB) : ["#EF0107", "#132257"];
-  const rates = hero?.rates ?? [1700, 4700];
-  // Three chips in the headline: real product photos from live drops, or the clubs' colours as scarf swatches.
-  const chips = cards.slice(0, 3).map((c) => {
-    const [c1, c2] = teamColors(c.p.meta.teamA, c.p.meta.teamB);
-    return { image: c.p.meta.image, c1, c2 };
-  });
-  while (chips.length < 3) chips.push([{ image: undefined, c1: "#EF0107", c2: "#ffffff" }, { image: undefined, c1: "#034694", c2: "#DBA111" }, { image: undefined, c1: "#008751", c2: "#ffffff" }][chips.length]);
+  const cards = await dropCards(undefined, 24).catch(() => []);
+  // Every figure on this page is read from the chain. With no drops yet, the product cards show a plain example instead.
+  const live = cards.find((c) => c.phase === "open") ?? cards[0];
+  const paid = cards.find((c) => c.phase === "settled" && c.note?.includes("paid back"));
+  const paidState = paid ? await promoState(paid.p.address).catch(() => null) : null;
+  const settled = cards.filter((c) => c.phase === "settled").length;
+  const orders = cards.reduce((t, c) => t + c.fans, 0);
+  const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
+  const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
+  const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#111114", "#a78bfa"];
+  const rates = live?.rates ?? [10_000, 10_000];
+  const product = live?.p.meta.product ?? "Budget template";
+  const price = live?.p.meta.priceUsd ?? 20;
+  const budget = live ? Number(live.p.cap) / 1e6 : 100;
 
   return (
     <>
-      <div className="wrap">
-        <section className="hero frame">
-          <span className="eyebrow">An AI sales manager for people who sell online</span>
-          <h1 className="mega">
-            <span className="line">
-              Every{" "}
-              <span className="chips" aria-hidden>
-                {chips.map((c, i) =>
-                  c.image ? (
-                    <i key={i}>
-                      <img src={c.image} alt="" />
-                    </i>
-                  ) : (
-                    <i key={i} className="scarf-chip" style={{ ["--c1" as string]: c.c1, ["--c2" as string]: c.c2 }} />
-                  ),
-                )}
+      <section className="hero wrap">
+        <a className="news" href="/proof">
+          <b>Live</b>
+          {paidState ? (
+            <span>
+              The last winners got <strong>{usd(paidState.refundedTotal)}</strong> back<em>. See the proof</em>
+            </span>
+          ) : (
+            <span>
+              Every payout is on Arc<em>. See the proof</em>
+            </span>
+          )}
+        </a>
+        <h1 className="mega">
+          {HEAD.map((w, n) => (
+            <span key={w}>
+              <span className="w" style={i(n)}>
+                {w}
               </span>{" "}
-              big match
             </span>
-            <span className="line">
-              is a sale{" "}
-              <svg className="arrow" viewBox="0 0 40 28" aria-hidden>
-                <path d="M2 14h32M22 3l12 11-12 11" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>{" "}
-              at
-            </span>
-            <span className="line">
-              <a className="inline-cta" href="/manage">
-                <span>Make a drop</span>
-              </a>{" "}
-              your shop
-            </span>
-          </h1>
-          <p className="sub">
-            Tifo is a sales manager with a budget it has to earn back. Give it one product and it picks the match, sets the offers and hands you a link to
-            share. Fans of both teams buy at full price, the winners get part of it back in USDC after full time, and it can never cost you more than the
-            budget you set.
+          ))}
+          <span className="hl" style={i(HEAD.length)}>
+            sales
+            <span className="sticker">money back for the winners</span>
+          </span>
+        </h1>
+        <p className="sub">
+          Give Tifo one product and a budget. It hands you a link to share. Fans of both teams buy, the winning side gets money back, and it never costs you
+          more than the budget you set.
+        </p>
+        <div className="ctas">
+          <a className="btn ac" href="/manage">
+            Make a drop
+          </a>
+          <a className="btn ghost" href={live ? `/p/${live.p.address}` : "/drops"}>
+            See a live one
+          </a>
+        </div>
+      </section>
+
+      <div className="trio">
+        <div className="step">
+          <div className="ui">
+            <div className="row">
+              {product.length > 22 ? `${product.slice(0, 22)}…` : product} <small>${price.toFixed(2)}</small>
+            </div>
+            <div className="row">
+              Budget <small>${budget.toFixed(2)} at most</small>
+            </div>
+            <div className="row go">Get my link</div>
+          </div>
+          <p className="cap">
+            <b>Step 1</b>Add one product and the most you are willing to spend.
           </p>
-          <div className="ctas">
-            <a className="btn ghost" href={hero ? `/p/${hero.p.address}` : "/drops"}>
-              See a live drop
-            </a>
+        </div>
+        <div className="step" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+          <div className="ui">
+            <div className="row url">tifo.vercel.app/p/{live ? live.p.address.slice(2, 10) : "your-drop"}</div>
+            <div className="row lead">
+              <span className="dots">
+                <i />
+                <i />
+              </span>
+              {A} v {B}
+            </div>
+            <div className="row">
+              {offerLabel(rates[0], A)}
+            </div>
+            <div className="row">
+              {offerLabel(rates[1], B)}
+            </div>
           </div>
-          <div className="trust">
-            <span>Worst case capped before kickoff</span>
-            <span>Sign in with Face ID or fingerprint</span>
-            <span>No gas fees</span>
+          <p className="cap">
+            <b>Step 2</b>Share the link wherever you already sell. Fans pick a side and pay.
+          </p>
+        </div>
+        <div className="step">
+          <div className="ui">
+            <div className="bars">
+              {[38, 62, 100, 54].map((h, n) => (
+                <i key={n} className={n === 2 ? "on" : ""} style={{ ["--h" as string]: `${h}%`, ["--n" as string]: n }} />
+              ))}
+            </div>
+            <div className="row">
+              {paidState ? "Paid back to winners" : "Winners paid after full time"} <small>{paidState ? usd(paidState.refundedTotal) : "in USDC"}</small>
+            </div>
           </div>
-        </section>
+          <p className="cap">
+            <b>Step 3</b>Winners get paid by themselves. You see what the drop brought in against what it cost.
+          </p>
+        </div>
       </div>
 
-      <div className="logos wrap" aria-label="Built with">
-        <span>USDC on Arc</span>
-        <span>Circle Wallets</span>
-        <span>Claude</span>
-        <span>Live odds from Polymarket</span>
+      <div className="wrap">
+        <Reveal className="facts">
+          <div>
+            <b>{cards.length}</b>
+            <span>drops opened</span>
+          </div>
+          <div>
+            <b>{orders}</b>
+            <span>orders placed</span>
+          </div>
+          <div>
+            <b>{settled}</b>
+            <span>settled by the agent</span>
+          </div>
+          <div>
+            <b>$0</b>
+            <span>gas paid by buyers</span>
+          </div>
+        </Reveal>
       </div>
 
       <section className="section wrap">
-        <div className="section-head">
-          <span className="eyebrow">What your manager does</span>
-          <h2>It works the match day so you can keep selling</h2>
-          <p>You give it a product and a budget. The manager handles the rest and writes down every decision where you can check it.</p>
+        <Reveal className="section-head">
+          <span className="pill ac">Your sales manager</span>
+          <h2>It does the work. You set the limit.</h2>
+          <p>Tifo is an AI sales manager with a budget it has to earn back. Every decision it makes is written down where you can check it.</p>
+        </Reveal>
+        <div className="duties">
+          {[
+            ["Plans the drop", "It looks at how your past drops went and the matches coming up, then picks one and sets the offer. It tells you how many extra sales pay for it before you say yes."],
+            ["Keeps both sides fair", "As one team's fans pile in, it moves the offers so your cost stays the same whoever wins. It can never go over your budget, because a contract holds the money, not the AI."],
+            ["Pays the winners", "It checks the result against three sources and pays as soon as two agree. No claim form, no waiting a week."],
+            ["Shows you the score", "After every match you see what the drop brought in, what it cost, and whether it paid for itself."],
+            ["Runs on autopilot, if you let it", "Give it a weekly limit and it runs drops for you. Anything bigger than the limit, it has to ask first. It can never take money out."],
+          ].map(([title, text], n) => (
+            <Reveal key={title} className="duty" delay={n * 0.05}>
+              <span className="n">0{n + 1}</span>
+              <h3>{title}</h3>
+              <p>{text}</p>
+            </Reveal>
+          ))}
         </div>
+      </section>
 
-        <div className="feature">
-          <div>
-            <span className="pill ac">1 · Plans the drop</span>
-            <h3>Picks the match, prices both sides</h3>
-            <p>
-              It looks at how your past drops went, then picks a real fixture from the coming week. It prices each side from live market
-              odds, so every fan gets the same expected discount and the underdog&apos;s fans get the bigger %.
-            </p>
-            <ul>
-              <li>Your product at your price, nothing marked up</li>
-              <li>You choose the most you&apos;re willing to owe</li>
-              <li>Launch in one tap from your wallet</li>
-            </ul>
-          </div>
-          <div className="demo">
-            <div className="panel">
-              <div className="mini-row">
-                <span>Product</span>
-                <b>
-                  {hero?.p.meta.product ?? "Matchday hoodie"} · ${hero?.p.meta.priceUsd.toFixed(2) ?? "25.00"}
-                </b>
-              </div>
-              <div className="mini-row">
-                <span>Match</span>
-                <b>
-                  {A} v {B}
-                </b>
-              </div>
-              <div className="mini-row">
-                <span>{A} fans</span>
-                <b>{rates[0] / 100}% back if they win</b>
-              </div>
-              <div className="mini-row">
-                <span>{B} fans</span>
-                <b>{rates[1] / 100}% back if they win</b>
-              </div>
-              <div className="mini-row">
-                <span>Draw</span>
-                <b>No rebate</b>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="feature flip">
-          <div>
-            <span className="pill ac">2 · Keeps the book balanced</span>
-            <h3>Moves the offers while fans buy</h3>
-            <p>
-              When one side runs ahead, it raises the other side&apos;s offer to pull buyers over. It only ever sets aside enough to cover the bigger of the two
-              refund bills. The rest of each sale goes straight to your wallet.
-            </p>
-            <ul>
-              <li>Every change is written on chain with its reason</li>
-              <li>It can&apos;t take your money or go past your cap</li>
-            </ul>
-          </div>
-          <div className="demo">
-            <div className="panel">
-              <div className="mini-row">
-                <span className="pill ok">Sale</span>
-                <span>{A} fan · paid in full</span>
-              </div>
-              <div className="mini-row">
-                <span className="pill ok">Sale</span>
-                <span>{A} fan · paid in full</span>
-              </div>
-              <div className="mini-row">
-                <span className="pill ac">Manager</span>
+      <section className="section wrap">
+        <div className="fans">
+          <Reveal>
+            <span className="pill ac">If you are buying</span>
+            <h2 style={{ marginTop: 14 }}>Buy what you wanted anyway. Get money back if your team wins.</h2>
+            <ol>
+              <li>
                 <span>
-                  {A} side is ahead. Raised {B} to pull the book back level.
+                  <b>Pay full price and pick your side</b>You keep what you bought whatever happens.
                 </span>
-              </div>
-              <div className="mini-row">
-                <span className="pill ok">Sale</span>
-                <span>{B} fan · paid in full</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="feature">
-          <div>
-            <span className="pill ac">3 · Pays out at full time</span>
-            <h3>Checks the result, then settles by itself</h3>
-            <p>
-              After the final whistle it waits for two of three independent sources to agree on the score. Then it sends the winning fans their money and
-              returns whatever was left over to you. You don&apos;t have to do anything.
-            </p>
-          </div>
-          <div className="demo">
-            <div className="panel">
-              <div className="mini-row">
-                <span>Result sources</span>
-                <b>ESPN · TheSportsDB · Polymarket</b>
-              </div>
-              <div className="mini-row">
-                <span>Agreement needed</span>
-                <b>2 of 3</b>
-              </div>
-              <div className="mini-row">
-                <span>Check window</span>
-                <b>15 minutes</b>
-              </div>
-              <div className="mini-row">
-                <span>Then</span>
-                <b className="ok">Refunds and leftovers sent</b>
+              </li>
+              <li>
+                <span>
+                  <b>Sign with Face ID</b>No seed phrase and no gas fees. A wallet is made for you in seconds.
+                </span>
+              </li>
+              <li>
+                <span>
+                  <b>Money back after full time</b>It lands in your wallet by itself. On a draw everyone gets a small thank you.
+                </span>
+              </li>
+            </ol>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <div className="step" style={{ rotate: "2deg", minHeight: 0, ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+              <div className="ui">
+                <div className="row">
+                  {product.length > 26 ? `${product.slice(0, 26)}…` : product} <small>${price.toFixed(2)}</small>
+                </div>
+                <div className="row lead" style={{ boxShadow: "inset 0 0 0 2px var(--ink)", background: "var(--surface)" }}>
+                  <span className="dots">
+                    <i />
+                  </span>
+                  {offerLabel(rates[0], A)}
+                </div>
+                <div className="row">{offerLabel(rates[1], B)}</div>
+                <div className="row go">Buy for ${price.toFixed(2)}</div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="feature flip">
-          <div>
-            <span className="pill ac">4 · Runs your numbers</span>
-            <h3>A manager who reads your books every day</h3>
-            <p>
-              Your dashboard shows what came in, what&apos;s set aside, what each drop cost you and how many new fans it reached. Each time you open it, the
-              manager writes a short briefing and suggests your next moves. Each suggestion is one tap to set up.
-            </p>
-          </div>
-          <div className="demo">
-            <div className="panel">
-              <div style={{ display: "flex", gap: 10, alignItems: "center", fontWeight: 600, marginBottom: 10 }}>
-                <span className="orb" /> Example briefing
-              </div>
-              <p className="muted" style={{ fontSize: ".92rem" }}>
-                Two drops brought in 14 orders from 11 new fans, and refunds cost you 6% of those sales. Saturday&apos;s derby is the best fit for your
-                buyers. Your hoodie still has no photo, so add one first.
-              </p>
-            </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
       <section className="section wrap">
-        <div className="section-head">
-          <span className="eyebrow">For fans</span>
-          <h2>Buy what you love. Get money back if your team wins</h2>
-          <p>You pay with Face ID or your fingerprint. A wallet is created for you in seconds, with no app to install and no gas to pay.</p>
-        </div>
-        <div className="steps3">
-          <div>
-            <b>1</b>
-            <h4>Buy with a matchday promo</h4>
-            <p>Your rebate % is locked the moment you buy. The shop delivers your order as usual.</p>
-          </div>
-          <div>
-            <b>2</b>
-            <h4>Watch the match</h4>
-            <p>Each order shows up as a tile in your team&apos;s stand on the drop page.</p>
-          </div>
-          <div>
-            <b>3</b>
-            <h4>Get paid if you win</h4>
-            <p>If your team wins, the money lands in your wallet after full time. A draw pays no rebate.</p>
-          </div>
-        </div>
-      </section>
-
-      {show.length > 0 && (
-        <section className="section wrap">
-          <h2 className="h">
-            Live drops{" "}
-            <a href="/drops" className="link">
-              See all
-            </a>
-          </h2>
-          <div className="drops">
-            {show.map((c) => (
-              <DropCard key={c.p.address} {...c} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="section wrap">
-        <div className="section-head">
+        <Reveal className="section-head">
           <h2>Questions sellers ask</h2>
-        </div>
-        <div className="faq">
+        </Reveal>
+        <Reveal className="faq">
           <details>
             <summary>Is this betting?</summary>
-            <p>
-              No. The fan buys your product at your normal price and keeps it whatever happens. The rebate is a discount that depends on the result, and
-              nobody can stake money without buying something.
-            </p>
+            <p>No. The buyer pays your normal price for a real product and keeps it whatever happens. The money back is a discount that depends on the result. Nobody can put money in without buying something.</p>
           </details>
           <details>
-            <summary>What&apos;s the most I can lose?</summary>
-            <p>
-              The budget you set before kickoff. The contract won&apos;t take an order that would push either refund bill past it. In practice you owe much
-              less, because only one side can win and a draw pays nothing.
-            </p>
+            <summary>What is the most it can cost me?</summary>
+            <p>The budget you set before kickoff. The contract will not hand out more than that, whoever wins. A draw costs far less.</p>
           </details>
           <details>
             <summary>When do I get paid?</summary>
-            <p>
-              Straight away. Each sale goes to your wallet as soon as it lands, minus the small part set aside for refunds. Whatever is left of that comes
-              back to you after the match.
-            </p>
+            <p>Straight away. Each sale reaches you as it lands, apart from the part set aside for the money back. Whatever is left of that returns to you after the match.</p>
           </details>
           <details>
-            <summary>Do my customers need crypto?</summary>
-            <p>
-              They need USDC on Arc. They can withdraw it from most big exchanges, and the wallet is created with a fingerprint or Face ID. There are no gas
-              fees and no seed phrase.
-            </p>
+            <summary>Do my buyers need crypto?</summary>
+            <p>They need USDC. Most big exchanges can send it on Arc, and the wallet is made with a fingerprint or Face ID. Tifo works best today for sellers whose buyers already hold some.</p>
           </details>
-        </div>
+          <details>
+            <summary>What can I sell?</summary>
+            <p>Anything, but digital products work best. A download link or an access code opens on the page the moment the buyer pays, so there is nothing to ship.</p>
+          </details>
+        </Reveal>
 
-        <div className="cta-band">
-          <h2>Put a sales manager on your next match day</h2>
+        <Reveal className="band">
+          <h2>Your next sale could start at kickoff</h2>
           <p>Add one product, set a budget and share the link. It takes about a minute.</p>
           <a className="btn" href="/manage">
             Make a drop
           </a>
-        </div>
+        </Reveal>
       </section>
     </>
   );

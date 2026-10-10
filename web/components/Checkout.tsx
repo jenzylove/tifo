@@ -219,7 +219,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   return (
     <div className="buybox">
       <div className="promo">
-        <h4>Matchday promo</h4>
+        <h4>Pick your side</h4>
         <div className="offers-list">
           {[0, 1].map((i) => {
             const s = i as 0 | 1;

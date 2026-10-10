@@ -52,6 +52,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const settled = st.finalOutcome !== "None";
   const fans = [0, 1].map((s) => orders.filter((o) => o.side === s));
   const owedIfWin = [0, 1].map((s) => fans[s].reduce((t, o) => t + o.refund, 0n));
+  const paidFans = winner === null ? 0 : new Set(fans[winner].filter((o) => o.refund > 0n).map((o) => o.buyer.toLowerCase())).size;
   const phase = settled ? "settled" : st.proposed !== "None" ? "result" : closed ? "live" : "open";
   const shopName = p.meta.shop;
   const description = p.meta.description;
@@ -81,7 +82,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <h2>
             {winner !== null ? (
               <>
-                {team[winner]} won. {fans[winner].length} {team[winner]} {fans[winner].length === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
+                {team[winner]} won. {paidFans} {team[winner]} {paidFans === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
               </>
             ) : st.finalOutcome === "Draw" ? (
               st.refundedTotal > 0n ? `A draw. Every buyer got a thank you: ${usd(st.refundedTotal)} back in total.` : "A draw. No rebates this time."
@@ -127,7 +128,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
 
         <div className="info">
-          <span className="eyebrow">Matchday promo · {free ? "free if your team wins" : `up to ${Math.max(...st.rates) / 100}% back`}</span>
+          <span className="pill ac" style={{ justifySelf: "start" }}>{free ? "Free if your team wins" : `Up to ${Math.max(...st.rates) / 100}% back if your team wins`}</span>
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
           {description && <p className="desc">{description}</p>}
@@ -169,7 +170,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
 
       <section className="terrace">
         <h2 className="h">
-          Promo so far <small>each tile is an order</small>
+          Who is in so far <small>each mark is an order</small>
         </h2>
         <div className="stands">
           {[0, 1].map((s) => (

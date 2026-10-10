@@ -1,31 +1,31 @@
 import type { Metadata } from "next";
-import { Anton, Barlow } from "next/font/google";
+import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import "./globals.css";
 import { NETWORK } from "@/lib/chain";
 
-const display = Anton({ weight: "400", subsets: ["latin"], variable: "--display" });
-const body = Barlow({ weight: ["400", "500", "600", "700"], subsets: ["latin"], variable: "--body" });
-const ACCENT = process.env.NEXT_PUBLIC_ACCENT === "blue" ? "blue" : "green";
+const sans = Host_Grotesk({ subsets: ["latin"], variable: "--sans" });
+const mono = Geist_Mono({ subsets: ["latin"], variable: "--mono" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://tifo.vercel.app"),
-  title: "Tifo · the AI manager that turns match day into sales",
+  title: "Tifo · turn any big match into sales",
   description:
-    "An AI sales manager with a budget it has to earn back. One link per drop: both teams' fans buy at full price, the winners get money back in USDC, and it never costs you more than the budget you set.",
+    "An AI sales manager with a budget it has to earn back. Give it one product and it hands you a link. Fans of both teams buy, the winning side gets money back in USDC, and you never spend more than the budget you set.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-accent={ACCENT} className={`${display.variable} ${body.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>
         <header className="top">
-          <div className="wrap">
+          <div className="bar">
             <a href="/" className="brand">
-              TIFO
+              <i />
+              tifo
             </a>
-            {NETWORK === "testnet" && <span className="badge">Testnet</span>}
+            {NETWORK === "testnet" && <span className="badge hide-sm">Testnet</span>}
             <nav>
-              <a href="/drops" className="hide-sm">Live drops</a>
+              <a href="/drops" className="hide-sm">Drops</a>
               <a href="/proof" className="hide-sm">Proof</a>
               <a href="/manage" className="btn sm">Make a drop</a>
             </nav>
@@ -35,11 +35,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <footer className="foot">
           <div className="wrap">
             <p>
-              Payments settle in USDC on Arc through Circle wallets. A rebate is a fixed % of a full-price purchase, paid only if your team wins. You keep what
-              you bought either way, so it&apos;s a discount, not a bet.
+              Payments settle in USDC on Arc through Circle wallets. You pay full price for a real product and keep it whatever happens. The money back is a
+              discount on what you bought.
             </p>
             <p>
-              <a href="/drops">Live drops</a> · <a href="/manage">Make a drop</a> · <a href="/proof">Proof on chain</a>
+              <a href="/drops">Drops</a> · <a href="/manage">Make a drop</a> · <a href="/proof">Proof</a> ·{" "}
+              <a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">
+                Code
+              </a>
             </p>
             <p>
               Built for the{" "}
