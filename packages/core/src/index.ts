@@ -18,18 +18,22 @@ export interface Order {
   side: Side;
   amount: bigint;
   rateBps: bigint; // fixed at purchase time
+  drawBps: bigint; // thank you on a draw, fixed at purchase time
 }
 
 export interface Book {
-  cap: bigint; // the most the seller will ever owe on either result
+  cap: bigint; // the most the seller will ever owe on any result
+  floorBps: bigint; // offer once a side's budget is used up at the current rate
+  drawBps: bigint; // thank you paid to every buyer on a draw
   liability: [bigint, bigint]; // refund bill if side A wins / if side B wins
+  drawLiability: bigint; // bill if the match is drawn
   reserve: bigint; // USDC held by the contract
   orders: Order[];
   sideOf: Record<string, Side>; // one side per wallet
 }
 
-export function emptyBook(cap: bigint): Book {
-  return { cap, liability: [0n, 0n], reserve: 0n, orders: [], sideOf: {} };
+export function emptyBook(cap: bigint, floorBps = 0n, drawBps = 0n): Book {
+  return { cap, floorBps, drawBps, liability: [0n, 0n], drawLiability: 0n, reserve: 0n, orders: [], sideOf: {} };
 }
 
 /**
@@ -66,8 +70,9 @@ export function initialRates(
   return [r(odds.pA), r(odds.pB)];
 }
 
-export function requiredReserve(liability: [bigint, bigint]): bigint {
-  return liability[0] > liability[1] ? liability[0] : liability[1];
+export function requiredReserve(liability: [bigint, bigint], drawLiability = 0n): bigint {
+  const top = liability[0] > liability[1] ? liability[0] : liability[1];
+  return drawLiability > top ? drawLiability : top;
 }
 
 export interface OrderResult {
@@ -75,37 +80,57 @@ export interface OrderResult {
   hold: bigint; // kept in reserve from this sale
   toSeller: bigint; // forwarded to the seller immediately
   refundIfWins: bigint;
+  rateBps: bigint; // the offer this order actually got
 }
 
 /**
- * Apply one sale. The reserve only grows by the increase in the larger refund bill,
- * so sales on the lighter side usually go to the seller in full.
+ * What a buyer on `side` gets right now. The offer steps down when that side's budget is used up:
+ * the current rate, then the floor, then no rebate. A sale is never refused for budget.
  */
-export function applyOrder(book: Book, buyer: string, side: Side, amount: bigint, rateBps: bigint): OrderResult {
+export function offerFor(book: Book, side: Side, amount: bigint, rateBps: bigint): bigint {
+  const room = book.cap > book.liability[side] ? book.cap - book.liability[side] : 0n;
+  let rate = rateBps;
+  if ((amount * rate) / BPS > room) rate = book.floorBps;
+  if ((amount * rate) / BPS > room) rate = 0n;
+  return rate;
+}
+
+/**
+ * Apply one sale. The reserve only grows by the increase in the largest bill,
+ * so sales on the lighter side usually go to the seller in full.
+ * `minRateBps` is the lowest offer the buyer accepts: if the shown offer is gone, the sale is refused.
+ */
+export function applyOrder(book: Book, buyer: string, side: Side, amount: bigint, rateBps: bigint, minRateBps = 0n): OrderResult {
   if (amount <= 0n) throw new Error("amount must be positive");
   if (rateBps < 0n || rateBps > BPS) throw new Error("rate out of range");
   const key = buyer.toLowerCase();
   const existing = book.sideOf[key];
   if (existing !== undefined && existing !== side) throw new Error("one side per wallet");
 
-  const refundIfWins = (amount * rateBps) / BPS;
+  const rate = offerFor(book, side, amount, rateBps);
+  if (rate < minRateBps) throw new Error("offer gone: this side's budget is used up at that rate");
+  const drawRate = book.drawLiability + (amount * book.drawBps) / BPS > book.cap ? 0n : book.drawBps;
+
+  const refundIfWins = (amount * rate) / BPS;
   const liability: [bigint, bigint] = [...book.liability] as [bigint, bigint];
   liability[side] += refundIfWins;
-  const newReserve = requiredReserve(liability);
-  if (newReserve > book.cap) throw new Error("over cap: side is full at this rate");
+  const drawLiability = book.drawLiability + (amount * drawRate) / BPS;
+  const newReserve = requiredReserve(liability, drawLiability);
 
   const hold = newReserve - book.reserve;
   return {
     book: {
-      cap: book.cap,
+      ...book,
       liability,
+      drawLiability,
       reserve: newReserve,
-      orders: [...book.orders, { buyer: key, side, amount, rateBps }],
+      orders: [...book.orders, { buyer: key, side, amount, rateBps: rate, drawBps: drawRate }],
       sideOf: { ...book.sideOf, [key]: side },
     },
     hold,
     toSeller: amount - hold,
     refundIfWins,
+    rateBps: rate,
   };
 }
 
@@ -139,24 +164,24 @@ export interface Settlement {
   toSeller: bigint; // reserve left over
 }
 
-/** Pay the winning side; draws and voided matches pay no rebates. */
+/** Pay the winning side, or the thank you to every buyer on a draw. A voided match pays nothing. */
 export function settle(book: Book, outcome: Outcome): Settlement {
   const winner: Side | null = outcome === "A" ? 0 : outcome === "B" ? 1 : null;
-  const refunds =
-    winner === null
-      ? []
-      : book.orders
-          .filter((o) => o.side === winner)
-          .map((o) => ({ buyer: o.buyer, amount: (o.amount * o.rateBps) / BPS }))
-          .filter((r) => r.amount > 0n);
+  const refunds = (
+    winner !== null
+      ? book.orders.filter((o) => o.side === winner).map((o) => ({ buyer: o.buyer, amount: (o.amount * o.rateBps) / BPS }))
+      : outcome === "DRAW"
+        ? book.orders.map((o) => ({ buyer: o.buyer, amount: (o.amount * o.drawBps) / BPS }))
+        : []
+  ).filter((r) => r.amount > 0n);
   const totalRefunds = refunds.reduce((s, r) => s + r.amount, 0n);
   if (totalRefunds > book.reserve) throw new Error("reserve short: invariant broken");
   return { refunds, totalRefunds, toSeller: book.reserve - totalRefunds };
 }
 
 /** What the promo costs the seller on average, given the odds. */
-export function expectedCost(liability: [bigint, bigint], odds: Odds): number {
-  return Number(liability[0]) * odds.pA + Number(liability[1]) * odds.pB;
+export function expectedCost(liability: [bigint, bigint], odds: Odds, drawLiability = 0n): number {
+  return Number(liability[0]) * odds.pA + Number(liability[1]) * odds.pB + Number(drawLiability) * odds.pDraw;
 }
 
 /** Round to a whole percent (100 bps), staying inside the bounds. */

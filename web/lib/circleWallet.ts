@@ -1,7 +1,7 @@
 "use client";
 // Circle Modular Wallets: a passkey (Face ID / fingerprint) owns a Circle smart account on Arc.
 // Circle's paymaster sponsors gas, so a fan only ever needs USDC.
-import { createPublicClient, encodeFunctionData, erc20Abi, keccak256, toBytes, type Address, type Hex } from "viem";
+import { createPublicClient, encodeFunctionData, erc20Abi, type Address, type Hex } from "viem";
 import { createBundlerClient, formatUserOperationRequest, toWebAuthnAccount, type P256Credential, type SmartAccount, type UserOperation, type WebAuthnAccount } from "viem/account-abstraction";
 import {
   createRpClient,
@@ -14,8 +14,8 @@ import {
   toPasskeyTransport,
 } from "@circle-fin/modular-wallets-core";
 import { base64UrlToBytes, bytesToCryptoKey, cryptoKeyToBytes, parseCredentialPublicKey, parsePublicKey, serializePublicKey } from "webauthn-p256";
-import { tifoFactoryAbi, tifoPromoAbi, tifoShopsAbi } from "./abi";
-import { FACTORY, NETWORK, SHOPS, USDC, chain } from "./chain";
+import { tifoFactoryAbi, tifoPromoAbi } from "./abi";
+import { FACTORY, NETWORK, USDC, chain } from "./chain";
 
 const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
 const CLIENT_URL = "https://modular-sdk.circle.com/v1/rpc/w3s/buidl";
@@ -201,23 +201,16 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
 }
 
 /** Approve and buy in one sponsored user operation. Returns the on-chain transaction hash. */
-export async function buyWithCircle(account: SmartAccount, promo: Address, side: 0 | 1, amount: bigint): Promise<Hex> {
-  const orderRef = keccak256(toBytes(`${promo}:${account.address}:${Date.now()}`));
+export async function buyWithCircle(account: SmartAccount, promo: Address, side: 0 | 1, amount: bigint, orderRef: Hex, minRateBps: number): Promise<Hex> {
   return sendAs(
     account,
     [
       { to: USDC, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [promo, amount] }) },
-      { to: promo, data: encodeFunctionData({ abi: tifoPromoAbi, functionName: "buy", args: [side, amount, orderRef] }) },
+      { to: promo, data: encodeFunctionData({ abi: tifoPromoAbi, functionName: "buy", args: [side, amount, orderRef, minRateBps] }) },
     ],
     "The payment was not accepted on chain. Nothing was charged.",
     (r) => r.transactionHash,
   );
-}
-
-/** Publish the shop's page (handle, branding, links, catalog) to the registry. */
-export async function saveShopWithCircle(account: SmartAccount, handle: string, profile: object): Promise<Hex> {
-  const data = encodeFunctionData({ abi: tifoShopsAbi, functionName: "save", args: [handle, JSON.stringify(profile)] });
-  return sendAs(account, [{ to: SHOPS, data }], "Your shop page was not saved. Nothing changed.", (r) => r.transactionHash);
 }
 
 export type CreatePromoArgs = Parameters<typeof encodeFunctionData<typeof tifoFactoryAbi, "createPromo">>[0]["args"];

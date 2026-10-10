@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 
-// Product photos, logos and covers for shop pages. Images only, 4 MB max.
+// Product photos for drop pages. Images only, 4 MB max.
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
 
 export async function POST(req: Request) {
@@ -12,6 +12,6 @@ export async function POST(req: Request) {
   if (!TYPES.has(file.type)) return NextResponse.json({ error: "Use a JPG, PNG or WebP image." }, { status: 400 });
   if (file.size > 4 * 1024 * 1024) return NextResponse.json({ error: "Images up to 4 MB." }, { status: 400 });
   const ext = file.type.split("/")[1];
-  const blob = await put(`shops/${crypto.randomUUID()}.${ext}`, file, { access: "public", contentType: file.type });
+  const blob = await put(`drops/${crypto.randomUUID()}.${ext}`, file, { access: "public", contentType: file.type });
   return NextResponse.json({ url: blob.url });
 }

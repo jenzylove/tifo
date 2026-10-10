@@ -1,4 +1,4 @@
-// Drops for public boards (landing, /drops, storefronts).
+// Drops for public boards (landing, /drops).
 import "server-only";
 import type { DropCardData } from "@/components/DropCard";
 import { listPromos, promoState } from "./promos";
@@ -16,7 +16,9 @@ export async function dropCards(filter?: (seller: string) => boolean, limit = 24
         ? st.finalOutcome === "A" || st.finalOutcome === "B"
           ? `${usd(st.refundedTotal)} paid back to winning fans`
           : st.finalOutcome === "Draw"
-            ? "Draw: no rebates"
+            ? st.refundedTotal > 0n
+              ? `Draw: ${usd(st.refundedTotal)} thank you paid to every buyer`
+              : "Draw: no rebates"
             : "Voided"
         : undefined;
       return { p, rates: st.rates, phase, fans: st.ordersCount, note } as DropCardData;

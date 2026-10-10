@@ -1,5 +1,5 @@
 "use client";
-// The shop owner's side of Tifo: an AI manager that reads the shop's books, plans drops and runs the money.
+// The seller's side of Tifo: an AI manager that reads their books, plans drops and runs the money.
 import { useCallback, useEffect, useState } from "react";
 import { isAddress, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
@@ -11,9 +11,8 @@ import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 import Launch, { type Prefill } from "./Launch";
-import ShopEditor from "./ShopEditor";
 
-type Tab = "overview" | "drops" | "shop" | "money";
+type Tab = "overview" | "drops" | "money";
 const $ = (units: string | bigint | number) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Manager() {
@@ -42,19 +41,9 @@ export default function Manager() {
   if (!acct) return <SignIn />;
   if (!data) return <div className="wrap" style={{ padding: "60px 16px" }}>{err ? <p className="status err">{err}</p> : <div className="skeleton" style={{ maxWidth: 420, height: 28 }} />}</div>;
 
-  if (!data.shop)
-    return (
-      <div className="wrap" style={{ maxWidth: 860 }}>
-        <div className="pagehead">
-          <span className="eyebrow">Step 1 of 2</span>
-          <h1>Set up your shop</h1>
-          <p>This becomes your public page and the catalog your manager sells from. You can change it any time.</p>
-        </div>
-        <ShopEditor account={acct} shop={null} onSaved={load} />
-      </div>
-    );
-
-  const shop = data.shop;
+  const fresh = data.drops.length === 0;
+  const view: Tab = fresh && tab === "overview" ? "drops" : tab;
+  const who = data.name ?? "Your drops";
   const go = (t: Tab) => {
     setTab(t);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -63,21 +52,22 @@ export default function Manager() {
     <div className="wrap mgr">
       <nav className="side-nav">
         <div className="me">
-          <div className="logo">{shop.profile.logo ? <img src={shop.profile.logo} alt="" /> : shop.profile.name.slice(0, 1)}</div>
+          <div className="logo">{who.slice(0, 1)}</div>
           <div>
-            <b>{shop.profile.name}</b>
-            <a href={`/s/${shop.handle}`} target="_blank" rel="noreferrer">/s/{shop.handle} ↗</a>
+            <b>{who}</b>
+            <span className="fine">
+              {acct.address.slice(0, 6)}…{acct.address.slice(-4)}
+            </span>
           </div>
         </div>
         {(
           [
             ["overview", "Overview"],
             ["drops", "Match drops"],
-            ["shop", "Shop & products"],
             ["money", "Money"],
           ] as [Tab, string][]
         ).map(([t, l]) => (
-          <button key={t} className={tab === t ? "on" : ""} onClick={() => go(t)}>
+          <button key={t} className={view === t ? "on" : ""} onClick={() => go(t)}>
             {l}
             {t === "drops" && data.totals.live > 0 && <span className="pill live">{data.totals.live}</span>}
           </button>
@@ -85,7 +75,7 @@ export default function Manager() {
       </nav>
 
       <div>
-        {tab === "overview" && (
+        {view === "overview" && (
           <Overview
             data={data}
             seller={acct.address}
@@ -93,42 +83,30 @@ export default function Manager() {
               setPrefill(p);
               go("drops");
             }}
-            goShop={() => go("shop")}
           />
         )}
-        {tab === "drops" && (
+        {view === "drops" && (
           <>
             <div className="mgr-head">
               <div>
                 <h1>Match drops</h1>
-                <p className="muted">Pick a product and a match. The offers come from live odds, and your cap is enforced on chain.</p>
+                <p className="muted">One product, one match, one link. The offers come from live odds, and your budget is enforced on chain.</p>
               </div>
             </div>
-            <Launch account={acct} shop={shop} prefill={prefill} onLaunched={load} />
+            <Launch account={acct} sellerName={data.name} prefill={prefill} onLaunched={load} />
             <div className="panel" style={{ marginTop: 18 }}>
               <h3>All drops</h3>
               <DropList data={data} />
             </div>
           </>
         )}
-        {tab === "shop" && (
-          <>
-            <div className="mgr-head">
-              <div>
-                <h1>Shop & products</h1>
-                <p className="muted">Your public page, your links and your catalog. Prices here are the prices fans pay.</p>
-              </div>
-            </div>
-            <ShopEditor account={acct} shop={shop} onSaved={load} />
-          </>
-        )}
-        {tab === "money" && <Money data={data} />}
+        {view === "money" && <Money data={data} />}
       </div>
     </div>
   );
 }
 
-function Overview({ data, seller, onMove, goShop }: { data: ManagerData; seller: Address; onMove: (p: Prefill) => void; goShop: () => void }) {
+function Overview({ data, seller, onMove }: { data: ManagerData; seller: Address; onMove: (p: Prefill) => void }) {
   const [brief, setBrief] = useState<Brief | null>(null);
   const [bErr, setBErr] = useState("");
   const [loading, setLoading] = useState(false);
@@ -161,11 +139,8 @@ function Overview({ data, seller, onMove, goShop }: { data: ManagerData; seller:
       <div className="mgr-head">
         <div>
           <p className="muted">{hello}</p>
-          <h1>{data.shop!.profile.name}</h1>
+          <h1>{data.name}</h1>
         </div>
-        <a className="btn sm ghost" href={`/s/${data.shop!.handle}`} target="_blank" rel="noreferrer">
-          View your page
-        </a>
       </div>
 
       <section className="brief">
@@ -195,15 +170,11 @@ function Overview({ data, seller, onMove, goShop }: { data: ManagerData; seller:
                   <div key={i} className="move">
                     <b>{m.title}</b>
                     <p>{m.why}</p>
-                    {m.match_slug ? (
-                      <button className="btn sm" onClick={() => onMove({ slug: m.match_slug, productId: m.product_id, discountPct: m.discount_pct, capUsd: m.cap_usd })}>
+                    {m.match_slug && (
+                      <button className="btn sm" onClick={() => onMove({ slug: m.match_slug, discountPct: m.discount_pct, capUsd: m.cap_usd })}>
                         Set it up
                       </button>
-                    ) : /photo|catalog|product|page|price/i.test(m.title + m.why) ? (
-                      <button className="btn sm ghost" onClick={goShop}>
-                        Open shop settings
-                      </button>
-                    ) : null}
+                    )}
                   </div>
                 ))}
               </div>
@@ -290,7 +261,15 @@ function DropList({ data, limit }: { data: ManagerData; limit?: number }) {
             </div>
             <div className="r">
               <b>{$(d.sales)}</b>
-              <span>{BigInt(d.refunded) > 0n ? `${$(d.refunded)} paid back` : BigInt(d.held) > 0n ? `${$(d.held)} set aside` : "sales"}</span>
+              <span>
+                {BigInt(d.refunded) > 0n
+                  ? `${$(d.refunded)} paid back${d.extraSalesToBreakEven ? `, covered by ${d.extraSalesToBreakEven} ${d.extraSalesToBreakEven === 1 ? "sale" : "sales"}` : ""}`
+                  : BigInt(d.held) > 0n
+                    ? `${$(d.held)} set aside`
+                    : d.phase === "settled"
+                      ? "cost you nothing"
+                      : "sales"}
+              </span>
             </div>
           </a>
         );
@@ -424,7 +403,7 @@ function SignIn() {
   }, []);
   async function go(mode: "register" | "login") {
     setErr("");
-    setBusy(mode === "register" ? "Creating your shop wallet…" : "Signing in…");
+    setBusy(mode === "register" ? "Creating your wallet…" : "Signing in…");
     try {
       setAccount(await connectCircle(mode));
     } catch (e) {
@@ -437,9 +416,9 @@ function SignIn() {
     <div className="wrap signin">
       <div className="panel">
         <span className="orb" style={{ width: 54, height: 54 }} />
-        <h1>Your shop&apos;s manager</h1>
+        <h1>Your sales manager</h1>
         <p className="muted">
-          Sign in with {bio}. Your shop runs on a Circle wallet that only you control. Sales land in it as USDC
+          Sign in with {bio}. Your sales land in a Circle wallet that only you control, as USDC
           {NETWORK === "testnet" ? " (testnet)" : ""}.
         </p>
         {!circleEnabled() ? (
@@ -447,7 +426,7 @@ function SignIn() {
         ) : (
           <>
             <button className="btn" disabled={!!busy} onClick={() => go(hasSaved ? "login" : "register")}>
-              {hasSaved ? "Sign in" : "Create my shop wallet"}
+              {hasSaved ? "Sign in" : "Create my wallet"}
             </button>
             <button className="link" disabled={!!busy} onClick={() => go(hasSaved ? "register" : "login")}>
               {hasSaved ? "Create a new wallet instead" : "I already have one"}

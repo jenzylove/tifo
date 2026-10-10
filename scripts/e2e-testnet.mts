@@ -27,12 +27,12 @@ const seller = createWalletClient({ account: privateKeyToAccount(env.SELLER_PK a
 const meta = {
   slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
   shop: env.SHOP ?? "Tifo test shop", product: env.PRODUCT ?? "Matchday scarf (testnet run)", priceUsd: Number(env.PRICE ?? 2), image: env.IMAGE || undefined,
-  handle: env.HANDLE || undefined, productId: env.PRODUCT_ID || undefined, description: env.DESC || undefined,
+  description: env.DESC || undefined,
   baseRates: [ra, rb], minBps: 500, maxBps: 6000, effectiveBps: 1000,
 };
 const createHash = await seller.writeContract({
   address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo",
-  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 3_000_000n, 500, 6000, ra, rb, JSON.stringify(meta)],
+  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 3_000_000n, 500, 6000, ra, rb, 0, 500, JSON.stringify(meta)],
 });
 const rc = await pub.waitForTransactionReceipt({ hash: createHash });
 const promo = `0x${rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase())!.topics[1]!.slice(26)}` as Hex;

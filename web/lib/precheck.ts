@@ -12,10 +12,26 @@ export async function walletSide(promo: Address, buyer: Address): Promise<0 | 1 
   return s === 1 ? 0 : s === 2 ? 1 : null;
 }
 
-/** Same checks the contract makes in _buy, in the same order. Returns a reason, or null if the order will go through. */
-export async function precheck(promo: Address, buyer: Address, side: 0 | 1, amount: bigint, teams: [string, string]): Promise<string | null> {
+/** How an offer reads to a buyer. */
+export function offerLabel(rateBps: number, team: string): string {
+  if (rateBps >= 10_000) return `Free if ${team} win`;
+  if (rateBps <= 0) return `${team}: no money back left`;
+  return `${rateBps / 100}% back if ${team} win`;
+}
+
+/** The offer steps down when a side's budget is used up: the current rate, then the floor, then none. Same as _buy. */
+export function stepDown(amount: bigint, rateBps: number, liability: bigint, cap: bigint, floorBps: number): number {
+  const room = cap > liability ? cap - liability : 0n;
+  let rate = rateBps;
+  if ((amount * BigInt(rate)) / 10_000n > room) rate = floorBps;
+  if ((amount * BigInt(rate)) / 10_000n > room) rate = 0;
+  return rate;
+}
+
+/** Same checks the contract makes in _buy, in the same order. Returns a reason, or the offer this order will get. */
+export async function precheck(promo: Address, buyer: Address, side: 0 | 1, amount: bigint, teams: [string, string]): Promise<{ error: string } | { rateBps: number }> {
   const c = { address: promo, abi: tifoPromoAbi } as const;
-  const [closesAt, proposed, finalOutcome, sideOf, book] = await publicClient.multicall({
+  const [closesAt, proposed, finalOutcome, sideOf, book, floorBps] = await publicClient.multicall({
     allowFailure: false,
     contracts: [
       { ...c, functionName: "closesAt" },
@@ -23,16 +39,13 @@ export async function precheck(promo: Address, buyer: Address, side: 0 | 1, amou
       { ...c, functionName: "finalOutcome" },
       { ...c, functionName: "sideOf", args: [buyer] },
       { ...c, functionName: "book" },
+      { ...c, functionName: "floorBps" },
     ],
   });
-  if (Date.now() / 1000 >= Number(closesAt) || Number(proposed) !== 0 || Number(finalOutcome) !== 0) return "This promo closed at kickoff.";
+  if (Date.now() / 1000 >= Number(closesAt) || Number(proposed) !== 0 || Number(finalOutcome) !== 0) return { error: "This promo closed at kickoff." };
   const s = Number(sideOf);
   if (s !== 0 && s !== side + 1)
-    return `This wallet already took the ${teams[s - 1]} offer in this promo. Each wallet rides on one result, so you can add more ${teams[s - 1]} orders but not switch.`;
+    return { error: `This wallet already took the ${teams[s - 1]} offer in this promo. Each wallet rides on one result, so you can add more ${teams[s - 1]} orders but not switch.` };
   const [rateA, rateB, la, lb, , cap] = book as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
-  const liab = [la, lb];
-  liab[side] += (amount * BigInt(side === 0 ? rateA : rateB)) / 10_000n;
-  const need = liab[0] > liab[1] ? liab[0] : liab[1];
-  if (need > cap) return `The shop's budget for the ${teams[side]} offer is used up at this size. Try fewer items or the other offer.`;
-  return null;
+  return { rateBps: stepDown(amount, side === 0 ? rateA : rateB, side === 0 ? la : lb, cap, Number(floorBps)) };
 }

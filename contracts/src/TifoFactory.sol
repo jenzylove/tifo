@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {TifoPromo} from "./TifoPromo.sol";
+import {TifoAccount} from "./TifoAccount.sol";
 
 /// @notice Sellers open promos here. The seller is always msg.sender, so a promo can only
 /// forward money to the wallet that created it. Agent and operator are fixed at deploy.
@@ -10,6 +11,7 @@ contract TifoFactory {
     address public immutable agent;
     address public immutable operator;
     address[] public promos;
+    mapping(address => address) public accountOf; // a seller's TifoAccount, if they opened one
 
     struct PromoInfo {
         address promo;
@@ -24,6 +26,8 @@ contract TifoFactory {
 
     /// @param meta JSON: fixture slug, team names, shop name, products. Lets the app list promos from chain alone.
     event PromoCreated(address indexed promo, address indexed seller, bytes32 indexed fixtureId, uint64 closesAt, uint256 cap, string meta);
+
+    event AccountCreated(address indexed owner, address account);
 
     constructor(address usdc_, address agent_, address operator_) {
         usdc = usdc_;
@@ -40,15 +44,25 @@ contract TifoFactory {
         uint16 maxBps,
         uint16 rateA,
         uint16 rateB,
+        uint16 floorBps,
+        uint16 drawBps,
         string calldata meta
     ) external returns (address promo) {
         require(closesAt > block.timestamp, "kickoff passed");
         promo = address(
-            new TifoPromo(usdc, msg.sender, agent, operator, fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB)
+            new TifoPromo(usdc, msg.sender, agent, operator, fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps)
         );
         promos.push(promo);
         infos.push(PromoInfo(promo, msg.sender, closesAt, uint64(block.timestamp), cap, meta));
         emit PromoCreated(promo, msg.sender, fixtureId, closesAt, cap, meta);
+    }
+
+    /// @notice Open an account with a standing rule for the agent. One per seller wallet.
+    function createAccount(uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap) external returns (address account) {
+        require(accountOf[msg.sender] == address(0), "exists");
+        account = address(new TifoAccount(usdc, msg.sender, agent, address(this), weeklyBps, baseWeekly, perDealCap));
+        accountOf[msg.sender] = account;
+        emit AccountCreated(msg.sender, account);
     }
 
     function promosCount() external view returns (uint256) {

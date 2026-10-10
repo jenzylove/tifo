@@ -23,3 +23,22 @@ Changes (references: Pinterest pins 17 for the landing page, 22 for the storefro
 - `/manage`: passkey sign-in, shop editor with image uploads (Vercel Blob store `tifo-media`), drop launcher priced with the core math, manager chat that knows the catalog, an AI briefing (Claude, structured JSON) with one-tap moves, KPIs read from the chain, USDC payouts.
 - Verified live: the briefing read the test shop's real numbers ($4.00 sales, $0.83 held) and proposed real fixtures and catalog products. The chat proposed Chelsea v Bournemouth on the catalog tee at the catalog price.
 - Test shop `tifo-test-kits` (seller test wallet) plus a Portugal v Norway test drop `0xcb8e647ee059b6a91cc8ea2874320bde58784793`.
+
+## 10 Oct 2026: relock, cut to one link per drop
+The idea was relocked as "an AI sales manager with a budget it has to earn back" (see `PRD.md`, `PLAN.md`). Phase A of the new plan:
+- Removed the storefront: `/s/[handle]`, the shop editor, the `TifoShops` registry and its scripts. A drop now carries everything it needs in its own metadata.
+- One seller screen: name, product, photo, price, profit per sale, what the buyer gets, match, discount, budget. It shows how many extra sales pay for the budget and blocks an offer that gives away more than the seller makes per sale. After launch: link, QR, a ready post and a share to X button.
+- Digital delivery: the seller's link or note is sealed with a server key (`DELIVERY_SECRET`, AES-256-GCM) inside the drop metadata. Each order's on-chain reference is the hash of a secret kept in the buyer's browser; `/api/unlock` opens the note only for a paid order with that secret.
+- The agent's chat and briefing now read the seller's past drops from chain instead of a catalog.
+- Verified on Arc testnet with `scripts/e2e-delivery.mts` (drop `0x54bbaa2e11023172981ac70d3bb9fe4b7b61de7f`, purchase `0x9cd98817f89d12cdd572c82619156fbd3cb3d2aa0c1470f298e5a9f1aaccc57a`): the buyer opens the purchase; a wrong secret, a non-purchase transaction and an unknown transaction are refused; the page never contains the link.
+- Not yet verified by hand: the new seller screen behind Face ID sign in, since passkeys can't be driven from a script.
+
+## 10 Oct 2026: the money rules (Phase B)
+- `TifoPromo`: the offer steps down when a side's budget is used up (current rate, then the floor, then no rebate), so "free if your team wins" gives exactly as many free spots as the budget covers and a sale is never refused for budget. A buyer passes the lowest offer they accept and is refused (`OfferGone`) if it has run out. A draw pays every buyer a thank you (`drawBps`); the reserve covers the largest of three bills. An order reference is charged once (`DuplicateOrder`).
+- `TifoAccount` (new): the seller's account. Sales land in it. The owner sets a weekly rule (a base amount plus a share of the last 7 days of sales) and a limit per drop. Inside the rule the agent opens drops by itself; outside it the agent can only propose and the owner decides. Only the owner can withdraw. Created through `TifoFactory.createAccount`.
+- Core math mirrors the contract. Tests: 13 contract tests (invariant: 256 runs, 15,360 calls, reserve always equals the largest of the three bills and never passes the budget) and 12 math tests (2,000 lopsided promos settled on all four outcomes).
+- Web: the seller form offers "Free if your team wins" or "Money back for everyone"; the drop page shows free spots left per side and the draw thank you; checkout shows the offer the order will really get.
+- Read "Agents and Ledgers in 2026" (the hackathon's required reading) and mapped each control to the code in the README. It led to the duplicate order guard.
+- Testnet factory `0x5E7aCE925Fb504C88ECd7b2Bb86b77af0EEaD6Bd` (same agent and operator as before). Verified live with `scripts/e2e-money.mts` (drop `0x64c55fd2bafdee4e939f2ef1fad1021ef6275b15`, 13 checks) and `scripts/e2e-delivery.mts` (11 checks).
+- Not yet built: the screen where a seller sets the weekly rule and approves proposals, and the agent opening drops by itself from the scheduler. That is Phase C.
+- Not yet verified by hand: the seller screen behind Face ID sign in. Not deployed: the Vercel daily limit was used up by another project's commits.

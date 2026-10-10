@@ -36,6 +36,7 @@ export interface PermitBuy {
   side: 0 | 1;
   amount: bigint;
   orderRef: Hex;
+  minRateBps: number; // the offer the buyer was shown; the sale is refused if it is gone
   deadline: bigint;
   v: number;
   r: Hex;
@@ -44,7 +45,7 @@ export interface PermitBuy {
 
 /** Relay a buyer's signed permit. The buyer pays no gas; funds can only come from the signer. */
 export async function relayBuy(b: PermitBuy): Promise<Hex> {
-  return send(b.promo, "buyWithPermit", [b.buyer, b.side, b.amount, b.orderRef, b.deadline, b.v, b.r, b.s]);
+  return send(b.promo, "buyWithPermit", [b.buyer, b.side, b.amount, b.orderRef, b.minRateBps, b.deadline, b.v, b.r, b.s]);
 }
 
 /**
@@ -81,8 +82,9 @@ export async function tick(): Promise<TickResult[]> {
     try {
       const st = await promoState(p.address);
       if (st.finalOutcome !== "None") {
-        const winners = st.finalOutcome === "A" || st.finalOutcome === "B";
-        if (winners && st.refundCursor < st.ordersCount) {
+        // A win pays the winning side; a draw pays every buyer the thank you. Only a voided match pays nobody.
+        const owed = st.finalOutcome !== "Void";
+        if (owed && st.refundCursor < st.ordersCount) {
           out.push({ promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) });
         } else if (!st.remainderReleased) {
           out.push({ promo: p.address, action: "release remainder", hash: await send(p.address, "releaseRemainder", []) });

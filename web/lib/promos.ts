@@ -16,9 +16,11 @@ export interface PromoMeta {
   priceUsd: number;
   image?: string;
   link?: string;
-  handle?: string; // the shop's page on Tifo
-  productId?: string;
   description?: string;
+  profitUsd?: number; // what the seller keeps per sale before the promo, for the break-even line
+  delivery?: string; // sealed; opened only for a paid order (see lib/delivery.ts)
+  contact?: string; // where a buyer sends delivery details for a physical product
+  shape?: "percent" | "free"; // "free": a full refund for the first buyers on each side
   baseRates: [number, number];
   minBps: number;
   maxBps: number;
@@ -75,6 +77,9 @@ export interface PromoState {
   remainderReleased: boolean;
   settleNotBefore: number;
   closesAt: number;
+  floorBps: number;
+  drawBps: number;
+  drawLiability: bigint;
 }
 
 export async function promoState(address: Address): Promise<PromoState> {
@@ -92,6 +97,9 @@ export async function promoState(address: Address): Promise<PromoState> {
       { ...c, functionName: "closesAt" },
       { ...c, functionName: "journalCount" },
       { ...c, functionName: "refundedTotal" },
+      { ...c, functionName: "floorBps" },
+      { ...c, functionName: "drawBps" },
+      { ...c, functionName: "drawLiability" },
     ],
   });
   const [rateA, rateB, la, lb, reserve, cap, count] = r[0] as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
@@ -110,6 +118,9 @@ export async function promoState(address: Address): Promise<PromoState> {
     closesAt: Number(r[7]),
     journalCount: Number(r[8]),
     refundedTotal: r[9] as bigint,
+    floorBps: Number(r[10]),
+    drawBps: Number(r[11]),
+    drawLiability: r[12] as bigint,
   };
 }
 

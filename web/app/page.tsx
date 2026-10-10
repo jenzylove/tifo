@@ -25,7 +25,7 @@ export default async function Landing() {
     <>
       <div className="wrap">
         <section className="hero frame">
-          <span className="eyebrow">An AI manager for small shops</span>
+          <span className="eyebrow">An AI sales manager for people who sell online</span>
           <h1 className="mega">
             <span className="line">
               Every{" "}
@@ -51,14 +51,15 @@ export default async function Landing() {
             </span>
             <span className="line">
               <a className="inline-cta" href="/manage">
-                <span>Open your shop</span>
+                <span>Make a drop</span>
               </a>{" "}
               your shop
             </span>
           </h1>
           <p className="sub">
-            Tifo picks the matches your buyers care about and runs a drop on your product. Fans of both teams buy at full price, and the winners get part of
-            it back in USDC after full time. It keeps your worst case capped, and it tracks your sales and cash and tells you what to do next.
+            Tifo is a sales manager with a budget it has to earn back. Give it one product and it picks the match, sets the offers and hands you a link to
+            share. Fans of both teams buy at full price, the winners get part of it back in USDC after full time, and it can never cost you more than the
+            budget you set.
           </p>
           <div className="ctas">
             <a className="btn ghost" href={hero ? `/p/${hero.p.address}` : "/drops"}>
@@ -83,8 +84,8 @@ export default async function Landing() {
       <section className="section wrap">
         <div className="section-head">
           <span className="eyebrow">What your manager does</span>
-          <h2>It works the match day so you can run the shop</h2>
-          <p>You set up your shop once. The manager handles the rest and writes down every decision where you can check it.</p>
+          <h2>It works the match day so you can keep selling</h2>
+          <p>You give it a product and a budget. The manager handles the rest and writes down every decision where you can check it.</p>
         </div>
 
         <div className="feature">
@@ -92,7 +93,7 @@ export default async function Landing() {
             <span className="pill ac">1 · Plans the drop</span>
             <h3>Picks the match, prices both sides</h3>
             <p>
-              It reads your catalog and the clubs your buyers follow, then picks a real fixture from the coming week. It prices each side from live market
+              It looks at how your past drops went, then picks a real fixture from the coming week. It prices each side from live market
               odds, so every fan gets the same expected discount and the underdog&apos;s fans get the bigger %.
             </p>
             <ul>
@@ -265,7 +266,7 @@ export default async function Landing() {
 
       <section className="section wrap">
         <div className="section-head">
-          <h2>Questions shops ask</h2>
+          <h2>Questions sellers ask</h2>
         </div>
         <div className="faq">
           <details>
@@ -278,7 +279,7 @@ export default async function Landing() {
           <details>
             <summary>What&apos;s the most I can lose?</summary>
             <p>
-              The cap you set before kickoff. The contract won&apos;t take an order that would push either refund bill past it. In practice you owe much
+              The budget you set before kickoff. The contract won&apos;t take an order that would push either refund bill past it. In practice you owe much
               less, because only one side can win and a draw pays nothing.
             </p>
           </details>
@@ -299,10 +300,10 @@ export default async function Landing() {
         </div>
 
         <div className="cta-band">
-          <h2>Give your shop a manager for match day</h2>
-          <p>Set up your page, add your products, and let it plan your first drop. It takes about five minutes.</p>
+          <h2>Put a sales manager on your next match day</h2>
+          <p>Add one product, set a budget and share the link. It takes about a minute.</p>
           <a className="btn" href="/manage">
-            Open your shop
+            Make a drop
           </a>
         </div>
       </section>

@@ -50,7 +50,8 @@ describe("applyOrder", () => {
   it("enforces one side per wallet and the cap", () => {
     let b = applyOrder(emptyBook(usd(10)), "0xA1", 0, usd(20), 4000n).book; // 8 of 10
     expect(() => applyOrder(b, "0xa1", 1, usd(1), 4000n)).toThrow(/one side/);
-    expect(() => applyOrder(b, "0xA2", 0, usd(10), 4000n)).toThrow(/over cap/);
+    expect(() => applyOrder(b, "0xA2", 0, usd(10), 4000n, 4000n)).toThrow(/offer gone/); // insisting on 40% is refused
+    expect(applyOrder(b, "0xA2", 0, usd(10), 4000n).rateBps).toBe(0n); // accepting what is left buys with no rebate
   });
 });
 
@@ -120,6 +121,69 @@ describe("replay invariants under skewed sales", () => {
         expect(s.totalRefunds + s.toSeller).toBe(book.reserve);
       }
       expect(expectedCost(book.liability, odds)).toBeLessThanOrEqual(Number(book.cap));
+    }
+  });
+});
+
+describe("free spots, floor and draw thank you", () => {
+  it("gives five free spots per side on a $100 budget and a $20 product, then the floor", () => {
+    let b = emptyBook(usd(100), 0n, 0n);
+    for (let i = 0; i < 5; i++) {
+      const r = applyOrder(b, `0xa${i}`, 0, usd(20), 10_000n, 10_000n);
+      expect(r.rateBps).toBe(10_000n);
+      b = r.book;
+    }
+    expect(() => applyOrder(b, "0xa5", 0, usd(20), 10_000n, 10_000n)).toThrow(/offer gone/);
+    const sixth = applyOrder(b, "0xa5", 0, usd(20), 10_000n);
+    expect(sixth.rateBps).toBe(0n);
+    expect(sixth.toSeller).toBe(usd(20));
+    expect(sixth.book.reserve).toBe(usd(100));
+    expect(applyOrder(sixth.book, "0xb0", 1, usd(20), 10_000n, 10_000n).rateBps).toBe(10_000n); // the other side still has its spots
+  });
+
+  it("uses the floor when the full offer no longer fits but the floor does", () => {
+    let b = applyOrder(emptyBook(usd(10), 500n, 0n), "0xa1", 0, usd(20), 4000n).book; // 8 of 10
+    const r = applyOrder(b, "0xa2", 0, usd(20), 4000n); // 40% needs 8 more; 5% needs 1
+    expect(r.rateBps).toBe(500n);
+    expect(r.book.liability[0]).toBe(usd(9));
+  });
+
+  it("pays every buyer the thank you on a draw and returns the rest", () => {
+    let b = emptyBook(usd(100), 0n, 500n);
+    b = applyOrder(b, "0xa1", 0, usd(40), 3000n).book;
+    b = applyOrder(b, "0xb1", 1, usd(20), 4000n).book;
+    expect(b.drawLiability).toBe(usd(3));
+    const s = settle(b, "DRAW");
+    expect(s.refunds).toEqual([
+      { buyer: "0xa1", amount: usd(2) },
+      { buyer: "0xb1", amount: usd(1) },
+    ]);
+    expect(s.toSeller).toBe(b.reserve - usd(3));
+  });
+
+  it("holds the budget on all three results across 2,000 lopsided promos", () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let n = 0; n < 2000; n++) {
+      const cap = usd(20 + Math.floor(rand() * 300));
+      let book = emptyBook(cap, BigInt(Math.floor(rand() * 6) * 100), BigInt(Math.floor(rand() * 11) * 100));
+      let paidIn = 0n, toSeller = 0n;
+      const skew = rand();
+      for (let i = 0; i < 40; i++) {
+        const side = (rand() < skew ? 0 : 1) as 0 | 1;
+        const amount = usd(1 + Math.floor(rand() * 60));
+        const r = applyOrder(book, `0x${n}-${i}`, side, amount, BigInt(1000 + Math.floor(rand() * 90) * 100));
+        book = r.book;
+        paidIn += amount;
+        toSeller += r.toSeller;
+      }
+      expect(book.reserve <= cap).toBe(true);
+      expect(paidIn).toBe(toSeller + book.reserve);
+      for (const o of ["A", "B", "DRAW", "VOID"] as const) {
+        const s = settle(book, o);
+        expect(s.totalRefunds <= cap).toBe(true);
+        expect(s.totalRefunds + s.toSeller).toBe(book.reserve);
+      }
     }
   });
 });

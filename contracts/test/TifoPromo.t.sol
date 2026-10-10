@@ -52,7 +52,7 @@ contract TifoPromoTest is Test {
         factory = new TifoFactory(address(usdc), agent, operator);
         kickoff = uint64(block.timestamp + 1 days);
         vm.prank(seller);
-        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, "{}"));
+        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, "{}"));
         for (uint256 i; i < 3; i++) {
             address u = [a1, a2, b1][i];
             usdc.mint(u, 1_000e6);
@@ -63,7 +63,7 @@ contract TifoPromoTest is Test {
 
     function _buy(address u, uint8 side, uint256 amt) internal {
         vm.prank(u);
-        promo.buy(side, amt, bytes32(0));
+        promo.buy(side, amt, bytes32(0), 0);
     }
 
     function test_holdsOnlyTheIncreaseAndForwardsTheRest() public {
@@ -79,10 +79,17 @@ contract TifoPromoTest is Test {
         _buy(a1, 0, 50e6);
         vm.prank(a1);
         vm.expectRevert(TifoPromo.OneSidePerWallet.selector);
-        promo.buy(1, 1e6, bytes32(0));
+        promo.buy(1, 1e6, bytes32(0), 0);
+        // +90 would take the bill to 105 > 100. A buyer who insists on the 30% offer is refused...
         vm.prank(a2);
-        vm.expectRevert(TifoPromo.OverCap.selector);
-        promo.buy(0, 300e6, bytes32(0)); // +90 -> 105 > 100
+        vm.expectRevert(TifoPromo.OfferGone.selector);
+        promo.buy(0, 300e6, bytes32(0), 3000);
+        // ...and one who accepts whatever is left buys with no rebate, so the bill stays under the cap.
+        vm.prank(a2);
+        promo.buy(0, 300e6, bytes32(0), 0);
+        (, , uint256 la, , uint256 r, , ) = promo.book();
+        assertEq(la, 15e6);
+        assertEq(r, 15e6);
     }
 
     function test_agentCannotMoveFundsOrBreakBounds() public {
@@ -96,7 +103,7 @@ contract TifoPromoTest is Test {
         // a rate change applies only to future orders
         vm.prank(agent);
         promo.setRates(1000, 5000, "x");
-        (, , , uint16 locked, ) = promo.orders(0);
+        (, , , uint16 locked, , ) = promo.orders(0);
         assertEq(locked, 3000);
     }
 
@@ -104,7 +111,7 @@ contract TifoPromoTest is Test {
         vm.warp(kickoff);
         vm.prank(a1);
         vm.expectRevert(TifoPromo.Closed.selector);
-        promo.buy(0, 10e6, bytes32(0));
+        promo.buy(0, 10e6, bytes32(0), 0);
     }
 
     function test_fullFlow_Bwins_refundsAndRemainder() public {
@@ -185,7 +192,7 @@ contract Handler is Test {
         vm.startPrank(u);
         usdc.approve(address(promo), amt);
         uint256 sb = usdc.balanceOf(seller);
-        try promo.buy(side, amt, bytes32(0)) {
+        try promo.buy(side, amt, bytes32(0), 0) {
             paidIn += amt;
             toSeller += usdc.balanceOf(seller) - sb;
         } catch {}
@@ -210,16 +217,18 @@ contract TifoPromoInvariant is Test {
         vm.warp(1_000_000);
         usdc = new MockUSDC();
         address agent = makeAddr("agent");
-        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000);
+        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000, 300, 500);
         handler = new Handler(promo, usdc, agent, seller);
         targetContract(address(handler));
     }
 
-    /// The contract always holds exactly the larger refund bill, never more than the cap,
+    /// The contract always holds exactly the largest of the three bills (A wins, B wins, draw), never more than the cap,
     /// and every dollar paid in is either with the seller or in reserve.
     function invariant_reserveCoversEitherResult() public view {
         (, , uint256 la, uint256 lb, uint256 r, uint256 cap, ) = promo.book();
-        assertEq(r, la > lb ? la : lb);
+        uint256 dl = promo.drawLiability();
+        uint256 top = la > lb ? la : lb;
+        assertEq(r, dl > top ? dl : top);
         assertLe(r, cap);
         assertEq(usdc.balanceOf(address(promo)), r);
         assertEq(handler.paidIn(), handler.toSeller() + r);
@@ -247,14 +256,14 @@ contract TifoPermitTest is Test {
         vm.warp(1_000_000);
         PermitUSDC usdc = new PermitUSDC();
         address seller = makeAddr("seller");
-        TifoPromo promo = new TifoPromo(address(usdc), seller, makeAddr("agent"), makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 100e6, 500, 6000, 3000, 4000);
+        TifoPromo promo = new TifoPromo(address(usdc), seller, makeAddr("agent"), makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 100e6, 500, 6000, 3000, 4000, 0, 0);
         (address fan, uint256 pk) = makeAddrAndKey("fan");
         usdc.mint(fan, 20e6);
         uint256 deadline = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, usdc.digest(fan, address(promo), 20e6, 0, deadline));
         address relayer = makeAddr("relayer");
         vm.prank(relayer);
-        promo.buyWithPermit(fan, 0, 20e6, bytes32("order-1"), deadline, v, r, s);
+        promo.buyWithPermit(fan, 0, 20e6, bytes32("order-1"), 0, deadline, v, r, s);
         assertEq(usdc.balanceOf(fan), 0);
         assertEq(usdc.balanceOf(seller), 14e6); // 20 - 6 held
         assertEq(promo.sideOf(fan), 1);
@@ -263,6 +272,6 @@ contract TifoPermitTest is Test {
         usdc.mint(victim, 20e6);
         vm.prank(relayer);
         vm.expectRevert();
-        promo.buyWithPermit(victim, 0, 20e6, bytes32(0), deadline, v, r, s);
+        promo.buyWithPermit(victim, 0, 20e6, bytes32(0), 0, deadline, v, r, s);
     }
 }

@@ -1,10 +1,9 @@
-// The shop's numbers, read from its promo contracts on Arc. Used by the dashboard and the AI manager.
+// The seller's numbers, read from their drop contracts on Arc. Used by the dashboard and the AI manager.
 import "server-only";
 import { erc20Abi, type Address } from "viem";
 import { USDC, publicClient } from "./chain";
 import { shortTeam } from "./matches";
 import { listPromos, promoJournal, promoOrders, promoState, type PromoMeta } from "./promos";
-import { shopOf, type Shop } from "./shops";
 
 export interface DropRow {
   address: Address;
@@ -20,6 +19,7 @@ export interface DropRow {
   refunded: string;
   cap: string;
   bySide: [number, number];
+  extraSalesToBreakEven: number | null; // refunds paid / profit per sale, when the seller gave their profit
 }
 
 export interface FeedItem {
@@ -31,14 +31,14 @@ export interface FeedItem {
 }
 
 export interface ManagerData {
-  shop: Shop | null;
+  name: string | null; // the seller name used on their latest drop
   drops: DropRow[];
   totals: { sales: string; received: string; held: string; refunded: string; fans: number; orders: number; live: number };
   feed: FeedItem[];
 }
 
 export async function managerData(seller: Address): Promise<ManagerData> {
-  const [shop, all] = await Promise.all([shopOf(seller), listPromos()]);
+  const all = await listPromos();
   const mine = all.filter((p) => p.seller.toLowerCase() === seller.toLowerCase());
   const now = Date.now() / 1000;
   const feed: FeedItem[] = [];
@@ -73,13 +73,14 @@ export async function managerData(seller: Address): Promise<ManagerData> {
         refunded: st.refundedTotal.toString(),
         cap: st.cap.toString(),
         bySide: [orders.filter((o) => o.side === 0).length, orders.filter((o) => o.side === 1).length],
+        extraSalesToBreakEven: p.meta.profitUsd && p.meta.profitUsd > 0 ? Math.ceil(Number(st.refundedTotal) / 1e6 / p.meta.profitUsd) : null,
       };
     }),
   );
   const sum = (k: "sales" | "held" | "refunded") => drops.reduce((t, d) => t + BigInt(d[k]), 0n);
   const sales = sum("sales"), held = sum("held"), refunded = sum("refunded");
   return {
-    shop,
+    name: mine[0]?.meta.shop ?? null,
     drops: drops.sort((a, b) => b.closesAt - a.closesAt),
     totals: {
       sales: sales.toString(),

@@ -12,6 +12,7 @@ const Body = z.object({
   side: z.union([z.literal(0), z.literal(1)]),
   amount: z.string().regex(/^\d+$/),
   orderRef: z.string().refine((s) => isHex(s) && s.length === 66),
+  minRateBps: z.number().int().min(0).max(10_000).default(0),
   deadline: z.string().regex(/^\d+$/),
   v: z.number().int(),
   r: z.string().refine((s) => isHex(s) && s.length === 66),
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
       side: p.data.side,
       amount,
       orderRef: p.data.orderRef as `0x${string}`,
+      minRateBps: p.data.minRateBps,
       deadline: BigInt(p.data.deadline),
       v: p.data.v,
       r: p.data.r as `0x${string}`,
@@ -46,13 +48,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ hash, rebalanced });
   } catch (e) {
     const msg = (e as Error).message;
-    const known = /OverCap|OneSidePerWallet|Closed|transfer amount exceeds|insufficient/i.exec(msg)?.[0];
+    const known = /DuplicateOrder|OfferGone|OverCap|OneSidePerWallet|Closed|transfer amount exceeds|insufficient/i.exec(msg)?.[0];
     return NextResponse.json({ error: known ? friendly(known) : "The payment didn't go through. Nothing was charged." }, { status: 400 });
   }
 }
 
 function friendly(code: string) {
-  if (/OverCap/i.test(code)) return "This side is full at the current offer. Try the other side or a smaller amount.";
+  if (/DuplicateOrder/i.test(code)) return "This order already went through. You were charged once.";
+  if (/OfferGone|OverCap/i.test(code)) return "That offer just ran out. Refresh the page to see what is left.";
   if (/OneSide/i.test(code)) return "This wallet already backed the other team in this promo.";
   if (/Closed/i.test(code)) return "This promo closed at kickoff.";
   return "Not enough USDC in this wallet.";

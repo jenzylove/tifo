@@ -10,8 +10,8 @@ interface IERC20 {
 
 /// @title TifoPromo
 /// @notice One two-sided match promo for one seller. Fans of side A get `rate` back if A wins,
-/// fans of side B if B wins; draws and voided matches pay no rebates.
-/// The contract keeps exactly enough USDC to cover the larger of the two refund bills and
+/// fans of side B if B wins; a draw pays every buyer a small thank you (`drawBps`); voided matches pay nothing.
+/// The contract keeps exactly enough USDC to cover the largest of the three possible bills and
 /// forwards everything else to the seller the moment a sale lands. That bill can never exceed `cap`.
 /// The agent can only change offers for future orders, propose a result, and push refunds.
 /// It has no path to move funds anywhere except buyers' refunds and the seller's remainder.
@@ -29,6 +29,7 @@ contract TifoPromo {
         uint8 side; // 0 = A, 1 = B
         uint256 amount;
         uint16 rateBps; // fixed at purchase
+        uint16 drawBps; // thank you on a draw, fixed at purchase
         uint64 at;
     }
 
@@ -54,9 +55,14 @@ contract TifoPromo {
     uint256 public immutable cap;
     uint16 public immutable minBps;
     uint16 public immutable maxBps;
+    uint16 public immutable floorBps; // offer once a side's budget is used up at the current rate
+    uint16 public immutable drawBps; // thank you paid to every buyer on a draw
 
     uint16[2] public rateBps;
     uint256[2] public liability;
+    uint256 public drawLiability;
+    mapping(bytes32 => bool) public usedRef; // an order reference pays once, so a retried checkout cannot charge twice
+    uint256 public salesTotal;
     uint256 public reserve;
 
     Order[] public orders;
@@ -86,6 +92,8 @@ contract TifoPromo {
     error BadSide();
     error OneSidePerWallet();
     error OverCap();
+    error OfferGone();
+    error DuplicateOrder();
     error RateOutOfBounds();
     error TooEarly();
     error AlreadyFinal();
@@ -106,9 +114,12 @@ contract TifoPromo {
         uint16 minBps_,
         uint16 maxBps_,
         uint16 rateA_,
-        uint16 rateB_
+        uint16 rateB_,
+        uint16 floorBps_,
+        uint16 drawBps_
     ) {
         require(minBps_ <= maxBps_ && maxBps_ <= BPS, "bounds");
+        require(floorBps_ <= minBps_ && drawBps_ <= BPS, "floor");
         require(settleNotBefore_ >= closesAt_, "times");
         require(rateA_ >= minBps_ && rateA_ <= maxBps_ && rateB_ >= minBps_ && rateB_ <= maxBps_, "rates");
         usdc = IERC20(usdc_);
@@ -122,17 +133,20 @@ contract TifoPromo {
         minBps = minBps_;
         maxBps = maxBps_;
         rateBps = [rateA_, rateB_];
+        floorBps = floorBps_;
+        drawBps = drawBps_;
     }
 
     // ---------------------------------------------------------------- buying
 
-    function buy(uint8 side, uint256 amount, bytes32 orderRef) external {
-        _buy(msg.sender, msg.sender, side, amount, orderRef);
+    /// @param minRateBps The lowest offer the buyer accepts. If the shown offer is gone by the time this lands, it reverts.
+    function buy(uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) external {
+        _buy(msg.sender, msg.sender, side, amount, orderRef, minRateBps);
     }
 
     /// @notice Pay on behalf of `buyer` (a checkout relayer or a smart-account batch). The rebate goes to `buyer`.
-    function buyFor(address buyer, uint8 side, uint256 amount, bytes32 orderRef) external {
-        _buy(msg.sender, buyer, side, amount, orderRef);
+    function buyFor(address buyer, uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) external {
+        _buy(msg.sender, buyer, side, amount, orderRef, minRateBps);
     }
 
     /// @notice Gasless checkout: the buyer signs a USDC permit, anyone (our relayer) submits it.
@@ -142,6 +156,7 @@ contract TifoPromo {
         uint8 side,
         uint256 amount,
         bytes32 orderRef,
+        uint16 minRateBps,
         uint256 deadline,
         uint8 v,
         bytes32 r,
@@ -149,29 +164,45 @@ contract TifoPromo {
     ) external {
         // A front-run permit leaves the allowance in place, so a failed permit is not fatal.
         try usdc.permit(buyer, address(this), amount, deadline, v, r, s) {} catch {}
-        _buy(buyer, buyer, side, amount, orderRef);
+        _buy(buyer, buyer, side, amount, orderRef, minRateBps);
     }
 
-    function _buy(address payer, address buyer, uint8 side, uint256 amount, bytes32 orderRef) internal {
+    function _buy(address payer, address buyer, uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) internal {
         if (block.timestamp >= closesAt || finalOutcome != Outcome.None || proposed != Outcome.None) revert Closed();
         if (side > 1) revert BadSide();
         require(amount > 0 && buyer != address(0), "amount");
         uint8 s = sideOf[buyer];
         if (s != 0 && s != side + 1) revert OneSidePerWallet();
+        if (orderRef != bytes32(0)) {
+            if (usedRef[orderRef]) revert DuplicateOrder();
+            usedRef[orderRef] = true;
+        }
 
-        uint16 rate = rateBps[side];
-        uint256 refundIfWins = (amount * rate) / BPS;
+        // The offer steps down when this side's budget is used up: the current rate, then the floor, then no rebate.
+        // A sale is never refused for budget, and the bill never passes the cap.
         uint256[2] memory l = liability;
-        l[side] += refundIfWins;
+        uint256 room = cap > l[side] ? cap - l[side] : 0;
+        uint16 rate = rateBps[side];
+        if ((amount * rate) / BPS > room) rate = floorBps;
+        if ((amount * rate) / BPS > room) rate = 0;
+        if (rate < minRateBps) revert OfferGone();
+        uint256 dl = drawLiability;
+        uint16 dRate = drawBps;
+        if (dl + (amount * dRate) / BPS > cap) dRate = 0;
+
+        l[side] += (amount * rate) / BPS;
+        dl += (amount * dRate) / BPS;
         uint256 newReserve = l[0] > l[1] ? l[0] : l[1];
-        if (newReserve > cap) revert OverCap();
+        if (dl > newReserve) newReserve = dl;
         uint256 held = newReserve - reserve;
         uint256 toSeller = amount - held;
 
         liability = l;
+        drawLiability = dl;
         reserve = newReserve;
+        salesTotal += amount;
         sideOf[buyer] = side + 1;
-        orders.push(Order(buyer, side, amount, rate, uint64(block.timestamp)));
+        orders.push(Order(buyer, side, amount, rate, dRate, uint64(block.timestamp)));
 
         _pull(payer, amount);
         if (toSeller > 0) _send(seller, toSeller);
@@ -247,7 +278,7 @@ contract TifoPromo {
 
     // ---------------------------------------------------------------- settlement
 
-    /// @notice Push refunds to the winning side. Anyone can call; the agent calls it the moment the result is final.
+    /// @notice Push refunds to the winning side, or the thank you to everyone on a draw. Anyone can call; the agent calls it the moment the result is final.
     function payRefunds(uint256 maxCount) external returns (uint256 paid) {
         Outcome o = finalOutcome;
         if (o == Outcome.None) revert NotFinal();
@@ -267,6 +298,17 @@ contract TifoPromo {
                 emit Refunded(ord.buyer, amt);
                 paid++;
             }
+        } else if (o == Outcome.Draw) {
+            for (; i < end; i++) {
+                Order storage ord = orders[i];
+                uint256 amt = (ord.amount * ord.drawBps) / BPS;
+                if (amt == 0) continue;
+                reserve -= amt;
+                refundedTotal += amt;
+                _send(ord.buyer, amt);
+                emit Refunded(ord.buyer, amt);
+                paid++;
+            }
         } else {
             i = end;
         }
@@ -275,7 +317,7 @@ contract TifoPromo {
 
     function releaseRemainder() external {
         if (finalOutcome == Outcome.None) revert NotFinal();
-        if (refundCursor < orders.length && (finalOutcome == Outcome.A || finalOutcome == Outcome.B)) revert RefundsPending();
+        if (refundCursor < orders.length && finalOutcome != Outcome.Void) revert RefundsPending();
         require(!remainderReleased, "released");
         remainderReleased = true;
         uint256 amt = reserve;

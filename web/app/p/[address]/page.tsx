@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import AutoRefresh from "@/components/AutoRefresh";
 import Checkout from "@/components/Checkout";
 import Countdown from "@/components/Countdown";
+import Purchase from "@/components/Purchase";
 import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
+import { offerLabel } from "@/lib/precheck";
 import { shortTeam } from "@/lib/matches";
-import { shopOf } from "@/lib/shops";
 import { teamColors } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +17,9 @@ async function load(address: string) {
   if (!isAddress(address)) return null;
   const p = (await listPromos()).find((x) => x.address.toLowerCase() === address.toLowerCase());
   if (!p) return null;
-  const [st, shop] = await Promise.all([promoState(p.address as Address), shopOf(p.seller).catch(() => null)]);
+  const st = await promoState(p.address as Address);
   const [orders, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
-  return { p, st, orders, journal, shop };
+  return { p, st, orders, journal };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ address: string }> }): Promise<Metadata> {
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<{ address: 
   const A = shortTeam(d.p.meta.teamA), B = shortTeam(d.p.meta.teamB);
   return {
     title: `${d.p.meta.product} · ${A} v ${B} drop · ${d.p.meta.shop}`,
-    description: `${d.p.meta.product}, $${d.p.meta.priceUsd}. ${A} fans get ${d.st.rates[0] / 100}% back if ${A} win, ${B} fans get ${d.st.rates[1] / 100}% back if ${B} win.`,
+    description: `${d.p.meta.product}, $${d.p.meta.priceUsd}. ${offerLabel(d.st.rates[0], A)}. ${offerLabel(d.st.rates[1], B)}.`,
   };
 }
 
@@ -38,7 +39,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const { address } = await params;
   const d = await load(address);
   if (!d) notFound();
-  const { p, st, orders, journal, shop } = d;
+  const { p, st, orders, journal } = d;
   const A = shortTeam(p.meta.teamA), B = shortTeam(p.meta.teamB);
   const team: [string, string] = [A, B];
   const colors = teamColors(p.meta.teamA, p.meta.teamB) as [string, string];
@@ -49,10 +50,15 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const fans = [0, 1].map((s) => orders.filter((o) => o.side === s));
   const owedIfWin = [0, 1].map((s) => fans[s].reduce((t, o) => t + o.refund, 0n));
   const phase = settled ? "settled" : st.proposed !== "None" ? "result" : closed ? "live" : "open";
-  const shopName = shop?.profile.name ?? p.meta.shop;
-  const product = shop?.profile.products.find((x) => x.id === p.meta.productId);
-  const description = product?.description ?? p.meta.description;
-  const image = product?.image ?? p.meta.image;
+  const shopName = p.meta.shop;
+  const description = p.meta.description;
+  const image = p.meta.image;
+  const digital = !!p.meta.delivery;
+  const free = Math.max(...st.rates) >= 10_000;
+  // Free spots left on each side: what is left of the budget, in whole products.
+  const priceUnits = BigInt(Math.round(p.meta.priceUsd * 1e6));
+  const spots = [0, 1].map((s) => (free && priceUnits > 0n ? Number((st.cap > st.liability[s] ? st.cap - st.liability[s] : 0n) / priceUnits) : null));
+  const drawLine = st.drawBps > 0 ? `On a draw every buyer gets ${st.drawBps / 100}% back as a thank you.` : "A draw pays no rebate.";
   const kick = new Date(p.meta.kickoff);
 
   const feed = [
@@ -72,7 +78,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
                 {team[winner]} won. {fans[winner].length} {team[winner]} {fans[winner].length === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
               </>
             ) : st.finalOutcome === "Draw" ? (
-              "A draw. No rebates this time."
+              st.refundedTotal > 0n ? `A draw. Every buyer got a thank you: ${usd(st.refundedTotal)} back in total.` : "A draw. No rebates this time."
             ) : (
               "Match voided. No rebates, and the set-aside went back to the shop."
             )}
@@ -80,11 +86,10 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </section>
       )}
 
-      <a className="crumb" href={shop ? `/s/${shop.handle}` : p.meta.link ?? "#"}>
-        <span className="mini-logo">{shop?.profile.logo ? <img src={shop.profile.logo} alt="" /> : shopName.slice(0, 1)}</span>
+      <div className="crumb">
+        <span className="mini-logo">{shopName.slice(0, 1)}</span>
         <b>{shopName}</b>
-        {shop && <span>Visit shop →</span>}
-      </a>
+      </div>
 
       <div className="pdp">
         <div className="gallery">
@@ -116,7 +121,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
 
         <div className="info">
-          <span className="eyebrow">Matchday promo · up to {Math.max(...st.rates) / 100}% back</span>
+          <span className="eyebrow">Matchday promo · {free ? "free if your team wins" : `up to ${Math.max(...st.rates) / 100}% back`}</span>
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
           {description && <p className="desc">{description}</p>}
@@ -127,11 +132,16 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               teams={team}
               colors={colors}
               rates={st.rates}
+              liability={[st.liability[0].toString(), st.liability[1].toString()]}
+              cap={st.cap.toString()}
+              floorBps={st.floorBps}
+              drawBps={st.drawBps}
               priceUsd={p.meta.priceUsd}
               product={p.meta.product}
               shop={shopName}
               closed={closed}
-              whatsapp={shop?.profile.links?.whatsapp}
+              digital={digital}
+              contact={p.meta.contact}
             />
           ) : (
             <div className="buybox">
@@ -139,19 +149,15 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
                 {[0, 1].map((s) => (
                   <div key={s} className={`side ${winner === s ? "on" : ""}`} style={{ ["--c" as string]: colors[s] }}>
                     <span className="t">{team[s]}</span>
-                    <span className="pct">{st.rates[s] / 100}%</span>
+                    <span className="pct">{st.rates[s] >= 10_000 ? "Free" : `${st.rates[s] / 100}%`}</span>
                     <span className="back">{fans[s].length} {fans[s].length === 1 ? "order" : "orders"}</span>
                   </div>
                 ))}
               </div>
               <p className="fine">Orders closed at kickoff. {phase === "result" ? "Refunds go out after a 15-minute check." : ""}</p>
-              {shop && (
-                <a className="btn ghost" href={`/s/${shop.handle}`}>
-                  See more from {shopName}
-                </a>
-              )}
             </div>
           )}
+          {digital && <Purchase promo={p.address} product={p.meta.product} />}
         </div>
       </div>
 
@@ -165,7 +171,8 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               <header>
                 <b>{team[s]}</b>
                 <span>
-                  {fans[s].length} {fans[s].length === 1 ? "order" : "orders"} · {st.rates[s] / 100}% back now
+                  {fans[s].length} {fans[s].length === 1 ? "order" : "orders"} ·{" "}
+                  {spots[s] !== null ? (phase === "open" ? `${spots[s]} free ${spots[s] === 1 ? "spot" : "spots"} left` : "free if they win") : `${st.rates[s] / 100}% back now`}
                 </span>
               </header>
               <div className="tifo">
@@ -188,7 +195,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <div>
             <b>1</b>
             <h4>Buy at full price</h4>
-            <p>Choose which result your discount rides on. Your % is locked the moment you buy, and {shopName} delivers as usual.</p>
+            <p>Choose which result your discount rides on. Your % is locked the moment you buy. {digital ? "Your purchase opens on this page as soon as you pay." : `${shopName} delivers as usual.`}</p>
           </div>
           <div>
             <b>2</b>
@@ -198,7 +205,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <div>
             <b>3</b>
             <h4>Money back after full time</h4>
-            <p>When two of three result sources agree, winning fans are refunded in USDC. A draw pays no rebate.</p>
+            <p>When two of three result sources agree, winning fans are refunded in USDC. {drawLine}</p>
           </div>
         </div>
       </section>

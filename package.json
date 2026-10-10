@@ -1,6 +1,8 @@
 {
   "name": "tifo",
   "private": true,
+  "description": "Tifo: an AI sales manager with a budget it has to earn back. Built for the Tameion Agents Hackathon (Canteen x Circle) on Arc.",
+  "homepage": "https://tameion.thecanteenapp.com",
   "workspaces": [
     "packages/*",
     "web"

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://tifo.vercel.app"),
   title: "Tifo · the AI manager that turns match day into sales",
   description:
-    "An AI business manager for small shops. It runs match drops where both teams' fans buy at full price and the winners get money back in USDC, keeps your worst case capped, and watches your sales and cash.",
+    "An AI sales manager with a budget it has to earn back. One link per drop: both teams' fans buy at full price, the winners get money back in USDC, and it never costs you more than the budget you set.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav>
               <a href="/drops" className="hide-sm">Live drops</a>
               <a href="/proof" className="hide-sm">Proof</a>
-              <a href="/manage" className="btn sm">For shops</a>
+              <a href="/manage" className="btn sm">Make a drop</a>
             </nav>
           </div>
         </header>
@@ -39,7 +39,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               you bought either way, so it&apos;s a discount, not a bet.
             </p>
             <p>
-              <a href="/drops">Live drops</a> · <a href="/manage">Run your shop</a> · <a href="/proof">Proof on chain</a>
+              <a href="/drops">Live drops</a> · <a href="/manage">Make a drop</a> · <a href="/proof">Proof on chain</a>
+            </p>
+            <p>
+              Built for the{" "}
+              <a href="https://tameion.thecanteenapp.com" target="_blank" rel="noreferrer">
+                Tameion Agents Hackathon
+              </a>{" "}
+              by Canteen and Circle.
             </p>
           </div>
         </footer>

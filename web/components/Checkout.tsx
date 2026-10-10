@@ -1,31 +1,43 @@
 "use client";
 // The buy box on a drop page: the product at full price, plus a promo that pays back a % if the chosen team wins.
 import { useEffect, useState } from "react";
-import { keccak256, parseSignature, toBytes, type Address } from "viem";
+import { keccak256, parseSignature, toHex, type Address, type Hex } from "viem";
 import { erc20Abi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
-import { precheck, walletSide } from "@/lib/precheck";
+import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { connect } from "@/lib/wallet";
+import Purchase, { saveOrder } from "./Purchase";
 
 interface Props {
   promo: Address;
   teams: [string, string];
   colors: [string, string];
   rates: [number, number];
+  liability: [string, string]; // what each side is already owed if it wins, in USDC units
+  cap: string;
+  floorBps: number;
+  drawBps: number;
   priceUsd: number;
   product: string;
   shop: string;
   closed: boolean;
-  whatsapp?: string; // shop's WhatsApp, for sending the order details
+  digital: boolean; // the product opens on this page after payment
+  contact?: string; // for a physical product: where the buyer sends delivery details
 }
 
-type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: string; side: 0 | 1; qty: number } | { kind: "error"; text: string };
+type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
-export default function Checkout({ promo, teams, colors, rates, priceUsd, product, shop, closed, whatsapp }: Props) {
+/** The order reference on chain is the hash of a secret kept in this browser. Showing the secret later proves the order. */
+function newOrder(): { secret: Hex; orderRef: Hex } {
+  const secret = toHex(crypto.getRandomValues(new Uint8Array(32)));
+  return { secret, orderRef: keccak256(secret) };
+}
+
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, priceUsd, product, shop, closed, digital, contact }: Props) {
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
   const [qty, setQty] = useState(1);
@@ -35,7 +47,7 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
   const [copied, setCopied] = useState(false);
   const [locked, setLocked] = useState<0 | 1 | null>(null); // the offer this wallet already took
   const [bio, setBio] = useState("Face ID or fingerprint");
-  const [tap, setTap] = useState<null | (() => Promise<`0x${string}`>)>(null);
+  const [tap, setTap] = useState<null | { go: () => Promise<Hex>; secret: Hex }>(null);
 
   useEffect(() => {
     setHasSaved(!!savedCredential());
@@ -65,6 +77,8 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
 
   const total = priceUsd * qty;
   const amount = BigInt(Math.round(total * 1e6));
+  // What this order would get right now, after spots already taken. The contract makes the same step down.
+  const rates = [0, 1].map((s) => stepDown(amount, listed[s], BigInt(liability[s]), BigInt(cap), floorBps)) as [number, number];
   const back = (s: 0 | 1) => (total * rates[s]) / 10_000;
   const enough = balance !== null && balance >= amount;
   const busy = status.kind === "working";
@@ -83,22 +97,27 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
     if (!acct || side === null) return;
     try {
       setStatus({ kind: "working", text: "Checking the promo…" });
-      const why = await precheck(promo, acct.address, side, amount, teams);
-      if (why) return setStatus({ kind: "error", text: why });
+      const pre = await precheck(promo, acct.address, side, amount, teams);
+      if ("error" in pre) return setStatus({ kind: "error", text: pre.error });
+      if (pre.rateBps < rates[side]) return setStatus({ kind: "error", text: GONE });
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
-      done(await buyWithCircle(acct, promo, side, amount));
-    } catch (e) {
-      if (e instanceof NeedsTap) {
-        setTap(() => e.go);
+      const { secret, orderRef } = newOrder();
+      try {
+        done(await buyWithCircle(acct, promo, side, amount, orderRef, rates[side]), secret);
+      } catch (e) {
+        if (!(e instanceof NeedsTap)) throw e;
+        setTap({ go: e.go, secret });
         return setStatus({ kind: "idle" });
       }
+    } catch (e) {
       setStatus({ kind: "error", text: friendly((e as Error).message) });
     }
   }
 
-  function done(hash: `0x${string}`) {
+  function done(hash: Hex, secret: Hex) {
     setTap(null);
-    setStatus({ kind: "done", hash, side: side!, qty });
+    saveOrder(promo, { hash, secret });
+    setStatus({ kind: "done", hash, secret, side: side!, qty });
     fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
   }
 
@@ -106,7 +125,7 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
     if (!tap) return;
     try {
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
-      done(await tap());
+      done(await tap.go(), tap.secret);
     } catch (e) {
       setTap(null);
       setStatus({ kind: "error", text: friendly((e as Error).message) });
@@ -120,8 +139,9 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       const { address, client } = await connect();
       const bal = (await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] })) as bigint;
       if (bal < amount) throw new Error(`This wallet has ${money(Number(bal) / 1e6)} USDC on Arc. You need ${money(total)}.`);
-      const why = await precheck(promo, address, side, amount, teams);
-      if (why) throw new Error(why);
+      const pre = await precheck(promo, address, side, amount, teams);
+      if ("error" in pre) throw new Error(pre.error);
+      if (pre.rateBps < rates[side]) throw new Error(GONE);
       const nonce = (await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "nonces", args: [address] })) as bigint;
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
       setStatus({ kind: "working", text: "Sign to pay. No gas needed." });
@@ -142,6 +162,7 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       });
       const { r, s, v, yParity } = parseSignature(sig);
       setStatus({ kind: "working", text: "Paying on Arc…" });
+      const { secret, orderRef } = newOrder();
       const res = await fetch("/api/relay", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -150,7 +171,8 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
           buyer: address,
           side,
           amount: amount.toString(),
-          orderRef: keccak256(toBytes(`${promo}:${address}:${Date.now()}`)),
+          orderRef,
+          minRateBps: rates[side],
           deadline: deadline.toString(),
           v: Number(v ?? BigInt(27 + (yParity ?? 0))),
           r,
@@ -159,7 +181,8 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Payment failed");
-      setStatus({ kind: "done", hash: j.hash, side, qty });
+      saveOrder(promo, { hash: j.hash, secret });
+      setStatus({ kind: "done", hash: j.hash, secret, side, qty });
     } catch (e) {
       setStatus({ kind: "error", text: friendly((e as Error).message) });
     }
@@ -168,13 +191,17 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
   if (status.kind === "done") {
     const t = teams[status.side];
     const msg = `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
-    const wa = whatsapp ? (/^https?:/.test(whatsapp) ? whatsapp : `https://wa.me/${whatsapp.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
+    const wa = contact ? (/^https?:/.test(contact) ? contact : `https://wa.me/${contact.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
     return (
       <div className="done">
         <b>Order paid.</b>
         <p className="fine">
-          Your promo is locked: if {t} win, {money(back(status.side))} comes back to this wallet after full time.
+          {back(status.side) > 0
+            ? `Your promo is locked: if ${t} win, ${money(back(status.side))} comes back to this wallet after full time.`
+            : "Your order is in."}
+          {drawBps > 0 ? ` On a draw you get ${money((total * drawBps) / 10_000)} back as a thank you.` : ""}
         </p>
+        {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {wa && (
             <a className="btn sm" href={wa} target="_blank" rel="noreferrer">
@@ -201,9 +228,9 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
               <button key={s} className={`offer ${side === s ? "on" : ""}`} style={{ ["--c" as string]: colors[s] }} onClick={() => setSide(s)} disabled={closed || off}>
                 <span className="radio" aria-hidden />
                 <span className="txt">
-                  Get <b>{rates[s] / 100}% back</b> if {teams[s]} win
+                  <b>{offerLabel(rates[s], teams[s])}</b>
                 </span>
-                <span className="amt">{money(back(s))}</span>
+                <span className="amt">{rates[s] > 0 ? money(back(s)) : ""}</span>
               </button>
             );
           })}
@@ -211,7 +238,7 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
         <p className="fine">
           {locked !== null
             ? `This wallet already took the ${teams[locked]} offer, so more orders ride on ${teams[locked]} too.`
-            : "Choose the result your discount rides on. A draw pays no rebate, and you keep the product either way."}
+            : `Choose the result your discount rides on. ${drawBps > 0 ? `On a draw everyone gets ${drawBps / 100}% back` : "A draw pays no rebate"}, and you keep the product either way.`}
         </p>
       </div>
 
@@ -308,7 +335,11 @@ export default function Checkout({ promo, teams, colors, rates, priceUsd, produc
   );
 }
 
+const GONE = "That offer just ran out. Refresh the page to see what is left.";
+
 function friendly(msg: string) {
+  if (/OfferGone/i.test(msg)) return GONE;
+  if (/DuplicateOrder/i.test(msg)) return "This order already went through. You were charged once.";
   if (/OverCap/i.test(msg)) return "The shop's budget for this offer is used up at this size. Try fewer items or the other offer.";
   if (/OneSidePerWallet/i.test(msg)) return "This wallet already took the other offer in this promo.";
   if (/Closed/i.test(msg)) return "This promo closed at kickoff.";

@@ -1,5 +1,6 @@
 import { shortTeam } from "@/lib/matches";
 import type { PromoSummary } from "@/lib/promos";
+import { offerLabel } from "@/lib/precheck";
 import { inkOn, teamColors } from "@/lib/teams";
 
 export interface DropCardData {
@@ -35,8 +36,8 @@ export default function DropCard({ p, rates, phase, fans, note }: DropCardData) 
           {A} v {B} · <span className="price">${p.meta.priceUsd.toFixed(2)}</span>
         </span>
         <div className="offers">
-          <span style={{ background: ca, color: inkOn(ca) }}>{rates[0] / 100}% back if {A} win</span>
-          <span style={{ background: cb, color: inkOn(cb) }}>{rates[1] / 100}% back if {B} win</span>
+          <span style={{ background: ca, color: inkOn(ca) }}>{offerLabel(rates[0], A)}</span>
+          <span style={{ background: cb, color: inkOn(cb) }}>{offerLabel(rates[1], B)}</span>
         </div>
         {note ? <span className="fine">{note}</span> : fans > 0 ? <span className="fine">{fans} {fans === 1 ? "order" : "orders"} so far</span> : null}
       </div>
