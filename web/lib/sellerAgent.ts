@@ -8,7 +8,8 @@ import { initialRates } from "@tifo/core";
 import { matchBySlug, upcomingMatches, shortTeam, type Match } from "./matches";
 
 const client = new Anthropic();
-export const MODEL = "claude-opus-5-5";
+import { MODEL } from "./model";
+export { MODEL };
 
 export interface Proposal {
   slug: string;

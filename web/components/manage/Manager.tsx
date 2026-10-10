@@ -10,9 +10,10 @@ import type { Brief } from "@/lib/brief";
 import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
+import Autopilot from "./Autopilot";
 import Launch, { type Prefill } from "./Launch";
 
-type Tab = "overview" | "drops" | "money";
+type Tab = "overview" | "drops" | "autopilot" | "money";
 const $ = (units: string | bigint | number) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Manager() {
@@ -64,12 +65,14 @@ export default function Manager() {
           [
             ["overview", "Overview"],
             ["drops", "Match drops"],
+            ["autopilot", "Autopilot"],
             ["money", "Money"],
           ] as [Tab, string][]
         ).map(([t, l]) => (
           <button key={t} className={view === t ? "on" : ""} onClick={() => go(t)}>
             {l}
             {t === "drops" && data.totals.live > 0 && <span className="pill live">{data.totals.live}</span>}
+            {t === "autopilot" && (data.account?.proposals.filter((p) => p.status === "waiting").length ?? 0) > 0 && <span className="pill ac">1</span>}
           </button>
         ))}
       </nav>
@@ -93,13 +96,14 @@ export default function Manager() {
                 <p className="muted">One product, one match, one link. The offers come from live odds, and your budget is enforced on chain.</p>
               </div>
             </div>
-            <Launch account={acct} sellerName={data.name} prefill={prefill} onLaunched={load} />
+            <Launch account={acct} sellerName={data.name} tifoAccount={data.account?.address} prefill={prefill} onLaunched={load} />
             <div className="panel" style={{ marginTop: 18 }}>
               <h3>All drops</h3>
               <DropList data={data} />
             </div>
           </>
         )}
+        {view === "autopilot" && <Autopilot data={data} acct={acct} reload={load} />}
         {view === "money" && <Money data={data} />}
       </div>
     </div>
@@ -257,6 +261,8 @@ function DropList({ data, limit }: { data: ManagerData; limit?: number }) {
               <b>{d.meta.product}</b>
               <span>
                 {shortTeam(d.meta.teamA)} v {shortTeam(d.meta.teamB)} · {d.orders} {d.orders === 1 ? "order" : "orders"} {status}
+                {d.byAgent && <span className="pill">Opened by your manager</span>}
+                {!d.reconciled && <span className="pill live">Books don&apos;t match the chain</span>}
               </span>
             </div>
             <div className="r">
@@ -312,7 +318,10 @@ function Money({ data }: { data: ManagerData }) {
       <div className="mgr-head">
         <div>
           <h1>Money</h1>
-          <p className="muted">Your sales land in this Circle wallet as USDC on Arc. Send them to your exchange account to cash out.</p>
+          <p className="muted">
+            Your sales land as USDC on Arc{data.account ? ", in your account on the Autopilot tab. Move them here to cash out" : " in this Circle wallet"}. Send them to your exchange
+            account to cash out.
+          </p>
         </div>
       </div>
       <div className="two" style={{ marginTop: 0 }}>
@@ -377,6 +386,10 @@ function Money({ data }: { data: ManagerData }) {
           <div className="mini-row">
             <span>Refunded to winning fans</span>
             <b>{$(t.refunded)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Books checked against the chain</span>
+            <b>{data.drops.every((d) => d.reconciled) ? `${data.drops.length} of ${data.drops.length} drops match to the cent` : "a drop does not match"}</b>
           </div>
           <div className="mini-row">
             <span>What drops cost you so far</span>

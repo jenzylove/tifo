@@ -4,6 +4,7 @@ import { erc20Abi, type Address } from "viem";
 import { USDC, publicClient } from "./chain";
 import { shortTeam } from "./matches";
 import { listPromos, promoJournal, promoOrders, promoState, type PromoMeta } from "./promos";
+import { accountOf, accountState, type AccountState } from "./tifoAccount";
 
 export interface DropRow {
   address: Address;
@@ -19,6 +20,8 @@ export interface DropRow {
   refunded: string;
   cap: string;
   bySide: [number, number];
+  byAgent: boolean; // opened by the agent inside the seller's rule
+  reconciled: boolean; // the contract holds exactly what the book says it owes, to the cent
   extraSalesToBreakEven: number | null; // refunds paid / profit per sale, when the seller gave their profit
 }
 
@@ -32,14 +35,17 @@ export interface FeedItem {
 
 export interface ManagerData {
   name: string | null; // the seller name used on their latest drop
+  account: AccountState | null; // the seller's standing rule for the agent, if they opened one
   drops: DropRow[];
   totals: { sales: string; received: string; held: string; refunded: string; fans: number; orders: number; live: number };
   feed: FeedItem[];
 }
 
 export async function managerData(seller: Address): Promise<ManagerData> {
-  const all = await listPromos();
-  const mine = all.filter((p) => p.seller.toLowerCase() === seller.toLowerCase());
+  const [all, accountAddress] = await Promise.all([listPromos(), accountOf(seller).catch(() => null)]);
+  const owners = [seller.toLowerCase(), accountAddress?.toLowerCase()];
+  const mine = all.filter((p) => owners.includes(p.seller.toLowerCase()));
+  const account = accountAddress ? await accountState(accountAddress) : null;
   const now = Date.now() / 1000;
   const feed: FeedItem[] = [];
   const buyers = new Set<string>();
@@ -73,6 +79,8 @@ export async function managerData(seller: Address): Promise<ManagerData> {
         refunded: st.refundedTotal.toString(),
         cap: st.cap.toString(),
         bySide: [orders.filter((o) => o.side === 0).length, orders.filter((o) => o.side === 1).length],
+        byAgent: !!p.meta.byAgent,
+        reconciled: held === st.reserve,
         extraSalesToBreakEven: p.meta.profitUsd && p.meta.profitUsd > 0 ? Math.ceil(Number(st.refundedTotal) / 1e6 / p.meta.profitUsd) : null,
       };
     }),
@@ -81,6 +89,7 @@ export async function managerData(seller: Address): Promise<ManagerData> {
   const sales = sum("sales"), held = sum("held"), refunded = sum("refunded");
   return {
     name: mine[0]?.meta.shop ?? null,
+    account,
     drops: drops.sort((a, b) => b.closesAt - a.closesAt),
     totals: {
       sales: sales.toString(),

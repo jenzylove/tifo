@@ -268,6 +268,8 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
 function label(kind: string, text: string, A: string, B: string) {
   const out = (o: string) => (o === "A" ? `${A} won` : o === "B" ? `${B} won` : o === "Draw" ? "draw" : o === "Void" ? "voided" : o);
   switch (kind) {
+    case "opened":
+      return `Manager opened this drop. ${text}`;
     case "rates":
       return `Manager moved the offers. ${text}`;
     case "result":

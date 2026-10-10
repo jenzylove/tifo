@@ -6,7 +6,8 @@ import QRCode from "qrcode";
 import { keccak256, toBytes } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
 import { initialRates, type Odds } from "@tifo/core";
-import { biometric, createPromoWithCircle } from "@/lib/circleWallet";
+import type { Address } from "viem";
+import { biometric, createPromoWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 import { shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
@@ -35,7 +36,7 @@ const MIN = 500, MAX = 6000, FULL = 10_000;
 const DRAW = 500; // on a draw every buyer gets 5% back as a thank you
 const NAME_KEY = "tifo.seller.name";
 
-export default function Launch({ account, sellerName, prefill, onLaunched }: { account: SmartAccount; sellerName: string | null; prefill?: Prefill; onLaunched: () => void }) {
+export default function Launch({ account, sellerName, tifoAccount, prefill, onLaunched }: { account: SmartAccount; sellerName: string | null; tifoAccount?: Address; prefill?: Prefill; onLaunched: () => void }) {
   const [matches, setMatches] = useState<ApiMatch[] | null>(null);
   const [name, setName] = useState(sellerName ?? "");
   const [product, setProduct] = useState("");
@@ -105,9 +106,11 @@ export default function Launch({ account, sellerName, prefill, onLaunched }: { a
         shape, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: free ? 0 : discount * 100,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
-      const { promo } = await createPromoWithCircle(account, [
+      const args: NonNullable<CreatePromoArgs> = [
         keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), lo, hi, rates[0], rates[1], 0, DRAW, meta,
-      ]);
+      ];
+      // With autopilot on, the drop opens through the seller's account so its sales land there and count toward the week.
+      const { promo } = tifoAccount ? await openViaAccountWithCircle(account, tifoAccount, args) : await createPromoWithCircle(account, args);
       setStatus({ kind: "done", promo });
       onLaunched();
     } catch (e) {

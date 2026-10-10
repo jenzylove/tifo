@@ -19,6 +19,8 @@ export interface PromoMeta {
   description?: string;
   profitUsd?: number; // what the seller keeps per sale before the promo, for the break-even line
   delivery?: string; // sealed; opened only for a paid order (see lib/delivery.ts)
+  byAgent?: boolean; // the agent opened this drop by itself, inside the seller's rule
+  reason?: string; // why the agent chose this match and these terms
   contact?: string; // where a buyer sends delivery details for a physical product
   shape?: "percent" | "free"; // "free": a full refund for the first buyers on each side
   baseRates: [number, number];

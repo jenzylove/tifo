@@ -4,8 +4,10 @@ import "server-only";
 import { createWalletClient, http, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { rebalance } from "@tifo/core";
-import { tifoPromoAbi } from "./abi";
-import { chain, publicClient } from "./chain";
+import { tifoAccountAbi, tifoPromoAbi } from "./abi";
+import { planFor, type Plan } from "./autopilot";
+import { accountOf } from "./tifoAccount";
+import { FACTORY, chain, publicClient } from "./chain";
 import { matchBySlug } from "./matches";
 import { checkResult } from "./results";
 import { listPromos, promoState, type PromoSummary } from "./promos";
@@ -116,4 +118,51 @@ export async function tick(): Promise<TickResult[]> {
     }
   }
   return out;
+}
+
+/**
+ * Once every six hours per seller, the agent decides whether to run a drop. Inside the seller's rule it opens
+ * the drop itself; outside it, the contract refuses and the agent can only leave a proposal for the seller.
+ * The schedule is a pure function of the clock and the address, so parallel or repeated ticks agree.
+ */
+export async function autopilotTick(force?: Address): Promise<TickResult[]> {
+  const out: TickResult[] = [];
+  const slot = Math.floor(Date.now() / 600_000); // the scheduler runs every ten minutes
+  const sellers = [...new Set((await listPromos()).map((p) => p.seller.toLowerCase() as Address))];
+  for (const seller of sellers) {
+    try {
+      // A drop opened through an account has the account as its seller; the owner is who we plan for.
+      const owner = (await publicClient.readContract({ address: seller, abi: tifoAccountAbi, functionName: "owner" }).catch(() => null)) as Address | null;
+      if (!owner || (await accountOf(owner))?.toLowerCase() !== seller) continue;
+      if (force ? force.toLowerCase() !== owner.toLowerCase() : slot % 36 !== Number(BigInt(owner) % 36n)) continue;
+      out.push(await act(await planFor(owner, true)));
+    } catch (e) {
+      out.push({ promo: seller, action: `autopilot error: ${(e as Error).message.slice(0, 200)}` });
+    }
+  }
+  return out;
+}
+
+async function act(plan: Plan): Promise<TickResult> {
+  if (plan.act === "skip" || !plan.account || !plan.terms || !plan.meta) return { promo: (plan.account ?? FACTORY) as Address, action: `autopilot skip: ${plan.reason}` };
+  const w = wallet();
+  const call = async (functionName: "openDeal" | "propose") => {
+    const { request } = await publicClient.simulateContract({ account: w.account, address: plan.account!, abi: tifoAccountAbi, functionName, args: [plan.terms!, plan.meta!, plan.reason] });
+    const hash = await w.writeContract(request);
+    return publicClient.waitForTransactionReceipt({ hash });
+  };
+  if (plan.act === "open") {
+    try {
+      const receipt = await call("openDeal");
+      const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
+      const promo = (log?.topics[1] ? `0x${log.topics[1].slice(26)}` : plan.account) as Address;
+      if (log?.topics[1]) await send(promo, "note", ["opened", plan.reason]);
+      return { promo, action: `autopilot opened ${plan.match} for $${plan.capUsd}`, hash: receipt.transactionHash };
+    } catch (e) {
+      // The rule can change between the plan and the send. The contract is the judge: fall back to a proposal.
+      if (!/OverLimit/.test(String(e))) throw e;
+    }
+  }
+  const receipt = await call("propose");
+  return { promo: plan.account, action: `autopilot proposed ${plan.match} for $${plan.capUsd}`, hash: receipt.transactionHash };
 }

@@ -14,7 +14,7 @@ import {
   toPasskeyTransport,
 } from "@circle-fin/modular-wallets-core";
 import { base64UrlToBytes, bytesToCryptoKey, cryptoKeyToBytes, parseCredentialPublicKey, parsePublicKey, serializePublicKey } from "webauthn-p256";
-import { tifoFactoryAbi, tifoPromoAbi } from "./abi";
+import { tifoAccountAbi, tifoFactoryAbi, tifoPromoAbi } from "./abi";
 import { FACTORY, NETWORK, USDC, chain } from "./chain";
 
 const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
@@ -229,4 +229,43 @@ export async function createPromoWithCircle(account: SmartAccount, args: NonNull
 export async function sendUsdcWithCircle(account: SmartAccount, to: Address, amount: bigint): Promise<Hex> {
   const data = encodeFunctionData({ abi: erc20Abi, functionName: "transfer", args: [to, amount] });
   return sendAs(account, [{ to: USDC, data }], "The transfer did not go through. Nothing was sent.", (r) => r.transactionHash);
+}
+
+// ---------------------------------------------------------------- the seller's account
+
+/** Open the seller's account with their weekly rule for the agent. Returns the transaction hash. */
+export async function createAccountWithCircle(account: SmartAccount, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createAccount", args: [weeklyBps, baseWeekly, perDealCap] });
+  return sendAs(account, [{ to: FACTORY, data }], "Your account was not created. Nothing changed.", (r) => r.transactionHash);
+}
+
+export async function setLimitsWithCircle(account: SmartAccount, tifoAccount: Address, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoAccountAbi, functionName: "setLimits", args: [weeklyBps, baseWeekly, perDealCap] });
+  return sendAs(account, [{ to: tifoAccount, data }], "Your rule was not saved. Nothing changed.", (r) => r.transactionHash);
+}
+
+/** Approve or decline what the agent proposed above the rule. Approving opens the drop. */
+export async function decideWithCircle(account: SmartAccount, tifoAccount: Address, id: number, approve: boolean): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoAccountAbi, functionName: "decide", args: [BigInt(id), approve] });
+  return sendAs(account, [{ to: tifoAccount, data }], "Your answer was not recorded. Nothing changed.", (r) => r.transactionHash);
+}
+
+export async function withdrawFromAccountWithCircle(account: SmartAccount, tifoAccount: Address, to: Address, amount: bigint): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoAccountAbi, functionName: "withdraw", args: [to, amount] });
+  return sendAs(account, [{ to: tifoAccount, data }], "The transfer did not go through. Nothing was sent.", (r) => r.transactionHash);
+}
+
+/** Open a drop through the seller's account, so its sales land there and it counts toward the week. */
+export async function openViaAccountWithCircle(account: SmartAccount, tifoAccount: Address, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, meta] = args;
+  const data = encodeFunctionData({
+    abi: tifoAccountAbi,
+    functionName: "open",
+    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps }, meta],
+  });
+  return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
+    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
+    if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
+    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
+  });
 }
