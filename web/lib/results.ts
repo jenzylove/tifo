@@ -71,23 +71,81 @@ async function espn(m: Match): Promise<SourceResult> {
   }
 }
 
+// TheSportsDB files clubs under their everyday English names, and its free search returns one row for an exact
+// "Home vs Away" title. So the official name is reduced to the everyday one before searching.
+const EVERYDAY: [RegExp, string][] = [
+  [/internazionale/i, "Inter Milan"],
+  [/paris saint.?germain/i, "Paris SG"],
+  [/bayern/i, "Bayern Munich"],
+  [/atl[eé]tico( de)? madrid/i, "Atletico Madrid"],
+  [/athletic club/i, "Athletic Bilbao"],
+  [/m[oö]nchengladbach/i, "Monchengladbach"],
+  [/leverkusen/i, "Bayer Leverkusen"],
+  [/tottenham/i, "Tottenham"],
+  [/wolverhampton/i, "Wolves"],
+  [/brighton/i, "Brighton"],
+  [/olympique de marseille/i, "Marseille"],
+  [/olympique lyonnais/i, "Lyon"],
+  [/rayo vallecano/i, "Rayo Vallecano"],
+  [/real sociedad/i, "Real Sociedad"],
+  [/real betis/i, "Real Betis"],
+  [/celta/i, "Celta Vigo"],
+];
+const CLUB_WORDS = /\b(fc|afc|cf|osc|ac|sc|ssc|as|rc|rcd|ud|cd|ca|sv|vfl|vfb|tsg|calcio|club|de|f[uú]tbol|\d+\.?)\b/gi;
+
+/** The names to try for one club, most likely first. */
+export function everydayNames(name: string): string[] {
+  const out: string[] = [];
+  const alias = EVERYDAY.find(([re]) => re.test(name));
+  if (alias) out.push(alias[1]);
+  const stripped = name.replace(CLUB_WORDS, " ").replace(/\s+/g, " ").trim();
+  if (stripped) out.push(stripped);
+  out.push(name.replace(/\b(FC|AFC|CF)\b/g, "").replace(/\s+/g, " ").trim());
+  return [...new Set(out.filter(Boolean))];
+}
+
+/** Looser than sameTeam: a word may be a short form of the other name's word ("Inter" ~ "Internazionale"). */
+function likelySameTeam(a: string, b: string): boolean {
+  if (sameTeam(a, b)) return true;
+  const x = norm(a), y = norm(b);
+  if (!x.length || !y.length) return false;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.every((w) => long.some((v) => (w.length >= 4 && v.startsWith(w)) || (v.length >= 4 && w.startsWith(v))));
+}
+
 async function theSportsDb(m: Match): Promise<SourceResult> {
   try {
-    const q = `${m.teamA.replace(/\b(FC|AFC|CF)\b/g, "").trim()}_vs_${m.teamB.replace(/\b(FC|AFC|CF)\b/g, "").trim()}`.replace(/\s+/g, "_");
-    const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchevents.php?e=${encodeURIComponent(q)}`, { cache: "no-store" });
-    if (!r.ok) return { source: "thesportsdb", status: "error" };
-    const j = await r.json();
     const day = m.kickoff.slice(0, 10);
-    const ev = (j.event ?? []).find((e: { dateEvent: string }) => Math.abs(Date.parse(e.dateEvent) - Date.parse(day)) <= 86_400_000);
-    if (!ev) return { source: "thesportsdb", status: "not_found" };
-    const raw = `${ev.strEvent} ${ev.intHomeScore}-${ev.intAwayScore} ${ev.strStatus}`;
-    if (/postponed|cancel|abandon/i.test(ev.strStatus ?? "")) return { source: "thesportsdb", status: "postponed", verdict: "VOID", raw };
-    if (!/^(FT|AET|PEN|Match Finished)$/i.test(ev.strStatus ?? "") || ev.intHomeScore == null) return { source: "thesportsdb", status: "pending", raw };
-    // TheSportsDB names the home team first in strEvent; check orientation.
-    const flipped = sameTeam(m.teamA, ev.strAwayTeam) && sameTeam(m.teamB, ev.strHomeTeam);
-    const [h, a] = [Number(ev.intHomeScore), Number(ev.intAwayScore)];
-    const verdict = flipped ? verdictFrom(a, h) : verdictFrom(h, a);
-    return { source: "thesportsdb", status: "final", verdict, score: `${h}-${a}`, raw };
+    const homes = everydayNames(m.teamA), aways = everydayNames(m.teamB);
+    // Most likely pair first, then the fallbacks. Six lookups at most.
+    const pairs: [string, string][] = [];
+    for (let k = 0; k < Math.max(homes.length, aways.length); k++) pairs.push([homes[Math.min(k, homes.length - 1)], aways[Math.min(k, aways.length - 1)]]);
+    for (const h of homes) for (const a of aways) if (!pairs.some(([x, y]) => x === h && y === a)) pairs.push([h, a]);
+    let failed = false;
+    for (const [h, a] of pairs.slice(0, 6)) {
+      const q = `${h}_vs_${a}`.replace(/\s+/g, "_");
+      const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchevents.php?e=${encodeURIComponent(q)}`, { cache: "no-store" });
+      if (!r.ok) {
+        failed = true;
+        continue;
+      }
+      const j = await r.json();
+      const ev = (j.event ?? []).find(
+        (e: { dateEvent: string; strHomeTeam: string; strAwayTeam: string }) =>
+          Math.abs(Date.parse(e.dateEvent) - Date.parse(day)) <= 86_400_000 &&
+          ((likelySameTeam(h, e.strHomeTeam) && likelySameTeam(a, e.strAwayTeam)) || (likelySameTeam(h, e.strAwayTeam) && likelySameTeam(a, e.strHomeTeam))),
+      );
+      if (!ev) continue;
+      const raw = `${ev.strEvent} ${ev.intHomeScore}-${ev.intAwayScore} ${ev.strStatus}`;
+      if (/postponed|cancel|abandon/i.test(ev.strStatus ?? "")) return { source: "thesportsdb", status: "postponed", verdict: "VOID", raw };
+      if (!/^(FT|AET|PEN|Match Finished)$/i.test(ev.strStatus ?? "") || ev.intHomeScore == null) return { source: "thesportsdb", status: "pending", raw };
+      // TheSportsDB names the home team first; check orientation against our home team.
+      const flipped = likelySameTeam(h, ev.strAwayTeam) && !likelySameTeam(h, ev.strHomeTeam);
+      const [hs, as] = [Number(ev.intHomeScore), Number(ev.intAwayScore)];
+      const verdict = flipped ? verdictFrom(as, hs) : verdictFrom(hs, as);
+      return { source: "thesportsdb", status: "final", verdict, score: `${hs}-${as}`, raw };
+    }
+    return { source: "thesportsdb", status: failed ? "error" : "not_found" };
   } catch {
     return { source: "thesportsdb", status: "error" };
   }
