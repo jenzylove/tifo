@@ -1,13 +1,13 @@
 // The agent's on-chain hands. Server-only: the key never reaches the browser.
 // Its contract role can only change future offers, log decisions, propose results and push refunds.
 import "server-only";
-import { createWalletClient, http, type Address, type Hex } from "viem";
+import { createWalletClient, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { rebalance } from "@tifo/core";
 import { tifoAccountAbi, tifoPromoAbi } from "./abi";
 import { planFor, type Plan } from "./autopilot";
 import { accountOf } from "./tifoAccount";
-import { FACTORY, chain, publicClient } from "./chain";
+import { FACTORY, chain, publicClient, transport } from "./chain";
 import { matchBySlug } from "./matches";
 import { checkResult } from "./results";
 import { listPromos, promoState, type PromoSummary } from "./promos";
@@ -15,7 +15,7 @@ import { listPromos, promoState, type PromoSummary } from "./promos";
 function wallet() {
   const pk = process.env.AGENT_PRIVATE_KEY as Hex | undefined;
   if (!pk) throw new Error("AGENT_PRIVATE_KEY is not set");
-  return createWalletClient({ account: privateKeyToAccount(pk), chain, transport: http() });
+  return createWalletClient({ account: privateKeyToAccount(pk), chain, transport });
 }
 
 async function send(address: Address, functionName: string, args: readonly unknown[]): Promise<Hex> {

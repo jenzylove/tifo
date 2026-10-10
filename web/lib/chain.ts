@@ -1,4 +1,4 @@
-import { createPublicClient, defineChain, http, type Address } from "viem";
+import { createPublicClient, defineChain, fallback, http, type Address } from "viem";
 
 export const arcMainnet = defineChain({
   id: 5042,
@@ -27,7 +27,12 @@ export const FACTORY_BLOCK = BigInt(process.env.NEXT_PUBLIC_FACTORY_BLOCK ?? "0"
 
 // Override with a dedicated provider (Alchemy, QuickNode, dRPC) if the public RPC throttles.
 export const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || chain.rpcUrls.default.http[0];
-export const publicClient = createPublicClient({ chain, transport: http(RPC_URL, { batch: true, retryCount: 3 }) });
+// On the server, testnet calls go through the Canteen hosted Arc node first (the URL carries our builder token, so it
+// is never sent to the browser) and fall back to the public RPC if that node refuses a call or is down.
+const CANTEEN_RPC = typeof window === "undefined" && NETWORK === "testnet" ? process.env.ARC_RPC_URL : undefined;
+const publicRpc = http(RPC_URL, { batch: true, retryCount: 3 });
+export const transport = CANTEEN_RPC ? fallback([http(CANTEEN_RPC, { retryCount: 1, timeout: 8_000 }), publicRpc]) : publicRpc;
+export const publicClient = createPublicClient({ chain, transport });
 
 export const explorerTx = (h: string) => `${chain.blockExplorers.default.url}/tx/${h}`;
 export const explorerAddr = (a: string) => `${chain.blockExplorers.default.url}/address/${a}`;
