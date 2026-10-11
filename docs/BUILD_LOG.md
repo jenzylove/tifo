@@ -79,3 +79,10 @@ Both matches finished around 17:10 and 17:55 UTC. Nothing settled until 18:49 be
 - **The new link vanished after a first drop.** The dashboard flipped to Overview and hid the link and QR panel. Fixed.
 After the fixes the full run passes with no errors: a seller creates a wallet, makes a free drop (gas sponsored) and turns on autopilot (which creates their account contract); a buyer on a phone creates a wallet, is funded, buys with Face ID and opens the digital purchase. Drop `0x766111dba73aceeae7fcd4831c182d28b44385cf`. Screens are saved by the script for review.
 Interface: logo mark beside the wordmark, a trimmed footer, the three box section on the drop page replaced by an accordion, "who is in" hidden until there is an order, free spots shown on the offer itself, example numbers on the home cards with real numbers only in the strip.
+
+## 11 Oct 2026: a real draw, and the agent ran the next drop for a seller who signed up through the app
+The seller and buyer created during the live walk through kept going with nobody touching anything:
+- **The draw thank you, on a real match.** Como v Roma ended level. The buyer who had paid $5 got the 5% thank you, $0.25, at 12:57 UTC: `0xda8ba561380193dd97204e12ada4c7aae1ae060fc07e92052e9502e464b2c1f8`. The rest of the reserve went back to the seller and the drop's balance matches its book.
+- **The agent then opened that seller's next drop by itself**, at 17:06 UTC: `0x6bf2d15ec3c4d89030b3090907c7e94209fd766f5f79a2369f5ea794f00a8cb0`, drop `0xaE5D7898C332fD4DBb9A415113CABd75Df014c9C` (Man City v PSG, 14 Oct, $10 budget, inside the seller's $25 weekly rule). Its reason on chain: the last drop "brought only 1 order on one side, 5 dollars in sales, and cost 0.25 dollars after the draw", so it kept the budget and moved to a higher profile match.
+- This seller signed up, made one drop and turned on autopilot entirely through the app's screens. Everything after that was the scheduler and the agent.
+- Still unverified: a proposal above the seller's rule being approved in the app.
