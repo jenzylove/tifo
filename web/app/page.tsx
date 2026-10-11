@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Duties from "@/components/Duties";
 import Reveal from "@/components/Reveal";
 import { dropCards } from "@/lib/board";
 import { usd } from "@/lib/chain";
@@ -150,28 +151,7 @@ export default async function Landing() {
         </Reveal>
       </div>
 
-      <section className="section wrap">
-        <Reveal className="section-head">
-          <span className="pill ac">Your sales manager</span>
-          <h2>It does the work. You set the limit.</h2>
-          <p>Tifo is an AI sales manager with a budget it has to earn back. Every decision it makes is written down where you can check it.</p>
-        </Reveal>
-        <div className="duties">
-          {[
-            ["Plans the drop", "It looks at how your past drops went and the matches coming up, then picks one and sets the offer. It tells you how many extra sales pay for it before you say yes."],
-            ["Keeps both sides fair", "As one team's fans pile in, it moves the offers so your cost stays the same whoever wins. It can never go over your budget, because a contract holds the money, not the AI."],
-            ["Pays the winners", "It checks the result against three sources and pays as soon as two agree. No claim form, no waiting a week."],
-            ["Shows you the score", "After every match you see what the drop brought in, what it cost, and whether it paid for itself."],
-            ["Runs on autopilot, if you let it", "Give it a weekly limit and it runs drops for you. Anything bigger than the limit, it has to ask first. It can never take money out."],
-          ].map(([title, text], n) => (
-            <Reveal key={title} className="duty" delay={n * 0.05}>
-              <span className="n">0{n + 1}</span>
-              <h3>{title}</h3>
-              <p>{text}</p>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      <Duties />
 
       <section className="section wrap">
         <div className="fans">

@@ -385,3 +385,31 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 .how details > *:not(summary) { animation: rise .35s var(--ease) both; }
 .how p { color: var(--muted); padding: 0 0 22px; max-width: 640px; }
 .how .cols { padding-top: 0; }
+
+/* what the manager does: a dark panel that stays put while each duty opens in turn */
+.duties { margin-top: 90px; position: relative; }
+.duties-stick { position: sticky; top: 0; height: 100vh; height: 100svh; display: grid; place-items: center; padding: 84px 16px 18px; }
+.duties-panel { width: min(1180px, 100%); height: 100%; max-height: 780px; background: #111114; color: #f5f5f2; border-radius: 44px; padding: clamp(24px, 4.2vw, 58px); display: grid; grid-template-rows: auto 1fr auto; gap: clamp(14px, 2.4vh, 30px); overflow: hidden; box-shadow: var(--shadow-lg); }
+.duties-panel header { display: grid; gap: 12px; }
+.duties-panel h2 { font-size: clamp(1.7rem, 4vw, 3.2rem); max-width: 14em; }
+.duties-panel h2 em { font-style: normal; display: inline-block; background: var(--sun); color: #111114; padding: 0 .22em .06em; border-radius: .28em; rotate: -3deg; margin-left: .06em; }
+.duties-panel header p { color: rgba(245, 245, 242, .58); max-width: 560px; font-size: 1rem; }
+.duties-panel ol { list-style: none; margin: 0; padding: 0; display: grid; align-content: center; }
+.duties-panel li { display: grid; grid-template-columns: 58px 1fr 22px; gap: 10px; align-items: start; padding: clamp(10px, 1.7vh, 18px) 0; border-top: 1px solid rgba(255, 255, 255, .1); cursor: pointer; opacity: .34; transition: opacity .45s var(--ease), padding .45s var(--ease); }
+.duties-panel li:hover { opacity: .7; }
+.duties-panel li.on { opacity: 1; padding: clamp(14px, 2.4vh, 26px) 0; }
+.duties-panel .n { font-weight: 800; letter-spacing: -.05em; font-size: 1.05rem; color: var(--accent); padding-top: .32em; }
+.duties-panel h3 { font-size: clamp(1.15rem, 2.5vw, 2rem); letter-spacing: -.04em; font-weight: 700; transition: color .4s; }
+.duties-panel li.on h3 { color: #fff; }
+.duties-panel .more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .55s var(--ease); }
+.duties-panel li.on .more { grid-template-rows: 1fr; }
+.duties-panel .more p { overflow: hidden; min-height: 0; color: rgba(245, 245, 242, .68); max-width: 640px; font-size: clamp(.94rem, 1.25vw, 1.08rem); }
+.duties-panel li.on .more p { padding-top: 8px; }
+.duties-panel .sign { width: 18px; height: 18px; position: relative; margin-top: .5em; opacity: .7; }
+.duties-panel .sign::before, .duties-panel .sign::after { content: ""; position: absolute; left: 0; right: 0; top: 8px; height: 2px; border-radius: 2px; background: currentColor; transition: rotate .45s var(--ease), background .3s; }
+.duties-panel .sign::after { rotate: 90deg; }
+.duties-panel li.on .sign::after { rotate: 0deg; }
+.duties-panel li.on .sign::before, .duties-panel li.on .sign::after { background: var(--accent); }
+.duties-bar { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.duties-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: scale .5s var(--ease); }
+@media (max-width: 640px) { .duties-stick { padding: 78px 10px 10px; } .duties-panel { border-radius: 30px; } .duties-panel li { grid-template-columns: 34px 1fr 18px; } .duties-panel header p { display: none; } }
