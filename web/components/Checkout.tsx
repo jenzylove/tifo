@@ -240,7 +240,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         <p className="fine">
           {locked !== null
             ? `This wallet already took the ${teams[locked]} offer, so more orders ride on ${teams[locked]} too.`
-            : `Choose the result your discount rides on. ${drawBps > 0 ? `On a draw everyone gets ${drawBps / 100}% back` : "A draw pays no rebate"}, and you keep the product either way.`}
+            : "Pick the team you think will win. You keep what you bought either way."}
         </p>
       </div>
 

@@ -93,7 +93,7 @@ export default function Manager() {
             <div className="mgr-head">
               <div>
                 <h1>Match drops</h1>
-                <p className="muted">One product, one match, one link. The offers come from live odds, and your budget is enforced on chain.</p>
+                <p className="muted">One product, one match, one link. Your budget is enforced by a contract, not by the AI.</p>
               </div>
             </div>
             <Launch

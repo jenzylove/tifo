@@ -282,7 +282,7 @@ function Live({ url, post, again }: { url: string; post: string; again: () => vo
   return (
     <div className="panel done">
       <b>Your drop is live.</b>
-      <p className="fine">Send this link wherever you already sell. Your manager balances the offers as orders come in and pays the winners after full time.</p>
+      <p className="fine">Send this link wherever you already sell. Your manager pays the winners after full time and shows you what the drop brought in.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
         {qr && <img src={qr} alt="QR code for your drop" width={160} height={160} style={{ borderRadius: 8, background: "#fff" }} />}
         <div style={{ display: "grid", gap: 10, flex: "1 1 260px" }}>
