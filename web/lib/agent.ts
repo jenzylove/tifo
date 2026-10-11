@@ -151,15 +151,24 @@ export async function settleNow(p: PromoSummary): Promise<TickResult[]> {
 export async function autopilotTick(force?: Address): Promise<TickResult[]> {
   const out: TickResult[] = [];
   const sellers = [...new Set((await listPromos()).map((p) => p.seller.toLowerCase() as Address))];
+  // Find every seller who has an account. A drop's seller is the account itself when it was opened through the
+  // account, and the seller's own wallet when they opened it by hand before turning autopilot on.
+  const owners = new Set<Address>();
   for (const seller of sellers) {
     try {
-      // A drop opened through an account has the account as its seller; the owner is who we plan for.
       const owner = (await publicClient.readContract({ address: seller, abi: tifoAccountAbi, functionName: "owner" }).catch(() => null)) as Address | null;
-      if (!owner || (await accountOf(owner))?.toLowerCase() !== seller) continue;
-      if (force && force.toLowerCase() !== owner.toLowerCase()) continue;
-      out.push(await act(await planFor(owner, true)));
+      if (owner && (await accountOf(owner))?.toLowerCase() === seller) owners.add(owner.toLowerCase() as Address);
+      else if (await accountOf(seller)) owners.add(seller);
     } catch (e) {
       out.push({ promo: seller, action: `autopilot error: ${(e as Error).message.slice(0, 200)}` });
+    }
+  }
+  for (const owner of owners) {
+    if (force && force.toLowerCase() !== owner) continue;
+    try {
+      out.push(await act(await planFor(owner, true)));
+    } catch (e) {
+      out.push({ promo: owner, action: `autopilot error: ${(e as Error).message.slice(0, 200)}` });
     }
   }
   return out;
