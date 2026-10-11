@@ -70,7 +70,8 @@ button.link { background: none; border: 0; padding: 0; cursor: pointer; font-siz
 textarea.input { resize: vertical; min-height: 70px; }
 input[type="range"] { width: 100%; accent-color: var(--accent-deep); }
 .field { display: grid; gap: 6px; font-weight: 600; font-size: .92rem; }
-.field small { font-weight: 400; color: var(--muted); font-size: .82rem; }
+.field small { font-weight: 400; color: var(--muted); font-size: .8rem; order: 3; line-height: 1.35; }
+.field input, .field textarea, .field > b { order: 2; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 640px) { .grid2 { grid-template-columns: 1fr; } }
 .status { font-size: .9rem; color: var(--muted); padding: 10px 14px; border-radius: 14px; background: var(--surface-2); }

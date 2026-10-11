@@ -96,7 +96,17 @@ export default function Manager() {
                 <p className="muted">One product, one match, one link. The offers come from live odds, and your budget is enforced on chain.</p>
               </div>
             </div>
-            <Launch account={acct} sellerName={data.name} tifoAccount={data.account?.address} prefill={prefill} onLaunched={load} />
+            <Launch
+              account={acct}
+              sellerName={data.name}
+              tifoAccount={data.account?.address}
+              prefill={prefill}
+              onLaunched={() => {
+                // Stay on this tab: a first drop would otherwise flip the view to Overview and hide the new link.
+                setTab("drops");
+                load();
+              }}
+            />
             <div className="panel" style={{ marginTop: 18 }}>
               <h3>All drops</h3>
               <DropList data={data} />
@@ -208,11 +218,11 @@ function Overview({ data, seller, onMove }: { data: ManagerData; seller: Address
           <b>{$(t.held)}</b>
         </div>
         <div className="kpi">
-          <span>Paid back to fans</span>
+          <span>Paid back to buyers</span>
           <b>{$(t.refunded)}</b>
         </div>
         <div className="kpi">
-          <span>Fans reached</span>
+          <span>Buyers</span>
           <b>{t.fans}</b>
         </div>
       </div>
