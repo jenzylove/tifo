@@ -171,8 +171,11 @@ async function sendAs<T>(account: SmartAccount, calls: Call[], failure: string, 
 async function send(account: SmartAccount, calls: Call[], failure: string) {
   const { bundler } = transports();
   const prepared = await bundler.prepareUserOperation({ account, calls, paymaster: true });
-  const { account: _a, paymaster: _p, ...rest } = prepared as typeof prepared & { account?: unknown; paymaster?: unknown };
+  // Drop the account object before signing, but keep the paymaster address the service filled in. Removing it
+  // sends the operation unsponsored, and a new wallet with no balance is then refused.
+  const { account: _a, ...rest } = prepared as typeof prepared & { account?: unknown };
   const op = rest as unknown as UserOperation;
+  if (typeof (op as { paymaster?: unknown }).paymaster !== "string") delete (op as { paymaster?: unknown }).paymaster;
   const submit = async () => {
     const signature = await account.signUserOperation(op);
     const hash = (await bundler.request({
