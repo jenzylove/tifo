@@ -23,7 +23,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <i />
               tifo
             </a>
-            {NETWORK === "testnet" && <span className="badge hide-sm">Testnet</span>}
             <nav>
               <a href="/drops" className="hide-sm">Drops</a>
               <a href="/proof" className="hide-sm">Proof</a>
@@ -34,23 +33,38 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main>{children}</main>
         <footer className="foot">
           <div className="wrap">
-            <p>
-              Payments settle in USDC on Arc through Circle wallets. You pay full price for a real product and keep it whatever happens. The money back is a
-              discount on what you bought.
-            </p>
-            <p>
-              <a href="/drops">Drops</a> · <a href="/manage">Make a drop</a> · <a href="/proof">Proof</a> ·{" "}
-              <a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">
-                Code
-              </a>
-            </p>
-            <p>
-              Built for the{" "}
-              <a href="https://tameion.thecanteenapp.com" target="_blank" rel="noreferrer">
-                Tameion Agents Hackathon
-              </a>{" "}
-              by Canteen and Circle.
-            </p>
+            <div className="foot-top">
+              <div>
+                <a href="/" className="brand">
+                  <i />
+                  tifo
+                </a>
+                <p>An AI sales manager with a budget it has to earn back. One link per product, paid in USDC on Arc.</p>
+              </div>
+              <div>
+                <h4>Product</h4>
+                <ul>
+                  <li><a href="/manage">Make a drop</a></li>
+                  <li><a href="/drops">Drops</a></li>
+                  <li><a href="/proof">Proof</a></li>
+                </ul>
+              </div>
+              <div>
+                <h4>Project</h4>
+                <ul>
+                  <li><a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">Code</a></li>
+                  <li><a href="https://tameion.thecanteenapp.com" target="_blank" rel="noreferrer">Tameion Agents Hackathon</a></li>
+                  <li><a href="https://docs.arc.network" target="_blank" rel="noreferrer">Arc</a></li>
+                </ul>
+              </div>
+            </div>
+            <div className="foot-bottom">
+              <span>© 2026 Tifo. You pay full price for a real product and keep it whatever happens.</span>
+              <span>{NETWORK === "testnet" ? "Running on Arc testnet" : "Running on Arc"} · USDC by Circle</span>
+            </div>
+          </div>
+          <div className="foot-word" aria-hidden>
+            tifo
           </div>
         </footer>
       </body>

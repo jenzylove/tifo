@@ -45,11 +45,11 @@ export interface Plan {
 
 const SYSTEM = `You are the sales manager for someone who sells online through Tifo. You run match drops for them:
 fans of both teams buy the product at full price and pick a side; if their team wins they get money back in USDC.
-Two offer shapes exist. "free": a full refund for the first buyers on each side, as many as the budget covers
-(budget / price per side). "percent": a smaller % back for every buyer, priced from the odds.
+The offer is always "free": a full refund for the first buyers on each side, as many as the budget covers
+(budget / price per side). After those spots are taken, buyers on that side pay full price with nothing back.
 On a draw every buyer gets 5% back. The budget is the most a drop can cost the seller, whoever wins.
 
-Decide whether to run a drop now, and if so on which fixture, with which shape and what budget.
+Decide whether to run a drop now, and if so on which fixture and with what budget. Always answer shape "free".
 - You are spending the seller's money to bring them sales. A drop must be able to pay for itself:
   compare the budget to profit_per_sale. If the margin cannot carry any sensible offer, skip and say why.
 - Learn from past_drops: which sides filled, what the refunds cost against sales, whether it paid for itself.
@@ -137,7 +137,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   // From here the model's answer is only a suggestion: every figure is checked or recomputed.
   const m = fixtures.find((x) => x.slug === out.match_slug);
   if (!m?.odds) return skip("I picked a fixture I could not price, so I am not acting on it.");
-  const shape = out.shape === "percent" ? "percent" : "free";
+  const shape = "free" as "free" | "percent"; // one offer; the percent path stays for drops opened before
   let capUsd = Math.round(Math.min(5000, Math.max(shape === "free" ? price : 5, Number(out.budget_usd) || 0)) * 100) / 100;
   let discount = Math.min(20, Math.max(3, Math.round(Number(out.discount_pct) || 10)));
   if (shape === "percent" && profit !== null && profit > 0) {

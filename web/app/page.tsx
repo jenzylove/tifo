@@ -15,7 +15,9 @@ const i = (n: number) => ({ ["--i" as string]: n }) as CSSProperties;
 export default async function Landing() {
   const cards = await dropCards(undefined, 24).catch(() => []);
   // Every figure on this page is read from the chain. With no drops yet, the product cards show a plain example instead.
-  const live = cards.find((c) => c.phase === "open") ?? cards[0];
+  // The offer Tifo makes is "free if your team wins", so the showcase uses a drop of that kind.
+  const freeDrops = cards.filter((c) => c.p.meta.shape === "free");
+  const live = freeDrops.find((c) => c.phase === "open") ?? freeDrops[0];
   const paid = cards.find((c) => c.phase === "settled" && c.note?.includes("paid back"));
   const paidState = paid ? await promoState(paid.p.address).catch(() => null) : null;
   const settled = cards.filter((c) => c.phase === "settled").length;
@@ -23,7 +25,7 @@ export default async function Landing() {
   const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
   const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
   const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#111114", "#a78bfa"];
-  const rates = live?.rates ?? [10_000, 10_000];
+  const rates = [10_000, 10_000];
   const product = live?.p.meta.product ?? "Budget template";
   const price = live?.p.meta.priceUsd ?? 20;
   const budget = live ? Number(live.p.cap) / 1e6 : 100;
@@ -53,12 +55,12 @@ export default async function Landing() {
           ))}
           <span className="hl" style={i(HEAD.length)}>
             sales
-            <span className="sticker">money back for the winners</span>
+            <span className="sticker">free if your team wins</span>
           </span>
         </h1>
         <p className="sub">
-          Give Tifo one product and a budget. It hands you a link to share. Fans of both teams buy, the winning side gets money back, and it never costs you
-          more than the budget you set.
+          Give Tifo one product and a budget. It hands you a link to share. Fans of both teams buy, the first ones in get it free if their team wins, and it never costs
+          you more than the budget you set.
         </p>
         <div className="ctas">
           <a className="btn ac" href="/manage">
@@ -95,10 +97,10 @@ export default async function Landing() {
               </span>
               {A} v {B}
             </div>
-            <div className="row">
+            <div className="row" style={{ ["--k" as string]: 1 }}>
               {offerLabel(rates[0], A)}
             </div>
-            <div className="row">
+            <div className="row" style={{ ["--k" as string]: 2 }}>
               {offerLabel(rates[1], B)}
             </div>
           </div>
@@ -171,7 +173,7 @@ export default async function Landing() {
         <div className="fans">
           <Reveal>
             <span className="pill ac">If you are buying</span>
-            <h2 style={{ marginTop: 14 }}>Buy what you wanted anyway. Get money back if your team wins.</h2>
+            <h2 style={{ marginTop: 14 }}>Buy what you wanted anyway. It is free if your team wins.</h2>
             <ol>
               <li>
                 <span>
@@ -185,7 +187,7 @@ export default async function Landing() {
               </li>
               <li>
                 <span>
-                  <b>Money back after full time</b>It lands in your wallet by itself. On a draw everyone gets a small thank you.
+                  <b>Your money back after full time</b>The first buyers on each side get the full price back if their team wins. It lands in your wallet by itself.
                 </span>
               </li>
             </ol>

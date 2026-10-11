@@ -44,7 +44,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [price, setPrice] = useState("");
   const [profit, setProfit] = useState("");
   const [kind, setKind] = useState<Kind>("digital");
-  const [shape, setShape] = useState<Shape>("free");
+  const shape = "free" as Shape; // one offer: free for the first buyers on each side
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slug, setSlug] = useState(prefill?.slug ?? "");
@@ -189,17 +189,6 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                 <small>{new Date(x.kickoff).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small>
               </button>
             ))}
-          </div>
-        </div>
-        <div>
-          <p className="fine" style={{ marginBottom: 6 }}>The offer</p>
-          <div className="chips">
-            <button className={`chip ${free ? "on" : ""}`} onClick={() => setShape("free")}>
-              Free if your team wins <small>for the first buyers on each side</small>
-            </button>
-            <button className={`chip ${free ? "" : "on"}`} onClick={() => setShape("percent")}>
-              Money back for everyone <small>a smaller % for every buyer</small>
-            </button>
           </div>
         </div>
         <div className="grid2">
