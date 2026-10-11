@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import "./globals.css";
+import Logo from "@/components/Logo";
 import { NETWORK } from "@/lib/chain";
 
 const sans = Host_Grotesk({ subsets: ["latin"], variable: "--sans" });
@@ -19,10 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="top">
           <div className="bar">
-            <a href="/" className="brand">
-              <i />
-              tifo
-            </a>
+            <Logo />
             <nav>
               <a href="/drops" className="hide-sm">Drops</a>
               <a href="/proof" className="hide-sm">Proof</a>
@@ -35,32 +33,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="wrap">
             <div className="foot-top">
               <div>
-                <a href="/" className="brand">
-                  <i />
-                  tifo
+                <Logo size={30} />
+                <p>An AI sales manager with a budget it has to earn back.</p>
+              </div>
+              <nav>
+                <a href="/manage">Make a drop</a>
+                <a href="/drops">Drops</a>
+                <a href="/proof">Proof</a>
+                <a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">
+                  GitHub
                 </a>
-                <p>An AI sales manager with a budget it has to earn back. One link per product, paid in USDC on Arc.</p>
-              </div>
-              <div>
-                <h4>Product</h4>
-                <ul>
-                  <li><a href="/manage">Make a drop</a></li>
-                  <li><a href="/drops">Drops</a></li>
-                  <li><a href="/proof">Proof</a></li>
-                </ul>
-              </div>
-              <div>
-                <h4>Project</h4>
-                <ul>
-                  <li><a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">Code</a></li>
-                  <li><a href="https://tameion.thecanteenapp.com" target="_blank" rel="noreferrer">Tameion Agents Hackathon</a></li>
-                  <li><a href="https://docs.arc.network" target="_blank" rel="noreferrer">Arc</a></li>
-                </ul>
-              </div>
+              </nav>
             </div>
             <div className="foot-bottom">
-              <span>© 2026 Tifo. You pay full price for a real product and keep it whatever happens.</span>
-              <span>{NETWORK === "testnet" ? "Running on Arc testnet" : "Running on Arc"} · USDC by Circle</span>
+              <span>© 2026 Tifo</span>
+              <span>{NETWORK === "testnet" ? "On Arc testnet" : "On Arc"} · paid in USDC</span>
             </div>
           </div>
           <div className="foot-word" aria-hidden>

@@ -143,6 +143,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               cap={st.cap.toString()}
               floorBps={st.floorBps}
               drawBps={st.drawBps}
+              spots={spots as [number | null, number | null]}
               priceUsd={p.meta.priceUsd}
               product={p.meta.product}
               shop={shopName}
@@ -168,6 +169,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
       </div>
 
+      {orders.length > 0 && (
       <section className="terrace">
         <h2 className="h">
           Who is in so far <small>each mark is an order</small>
@@ -197,29 +199,23 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
       </section>
 
-      <section style={{ marginTop: 40 }}>
-        <div className="steps3">
-          <div>
-            <b>1</b>
-            <h4>Buy at full price</h4>
-            <p>Choose which result your discount rides on. Your % is locked the moment you buy. {digital ? "Your purchase opens on this page as soon as you pay." : `${shopName} delivers as usual.`}</p>
-          </div>
-          <div>
-            <b>2</b>
-            <h4>Bigger % on the underdog</h4>
-            <p>Offers come from live odds, so every fan gets the same expected discount. They shift as one side fills up.</p>
-          </div>
-          <div>
-            <b>3</b>
-            <h4>Money back after full time</h4>
-            <p>When two of three result sources agree, winning fans are refunded in USDC. {drawLine}</p>
-          </div>
-        </div>
-      </section>
+      )}
 
-      <details className="behind">
-        <summary>Behind this drop: the shop&apos;s book and every decision</summary>
-        <div className="cols">
+      <div className="how">
+        <details>
+          <summary>How this works</summary>
+          <p>
+            You pay the normal price and pick the team you think will win. {free ? "The first buyers on each side hold a free spot: if their team wins, the whole price comes back to their wallet." : "If your team wins, part of the price comes back to your wallet."}{" "}
+            {digital ? "Your purchase opens on this page as soon as you pay." : `${shopName} delivers as usual.`} You keep what you bought whatever happens.
+          </p>
+        </details>
+        <details>
+          <summary>When do I get my money back?</summary>
+          <p>After full time, once two of three result sources agree and a 15 minute check has passed. It lands in your wallet by itself. {drawLine}</p>
+        </details>
+        <details>
+          <summary>The numbers behind this drop</summary>
+          <div className="cols">
           <div>
             <h4>The book</h4>
             <div className="mini-row">
@@ -267,7 +263,8 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
             </ul>
           </div>
         </div>
-      </details>
+        </details>
+      </div>
     </div>
   );
 }

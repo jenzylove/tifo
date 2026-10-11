@@ -19,6 +19,7 @@ interface Props {
   cap: string;
   floorBps: number;
   drawBps: number;
+  spots?: [number | null, number | null]; // free spots left on each side, when the drop gives them
   priceUsd: number;
   product: string;
   shop: string;
@@ -37,7 +38,7 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, priceUsd, product, shop, closed, digital, contact }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact }: Props) {
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
   const [qty, setQty] = useState(1);
@@ -229,6 +230,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 <span className="radio" aria-hidden />
                 <span className="txt">
                   <b>{offerLabel(rates[s], teams[s])}</b>
+                  {spots?.[s] != null && <small>{spots[s] === 0 ? "Free spots are gone" : `${spots[s]} free ${spots[s] === 1 ? "spot" : "spots"} left`}</small>}
                 </span>
                 <span className="amt">{rates[s] > 0 ? money(back(s)) : ""}</span>
               </button>

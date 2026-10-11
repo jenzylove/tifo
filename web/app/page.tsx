@@ -14,34 +14,36 @@ const i = (n: number) => ({ ["--i" as string]: n }) as CSSProperties;
 
 export default async function Landing() {
   const cards = await dropCards(undefined, 24).catch(() => []);
-  // Every figure on this page is read from the chain. With no drops yet, the product cards show a plain example instead.
-  // The offer Tifo makes is "free if your team wins", so the showcase uses a drop of that kind.
+  // The three product cards show an example seller so the idea reads at a glance. The announcement and the strip
+  // of numbers under them are read from the chain and nothing else.
   const freeDrops = cards.filter((c) => c.p.meta.shape === "free");
-  const live = freeDrops.find((c) => c.phase === "open") ?? freeDrops[0];
+  const live = freeDrops.find((c) => c.phase === "open") ?? freeDrops[0] ?? cards[0];
   const paid = cards.find((c) => c.phase === "settled" && c.note?.includes("paid back"));
   const paidState = paid ? await promoState(paid.p.address).catch(() => null) : null;
   const settled = cards.filter((c) => c.phase === "settled").length;
   const orders = cards.reduce((t, c) => t + c.fans, 0);
+  const byAgent = cards.filter((c) => c.p.meta.byAgent).length;
   const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
   const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
-  const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#111114", "#a78bfa"];
+  const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#d92b3a", "#2b5fd9"];
   const rates = [10_000, 10_000];
-  const product = live?.p.meta.product ?? "Budget template";
-  const price = live?.p.meta.priceUsd ?? 20;
-  const budget = live ? Number(live.p.cap) / 1e6 : 100;
+  const product = "Budget planner kit";
+  const price = 20;
+  const budget = 100;
+  const bigEnough = paidState && paidState.refundedTotal >= 5_000_000n;
 
   return (
     <>
       <section className="hero wrap">
         <a className="news" href="/proof">
           <b>Live</b>
-          {paidState ? (
+          {paidState && bigEnough ? (
             <span>
               The last winners got <strong>{usd(paidState.refundedTotal)}</strong> back<em>. See the proof</em>
             </span>
           ) : (
             <span>
-              Every payout is on Arc<em>. See the proof</em>
+              Every drop and payout is on Arc<em>. See the proof</em>
             </span>
           )}
         </a>
@@ -76,10 +78,10 @@ export default async function Landing() {
         <div className="step">
           <div className="ui">
             <div className="row">
-              {product.length > 22 ? `${product.slice(0, 22)}…` : product} <small>${price.toFixed(2)}</small>
+              {product} <small>${price}</small>
             </div>
             <div className="row">
-              Budget <small>${budget.toFixed(2)} at most</small>
+              Budget <small>${budget} at most</small>
             </div>
             <div className="row go">Get my link</div>
           </div>
@@ -89,7 +91,7 @@ export default async function Landing() {
         </div>
         <div className="step" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
           <div className="ui">
-            <div className="row url">tifo.vercel.app/p/{live ? live.p.address.slice(2, 10) : "your-drop"}</div>
+            <div className="row url">tifo.vercel.app/p/your-drop</div>
             <div className="row lead">
               <span className="dots">
                 <i />
@@ -116,7 +118,7 @@ export default async function Landing() {
               ))}
             </div>
             <div className="row">
-              {paidState ? "Paid back to winners" : "Winners paid after full time"} <small>{paidState ? usd(paidState.refundedTotal) : "in USDC"}</small>
+              Paid back to winners <small>${budget}</small>
             </div>
           </div>
           <p className="cap">
@@ -124,6 +126,8 @@ export default async function Landing() {
           </p>
         </div>
       </div>
+
+      <p className="trio-note">An example drop: a $20 product with a $100 budget is five free spots for each side.</p>
 
       <div className="wrap">
         <Reveal className="facts">
@@ -140,8 +144,8 @@ export default async function Landing() {
             <span>settled by the agent</span>
           </div>
           <div>
-            <b>$0</b>
-            <span>gas paid by buyers</span>
+            <b>{byAgent}</b>
+            <span>opened by the agent alone</span>
           </div>
         </Reveal>
       </div>
@@ -196,7 +200,7 @@ export default async function Landing() {
             <div className="step" style={{ rotate: "2deg", minHeight: 0, ["--ca" as string]: ca, ["--cb" as string]: cb }}>
               <div className="ui">
                 <div className="row">
-                  {product.length > 26 ? `${product.slice(0, 26)}…` : product} <small>${price.toFixed(2)}</small>
+                  {product} <small>${price}</small>
                 </div>
                 <div className="row lead" style={{ boxShadow: "inset 0 0 0 2px var(--ink)", background: "var(--surface)" }}>
                   <span className="dots">
@@ -205,7 +209,7 @@ export default async function Landing() {
                   {offerLabel(rates[0], A)}
                 </div>
                 <div className="row">{offerLabel(rates[1], B)}</div>
-                <div className="row go">Buy for ${price.toFixed(2)}</div>
+                <div className="row go">Buy for ${price}</div>
               </div>
             </div>
           </Reveal>
