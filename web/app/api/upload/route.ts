@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { limit, tooMany } from "@/lib/ratelimit";
 
 // Product photos for drop pages. Images only, 4 MB max.
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
 
 export async function POST(req: Request) {
+  const rl = limit(req, "upload", 10, 10 * 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfter);
   if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "Uploads are not set up. Paste an image link instead." }, { status: 503 });
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");

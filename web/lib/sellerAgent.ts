@@ -4,7 +4,6 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { initialRates } from "@tifo/core";
 import { matchBySlug, upcomingMatches, shortTeam, type Match } from "./matches";
 
 const client = new Anthropic();
@@ -32,23 +31,23 @@ export interface Proposal {
   explanation: string;
 }
 
-const SYSTEM = `You are Tifo, a sales rep for small online shops. You design two-sided match promos:
-fans of each team in one match buy the shop's product at full price, and the winning team's fans get a
-percentage back, paid automatically in USDC on Arc right after the final whistle. A draw pays no rebate.
+const SYSTEM = `You are Tifo, a sales rep for small online shops. You design one kind of promo, tied to a football match:
+the first buyers on each side get the full price back if their team wins. It is paid automatically in USDC on Arc after full time, once the result is confirmed.
 
-How the money works (explain it plainly when it helps the seller decide):
-- Each fan's rebate % is fixed when they buy. Underdog fans get a bigger % so every fan gets the same expected discount.
-- The seller sets a cap: the most they can ever owe in refunds, whoever wins. The contract keeps just enough from each sale to cover the bigger of the two refund bills and sends the rest to the seller immediately.
-- As sales come in, you shift offers toward the lighter side so the book stays balanced.
+How it works (explain it plainly when it helps the seller decide):
+- The seller gives a budget. Free spots per side = the budget divided by the price, rounded down.
+- The first buyers on each side take those free spots. If their team wins, they get the full price back, so the product was free.
+- After the free spots on a side are taken, buyers on that side pay full price with nothing back.
+- On a draw every buyer gets 5% back as a thank you.
+- The budget is the most a drop can ever cost the seller, whoever wins. A contract enforces it.
 
 Your job in this chat:
-1. Unless the seller is described below, find out what they sell, the price, a photo link of the product (optional but it makes the drop page sell), roughly how many orders they expect this week, and which teams their buyers follow (ask briefly if missing; one question at a time).
-2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience. Only use matches that have live odds.
-3. Use price_promo to test terms. Pick an expected discount (usually 5–15%) and a cap the seller is comfortable owing. Show the offers for each side and the worst case.
+1. Unless the seller is described below, find out what they sell, the price, the profit per sale, a photo link of the product (optional, it makes the drop page sell), and a budget they are comfortable spending (ask briefly if missing; one question at a time).
+2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience.
+3. Use price_promo to show the free spots per side, the worst case (the budget), and, when profit per sale is known, how many extra sales pay for it.
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
 
-Rules: never invent odds, prices, or numbers — quote only what the tools return. No betting language
-("bet", "wager", "odds boost", "win money"): it's a rebate on a purchase. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.`;
+Rules: never invent prices or numbers, quote only what the tools return. No betting language ("bet", "wager", "odds boost", "win money"): it is a purchase with a free spot. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.`;
 
 function matchLine(m: Match) {
   const o = m.odds;
@@ -95,27 +94,26 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
 
   const pricePromo = betaZodTool({
     name: "price_promo",
-    description: "Price a promo for one match: rebate % for each side, and what the seller could owe.",
+    description: "Show the free spots offer for one match: free spots per side, the worst case, and how many extra sales pay for it.",
     inputSchema: z.object({
       slug: z.string(),
-      expected_discount_pct: z.number().min(1).max(30),
-      cap_usd: z.number().min(5).max(5000),
-      min_pct: z.number().min(1).max(50).default(5),
-      max_pct: z.number().min(5).max(100).default(60),
+      budget_usd: z.number().min(1).max(5000),
+      price_usd: z.number().min(1).max(10000),
+      profit_usd: z.number().positive().optional().describe("Profit per sale in USD, if the seller said"),
     }),
     run: async (i) => {
       const m = await matchBySlug(i.slug);
-      if (!m?.odds) return JSON.stringify({ error: m ? `cannot price: ${m.oddsProblem}` : "match not found" });
-      const [ra, rb] = initialRates(m.odds, i.expected_discount_pct * 100, i.min_pct * 100, i.max_pct * 100).map(Number);
+      if (!m) return JSON.stringify({ error: "match not found" });
+      const spots = Math.floor(i.budget_usd / i.price_usd);
+      if (spots < 1) return JSON.stringify({ error: "budget is lower than the price, so there would be no free spots" });
       return JSON.stringify({
         match: matchLine(m),
-        offers: { [shortTeam(m.teamA)]: `${ra / 100}% back if they win`, [shortTeam(m.teamB)]: `${rb / 100}% back if they win`, draw: "no rebate" },
-        worst_case_usd: i.cap_usd,
-        note: "The cap is enforced on chain: once one side's refund bill reaches it, that side stops taking orders at the current %. Sales on the lighter side keep flowing.",
-        example_per_100_usd_sales_each_side: {
-          if_A_wins: +(ra / 100).toFixed(2),
-          if_B_wins: +(rb / 100).toFixed(2),
-        },
+        offers: { [shortTeam(m.teamA)]: `Free if ${shortTeam(m.teamA)} win`, [shortTeam(m.teamB)]: `Free if ${shortTeam(m.teamB)} win` },
+        free_spots_per_side: spots,
+        worst_case_usd: i.budget_usd,
+        draw: "every buyer gets 5% back",
+        after_free_spots: "buyers on that side pay full price with nothing back",
+        ...(i.profit_usd ? { extra_sales_to_break_even: Math.ceil(i.budget_usd / i.profit_usd) } : {}),
       });
     },
   });
@@ -130,17 +128,15 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
       price_usd: z.number().min(1).max(10000),
       link: z.string().url().optional(),
       image_url: z.string().url().optional().describe("Direct link to a photo of the product, if the seller gave one"),
-      expected_discount_pct: z.number().min(1).max(30),
-      cap_usd: z.number().min(5).max(5000),
-      min_pct: z.number().min(1).max(50).default(5),
-      max_pct: z.number().min(5).max(100).default(60),
+      cap_usd: z.number().min(1).max(5000).describe("The budget: the most the drop can cost the seller"),
       explanation: z.string().max(600).describe("Two or three plain sentences for the seller: why this match and these terms."),
     }),
     run: async (i) => {
       const m = await matchBySlug(i.slug);
-      if (!m?.odds) return JSON.stringify({ error: "cannot price this match" });
+      if (!m?.odds) return JSON.stringify({ error: "cannot use this match" });
       if (Date.parse(m.kickoff) < Date.now() + 30 * 60_000) return JSON.stringify({ error: "kickoff is too close" });
-      const rates = initialRates(m.odds, i.expected_discount_pct * 100, i.min_pct * 100, i.max_pct * 100).map(Number) as [number, number];
+      const spots = Math.floor(i.cap_usd / i.price_usd);
+      if (spots < 1) return JSON.stringify({ error: "budget is lower than the price, so there would be no free spots" });
       proposal = {
         slug: m.slug,
         league: m.league.name,
@@ -152,15 +148,15 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
         priceUsd: i.price_usd,
         link: i.link,
         image: i.image_url,
-        effectiveBps: Math.round(i.expected_discount_pct * 100),
+        effectiveBps: 0,
         capUsd: i.cap_usd,
-        minBps: Math.round(i.min_pct * 100),
-        maxBps: Math.round(i.max_pct * 100),
-        rates,
+        minBps: 10000,
+        maxBps: 10000,
+        rates: [10000, 10000],
         odds: m.odds,
         explanation: i.explanation,
       };
-      return JSON.stringify({ ok: true, rates });
+      return JSON.stringify({ ok: true, free_spots_per_side: spots });
     },
   });
 

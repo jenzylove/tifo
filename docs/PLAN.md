@@ -37,5 +37,5 @@ Deadlines: Arc Microgrants Wed 14 Oct 11:59 PM ET. Tameion Sat 17 Oct 11:59 PM E
 ## Needed from the user
 - About 5 USDC on Arc mainnet for deployer `0xd802BF4429925f3a7bE5987B66468F91a0Ae8dE0`.
 - A mainnet Circle client key with the passkey domain set to `tifo.vercel.app`.
-- The keys and env from the old cloud session (Vercel env pull works, see `HANDOFF.md`).
+- The keys and env from the old cloud session (run `npx vercel env pull --environment=development`).
 - Two or three sellers to run deals in Phase E.

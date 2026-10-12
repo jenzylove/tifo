@@ -11,7 +11,7 @@ Live: [tifo.vercel.app](https://tifo.vercel.app)
 Someone who sells online gives Tifo one product and a budget. Tifo picks a real match, sets the offer and hands back one link to share.
 
 - Fans of both teams buy at full price and pick their side.
-- If their team wins they get money back in USDC, seconds after full time. The seller can make it "free if your team wins" for the first buyers on each side.
+- The first buyers on each side get the full price back if their team wins. It lands in their wallet about 20 minutes after full time: two result sources must agree, then a 15 minute correction window passes.
 - On a draw every buyer gets a small thank you.
 - The seller's cost is the same whoever wins and can never pass the budget. A contract enforces that, not a prompt.
 - A digital product opens on the page the moment the buyer pays.
@@ -19,7 +19,13 @@ Someone who sells online gives Tifo one product and a budget. Tifo picks a real 
 
 ## What the agent decides
 
-It sizes the budget, picks the match, chooses the offer, moves the offers as one side fills, checks the result against three sources and pays the winners. Every decision is written on chain with its reason. It can open drops by itself only inside a weekly rule the seller sets on their account contract. Anything bigger is a proposal the seller approves. It has no way to take money out.
+It sizes the budget, picks the match, and chooses the offer. It checks the result against three sources and pays the winners. Every decision is written on chain with its reason. It can open drops by itself only inside a weekly rule the seller sets on their account contract. Anything bigger is a proposal the seller approves. It has no way to take money out.
+
+## What you trust
+
+- The contract caps the cost and only pays the wallet that ordered.
+- Results come from public sources (ESPN, TheSportsDB, Polymarket) and two must agree.
+- A team operator key can correct a wrong result inside the 15 minute window, and that is the one place you trust the team.
 
 ## How it answers "Agents and Ledgers"
 
@@ -49,7 +55,7 @@ cd .. && npm test                 # 12 tests of the core math
 cd web && npm run dev
 ```
 
-The app needs the variables in `web/.env.local`. See `docs/HANDOFF.md`.
+The app needs the variables in `web/.env.local`. See `web/.env.example`.
 
 ## Where to look
 

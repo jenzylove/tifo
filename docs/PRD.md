@@ -21,7 +21,7 @@ Small sellers don't have a money management problem. They have a money arriving 
 | Storefront, shop registry, catalog editor | One link per deal, plus a QR | Sellers already sell in posts and DMs. A storefront made Tifo a second Shopify and buried the one new idea |
 | Seller is any small shop | Sellers whose buyers already hold USDC: digital goods and CT sellers first | Buyers need no crypto lesson. Digital goods deliver on the page |
 | Agent runs a formula on a timer | Agent owns a budget, makes the calls, and is scored on return | The rubric marks down "a cron job with a language model bolted on" |
-| "30% back" for everyone | Agent picks the offer shape, including "free for the first N per side" | A full refund is a post people share. The budget is the same |
+| Multiple offer shapes (dropped) | The only offer: free for the first N per side | A full refund is a post people share. The budget is the same |
 | A draw pays nothing | A draw pays every buyer a small thank you | Every match ends in a payout and a post |
 
 ## The money, in plain numbers
@@ -29,13 +29,10 @@ Small sellers don't have a money management problem. They have a money arriving 
 Tifo does not remove the cost of a promo. It does two things: it makes the cost the same whichever team wins, and it locks the most it can ever be before the first sale.
 
 - The seller sets a **budget** in dollars. The contract refuses any sale that would push the refund bill past it (`OverCap`). This is already built and tested.
-- The agent turns the budget into an offer. Example: a $20 product, a $100 budget.
-  - Shape A, everyone: about 30% back, for roughly the first 16 buyers per side.
-  - Shape B, headline: free for the first 5 buyers per side.
-  - Once a side's spots are gone, that side drops to the floor offer. People can still buy.
+- The agent turns the budget into an offer. Example: a $20 product, a $100 budget. Free for the first 5 buyers per side, then the floor offer kicks in. People can still buy after spots fill.
 - The worst case is the budget, here $100, and only if a team wins. A draw costs far less.
 - **Break even** is shown before launch and again after: budget ÷ profit per sale. Digital product with $20 profit: 5 extra sales pays for the deal. Physical product with $8 profit: 13 extra sales.
-- The agent will not launch a deal the seller's margin cannot carry. A thin margin gets a small offer or few spots, and the agent says so.
+- The agent will not launch a deal the seller's margin cannot carry. A thin margin gets fewer free spots, and the agent says so.
 
 ## Problem
 
@@ -65,13 +62,13 @@ Tifo does not remove the cost of a promo. It does two things: it makes the cost 
 3. **The agent's calls**, each logged on chain with its reason:
    - sizes the budget from the seller's real sales and profit per sale
    - picks the match for that seller's audience
-   - picks the offer shape (everyone, or free spots) and prices both sides from live odds
+   - picks the offer: free spots for the first N per side, then drops to the floor offer
    - live: trims, pauses or reopens a side; tops up a deal's reserve from the seller account inside the limit
    - refuses a deal the margin can't carry, and says why
    - settles on 2 of 3 result sources, pays refunds, returns what's left
    - after each deal: writes the scorecard and uses it to change the next deal
 4. **Scorecard.** Per deal and per seller, read from chain: sales brought, refunds paid, kept, break even hit or missed. Public.
-5. **Payments.** Circle passkey wallets, gas sponsored by Circle Paymaster, USDC on Arc, pay in from other chains through Gateway or CCTP.
+5. **Payments.** Circle passkey wallets, gas sponsored by Circle Paymaster, USDC on Arc. **Not built yet:** pay in from other chains through Gateway or CCTP.
 6. **Deal page.** Product first, spots meter, checkout, digital delivery, refund status, share card before and after the result.
 7. **Seller screen.** Create a deal, see open deals, the account, the scorecard, the agent's log, approvals.
 8. **Result posts.** Drafted by the agent with one tap sharing.
@@ -88,7 +85,7 @@ Tifo does not remove the cost of a promo. It does two things: it makes the cost 
 | 4 | Account limit | The agent's attempt to commit more than the weekly share reverts and shows as an approval request |
 | 5 | Refusal | Given a profit per sale too thin for the asked offer, the agent declines and proposes a smaller one |
 | 6 | Learning | After a lopsided deal, the agent's next proposal for that seller opens with different offers and cites the last deal |
-| 7 | Cross chain pay in | A buyer with USDC on another chain buys on a mainnet deal |
+| 7 | Cross chain pay in | **Not built yet:** a buyer with USDC on another chain buys on a mainnet deal |
 | 8 | Digital delivery | The product unlocks only after the sale transaction confirms |
 | 9 | Settlement | A real match settles with no human touch: result, refunds and remainder, all on mainnet |
 | 10 | Scorecard | Numbers on the scorecard match the chain to the cent |
@@ -99,9 +96,9 @@ Tifo does not remove the cost of a promo. It does two things: it makes the cost 
 
 | Criterion | How |
 |---|---|
-| Agentic sophistication (30%) | The agent owns a budget and makes every call that moves money: size, match, shape, pause, top up, refuse, settle. It explains each one on chain and changes its next deal from the last. Contract limits bound it |
+| Agentic sophistication (30%) | The agent owns a budget and makes every call that moves money: size, match, offer, pause, top up, refuse, settle. It explains each one on chain and changes its next deal from the last. Contract limits bound it |
 | Traction (30%) | Each deal is a post and each result is a second post. Real sellers, real buyers, mainnet USDC. Measured: sellers, buyer wallets, volume, refunds, seconds from full time to refund |
-| Circle tool usage (20%) | USDC on Arc, Circle Wallets (passkey), Paymaster, Gateway or CCTP pay in, contracts for budget, limits and reserve |
+| Circle tool usage (20%) | USDC on Arc, Circle Wallets (passkey), Paymaster, contracts for budget, limits and reserve. Not built yet: Gateway or CCTP pay in |
 | Innovation (20%) | A two sided promo where the seller's cost is the same whoever wins, run by an agent scored on return |
 
 ## What it does not do

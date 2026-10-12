@@ -27,7 +27,7 @@ export default async function Proof() {
         <p>Nothing on this page is typed in by hand. Every order, every decision the manager made and every refund links to the chain.</p>
       </div>
       <div className="stats">
-        <div className="kpi"><span>Sellers</span><b>{sellers.size}</b></div>
+        <div className="kpi"><span>Seller wallets and accounts</span><b>{sellers.size}</b></div>
         <div className="kpi"><span>Distinct fan wallets</span><b>{buyers.size}</b></div>
         <div className="kpi"><span>Paid in by fans</span><b>{usd(volume)}</b></div>
         <div className="kpi"><span>Refunded to winners</span><b>{usd(paidBack)}</b></div>
