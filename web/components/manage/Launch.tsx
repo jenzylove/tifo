@@ -1,12 +1,11 @@
 "use client";
-// One screen to make a drop: the product, what the buyer receives, a real fixture with live odds, and the budget.
-// Offers are computed with the same core math the agent and contract use. The manager can prefill all of it.
+// Make a drop in one short form. The seller says what they sell; the manager suggests the matches and the
+// number of free spots; the seller only confirms. Everything that moves money is checked by the contract.
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import { keccak256, toBytes } from "viem";
+import { keccak256, toBytes, type Address } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
-import { initialRates, type Odds } from "@tifo/core";
-import type { Address } from "viem";
+import type { Odds } from "@tifo/core";
 import { biometric, createPromoWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 import { shortTeam as short } from "@/lib/matches";
@@ -31,10 +30,33 @@ export interface Prefill {
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Kind = "digital" | "physical";
-type Shape = "percent" | "free";
-const MIN = 500, MAX = 6000, FULL = 10_000;
+const FULL = 10_000;
 const DRAW = 500; // on a draw every buyer gets 5% back as a thank you
 const NAME_KEY = "tifo.seller.name";
+
+// How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
+const LEAGUE_WEIGHT: Record<string, number> = {
+  "Champions League": 5, "Premier League": 5, "La Liga": 4, "Serie A": 4, Bundesliga: 4, "Europa League": 3,
+  "Ligue 1": 3, "UEFA Nations League": 3, International: 3, MLS: 2,
+};
+
+/** The manager's picks: big leagues, kicking off soon but not too soon, and close enough that both sides buy. */
+function suggest(matches: ApiMatch[]): { m: ApiMatch; why: string }[] {
+  const now = Date.now();
+  return matches
+    .filter((m) => m.odds && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
+    .map((m) => {
+      const gap = Math.abs(m.odds!.pA - m.odds!.pB);
+      const days = (Date.parse(m.kickoff) - now) / 86_400_000;
+      const score = (LEAGUE_WEIGHT[m.league] ?? 1) + (1 - gap) * 3 - days * 0.25;
+      const why = gap < 0.2 ? "Close match, so fans on both sides will want in" : (LEAGUE_WEIGHT[m.league] ?? 1) >= 4 ? "Big match with fans on both sides" : "Kicks off soon, good for a quick drop";
+      return { m, why, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+}
+
+const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function Launch({ account, sellerName, tifoAccount, prefill, onLaunched }: { account: SmartAccount; sellerName: string | null; tifoAccount?: Address; prefill?: Prefill; onLaunched: () => void }) {
   const [matches, setMatches] = useState<ApiMatch[] | null>(null);
@@ -42,14 +64,14 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [product, setProduct] = useState("");
   const [image, setImage] = useState("");
   const [price, setPrice] = useState("");
-  const [profit, setProfit] = useState("");
+  const [cost, setCost] = useState("");
   const [kind, setKind] = useState<Kind>("digital");
-  const shape = "free" as Shape; // one offer: free for the first buyers on each side
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slug, setSlug] = useState(prefill?.slug ?? "");
-  const [discount, setDiscount] = useState(prefill?.discountPct ?? 10);
-  const [cap, setCap] = useState(prefill?.capUsd ?? 25);
+  const [spots, setSpots] = useState(2);
+  const [wantCap, setWantCap] = useState<number | null>(prefill?.capUsd ?? null);
+  const [browse, setBrowse] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "err"; text?: string; promo?: string }>({ kind: "idle" });
   const [retry, setRetry] = useState<Retry>(null);
@@ -59,35 +81,46 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     if (!sellerName) setName(localStorage.getItem(NAME_KEY) ?? "");
   }, [sellerName]);
   useEffect(() => {
-    if (!prefill) return;
-    if (prefill.slug) setSlug(prefill.slug);
-    if (prefill.discountPct) setDiscount(Math.min(20, Math.max(3, Math.round(prefill.discountPct))));
-    if (prefill.capUsd) setCap(Math.max(5, Math.round(prefill.capUsd)));
+    if (prefill?.slug) setSlug(prefill.slug);
+    if (prefill?.capUsd) setWantCap(prefill.capUsd);
   }, [prefill]);
 
+  const priceUsd = Number(price);
+  const costUsd = Math.max(0, Number(cost) || 0);
+  const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
+  // A budget suggested by the manager becomes a number of free spots once the price is known.
+  useEffect(() => {
+    if (wantCap && priceUsd > 0) {
+      setSpots(Math.max(1, Math.min(20, Math.floor(wantCap / priceUsd))));
+      setWantCap(null);
+    }
+  }, [wantCap, priceUsd]);
+
+  const picks = useMemo(() => suggest(matches ?? []), [matches]);
+  useEffect(() => {
+    if (!slug && picks[0]) setSlug(picks[0].m.slug);
+  }, [picks, slug]);
   const list = useMemo(() => {
-    const ok = (matches ?? []).filter((m) => m.odds && Date.parse(m.kickoff) > Date.now() + 45 * 60_000);
     const q = query.toLowerCase();
-    return ok.filter((m) => !q || m.title.toLowerCase().includes(q) || m.league.toLowerCase().includes(q));
+    return (matches ?? []).filter((m) => m.odds && Date.parse(m.kickoff) > Date.now() + 45 * 60_000 && (!q || m.title.toLowerCase().includes(q) || m.league.toLowerCase().includes(q)));
   }, [matches, query]);
   const m = matches?.find((x) => x.slug === slug);
-  const priceUsd = Number(price), profitUsd = Number(profit);
-  const free = shape === "free";
-  // "Free" gives a full refund to as many buyers per side as the budget covers. "Percent" spreads it over everyone.
-  const rates = !m?.odds ? null : free ? ([FULL, FULL] as [number, number]) : (initialRates(m.odds, discount * 100, MIN, MAX).map(Number) as [number, number]);
-  const [lo, hi] = free ? [FULL, FULL] : [MIN, MAX];
-  const spots = priceUsd > 0 ? Math.floor(cap / priceUsd) : 0;
-  const colors = m ? teamColors(m.teamA, m.teamB) : ["#999", "#666"];
-
-  // The numbers a seller decides on: what the promo costs on an average sale, and how many extra sales pay for the budget.
-  const costPerSale = priceUsd > 0 ? (priceUsd * discount) / 100 : 0;
-  const tooThin = !free && profitUsd > 0 && costPerSale >= profitUsd;
+  const cap = priceUsd > 0 ? Math.round(spots * priceUsd * 100) / 100 : 0;
   const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
-  const missing =
-    !name.trim() ? "Add your name" : !product.trim() ? "Name the product" : !(priceUsd >= 1) ? "Set a price" : !m || !rates ? "Pick a match" : kind === "digital" && !delivery.trim() ? "Add what the buyer receives" : tooThin ? "Lower the discount" : free && spots < 1 ? "Raise the budget to cover one product" : null;
+  const missing = !name.trim()
+    ? "Add your shop name"
+    : !product.trim()
+      ? "Name the product"
+      : !(priceUsd >= 1)
+        ? "Set a price"
+        : kind === "digital" && !delivery.trim()
+          ? "Add what the buyer receives"
+          : !m
+            ? "Pick a match"
+            : null;
 
   async function launch() {
-    if (!m || !rates || missing) return;
+    if (!m || missing) return;
     setStatus({ kind: "working", text: "Getting your drop ready…" });
     try {
       let sealed: string | undefined;
@@ -103,11 +136,11 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind === "physical" && contact.trim() ? contact.trim() : undefined,
-        shape, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: free ? 0 : discount * 100,
+        shape: "free", baseRates: [FULL, FULL], minBps: FULL, maxBps: FULL, effectiveBps: 0,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), lo, hi, rates[0], rates[1], 0, DRAW, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), FULL, FULL, FULL, FULL, 0, DRAW, meta,
       ];
       // With autopilot on, the drop opens through the seller's account so its sales land there and count toward the week.
       const { promo } = tifoAccount ? await openViaAccountWithCircle(account, tifoAccount, args) : await createPromoWithCircle(account, args);
@@ -120,150 +153,168 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     }
   }
 
-  if (status.kind === "done" && m && rates)
+  if (status.kind === "done" && m)
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={
-          free
-            ? `${product.trim()} is free if your team wins. ${spots} ${spots === 1 ? "spot" : "spots"} for ${short(m.teamA)} fans, ${spots} for ${short(m.teamB)} fans. Pick your side before kickoff.`
-            : `${product.trim()}: ${rates[0] / 100}% back if ${short(m.teamA)} win, ${rates[1] / 100}% back if ${short(m.teamB)} win. Pick your side before kickoff.`
-        }
+        post={`${product.trim()} is free if your team wins. ${spots} ${spots === 1 ? "spot" : "spots"} for ${short(m.teamA)} fans, ${spots} for ${short(m.teamB)} fans. Pick your side before kickoff.`}
         again={() => setStatus({ kind: "idle" })}
       />
     );
 
   return (
-    <div className="two" style={{ marginTop: 0 }}>
-      <div className="panel launch">
-        <h3>New match drop</h3>
-        <div className="grid2">
+    <div className="maker">
+      <section className="panel launch">
+        <h3>What are you selling?</h3>
+        {!sellerName && (
           <label className="field">
-            Your name <small>as buyers know you</small>
-            <input className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Dollars Glow" />
+            Shop name
+            <input className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="Glow" />
           </label>
-          <label className="field">
-            Product
-            <input className="input" value={product} maxLength={80} onChange={(e) => setProduct(e.target.value)} placeholder="Notion budget template" />
-          </label>
-        </div>
+        )}
+        <label className="field">
+          Product
+          <input className="input" value={product} maxLength={80} onChange={(e) => setProduct(e.target.value)} placeholder="Gua sha" />
+        </label>
         <ImageUpload value={image} onChange={setImage} label="photo" />
         <div className="grid2">
           <label className="field">
-            Price <small>in USDC, what the buyer pays</small>
-            <input className="input" type="number" min={1} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="20" />
+            Price
+            <span className="money-in">
+              <i>$</i>
+              <input className="input" type="number" min={1} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="5" />
+            </span>
           </label>
           <label className="field">
-            Your profit per sale <small>so we can tell you when the drop pays for itself</small>
-            <input className="input" type="number" min={0} step="0.01" value={profit} onChange={(e) => setProfit(e.target.value)} placeholder="20" />
+            What one costs you
+            <span className="money-in">
+              <i>$</i>
+              <input className="input" type="number" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" />
+            </span>
+            <small>Leave at 0 if it is digital</small>
           </label>
         </div>
-        <div>
-          <p className="fine" style={{ marginBottom: 6 }}>What the buyer gets</p>
-          <div className="chips">
-            <button className={`chip ${kind === "digital" ? "on" : ""}`} onClick={() => setKind("digital")}>
-              Digital <small>opens right after they pay</small>
-            </button>
-            <button className={`chip ${kind === "physical" ? "on" : ""}`} onClick={() => setKind("physical")}>
-              I deliver it myself
-            </button>
+        <div className="field">
+          How they get it
+          <div className="seg">
+            <button className={kind === "digital" ? "on" : ""} onClick={() => setKind("digital")}>Download or link</button>
+            <button className={kind === "physical" ? "on" : ""} onClick={() => setKind("physical")}>I deliver it</button>
           </div>
           {kind === "digital" ? (
-            <textarea className="input" rows={2} maxLength={600} value={delivery} onChange={(e) => setDelivery(e.target.value)} placeholder="The download link, access code or note. Only buyers who paid can open it." style={{ marginTop: 8, width: "100%" }} />
+            <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link. Only buyers see it." />
           ) : (
-            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="WhatsApp number or a link where buyers send delivery details" style={{ marginTop: 8, width: "100%" }} />
+            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number for delivery details" />
           )}
         </div>
-        <div>
-          <p className="fine" style={{ marginBottom: 6 }}>Match</p>
-          <input className="input" placeholder="Search a team or league" value={query} onChange={(e) => setQuery(e.target.value)} style={{ marginBottom: 8 }} />
-          <div className="matchlist">
-            {matches === null && <div className="skeleton" />}
-            {matches !== null && list.length === 0 && <p className="fine">No matches with live odds found. Try another search.</p>}
-            {list.slice(0, 40).map((x) => (
-              <button key={x.slug} className={x.slug === slug ? "on" : ""} onClick={() => setSlug(x.slug)}>
-                <span>
-                  {short(x.teamA)} v {short(x.teamB)}
-                  <small>{x.league}</small>
+      </section>
+
+      <section className="panel launch">
+        <h3>
+          <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="orb" /> Your manager suggests
+          </span>
+        </h3>
+        {matches === null && <div className="skeleton" />}
+        <div className="picks">
+          {picks.map(({ m: x, why }) => {
+            const [ca, cb] = teamColors(x.teamA, x.teamB);
+            return (
+              <button key={x.slug} className={`pick ${x.slug === slug ? "on" : ""}`} onClick={() => setSlug(x.slug)}>
+                <span className="dots" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+                  <i />
+                  <i />
                 </span>
-                <small>{new Date(x.kickoff).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small>
+                <span className="t">
+                  <b>
+                    {short(x.teamA)} v {short(x.teamB)}
+                  </b>
+                  <small>
+                    {x.league} · {when(x.kickoff)}
+                  </small>
+                  <em>{why}</em>
+                </span>
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
-        <div className="grid2">
-          {free ? (
-            <div className="field">
-              Free spots <small>your budget divided by your price</small>
-              <b style={{ fontSize: 22 }}>{spots} per side</b>
-            </div>
-          ) : (
-            <label className="field">
-              Average discount <small>{discount}% across all fans</small>
-              <input type="range" min={3} max={20} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} />
-            </label>
-          )}
-          <label className="field">
-            Budget <small>the most this drop can cost you, in USDC</small>
-            <input className="input" type="number" min={5} max={5000} value={cap} onChange={(e) => setCap(Math.max(5, Number(e.target.value)))} />
-          </label>
-        </div>
-        {m && rates && priceUsd >= 1 && (
-          <div className="quote">
-            <div className="sides">
-              {[0, 1].map((s) => (
-                <div key={s} className="side" style={{ ["--c" as string]: colors[s] }}>
-                  <span className="t">{short(s ? m.teamB : m.teamA)} fans</span>
-                  <span className="pct">{free ? "Free" : `${rates[s] / 100}%`}</span>
-                  <span className="back">
-                    {free ? `if they win · first ${spots} ${spots === 1 ? "buyer" : "buyers"}` : `back if they win · $${((priceUsd * rates[s]) / 10_000).toFixed(2)} per item`}
+        {!browse ? (
+          <button className="link" onClick={() => setBrowse(true)}>
+            Choose a different match
+          </button>
+        ) : (
+          <>
+            <input className="input" placeholder="Search a team or league" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <div className="matchlist">
+              {list.slice(0, 40).map((x) => (
+                <button key={x.slug} className={x.slug === slug ? "on" : ""} onClick={() => setSlug(x.slug)}>
+                  <span>
+                    {short(x.teamA)} v {short(x.teamB)}
+                    <small>{x.league}</small>
                   </span>
-                </div>
+                  <small>{when(x.kickoff)}</small>
+                </button>
               ))}
             </div>
-            <p className="fine">
-              This drop can never cost you more than <b>${cap}</b>, whoever wins. {free ? "Once the free spots on a side are taken, buyers on that side pay full price with no refund. " : ""}
-              On a draw every buyer gets {DRAW / 100}% back as a thank you. Each sale goes to your wallet straight away, except the part set aside for refunds.
-            </p>
-            {tooThin ? (
-              <p className="status err">
-                At {discount}% the promo gives away about ${costPerSale.toFixed(2)} a sale, and you make ${profitUsd.toFixed(2)}. Lower the discount so you still
-                earn on every sale.
-              </p>
-            ) : (
-              breakEven !== null && (
-                <p className="fine">
-                  <b>
-                    It pays for itself at {breakEven} extra {breakEven === 1 ? "sale" : "sales"}.
-                  </b>{" "}
-                  That is the full ${cap} budget divided by your ${profitUsd.toFixed(2)} profit per sale.
-                </p>
-              )
+          </>
+        )}
+      </section>
+
+      <section className="panel launch">
+        <h3>Free spots</h3>
+        <div className="spots">
+          <button aria-label="One fewer" onClick={() => setSpots((n) => Math.max(1, n - 1))} disabled={spots <= 1}>
+            −
+          </button>
+          <div>
+            <b>{spots}</b>
+            <span>per side</span>
+          </div>
+          <button aria-label="One more" onClick={() => setSpots((n) => Math.min(20, n + 1))} disabled={spots >= 20}>
+            +
+          </button>
+        </div>
+        <p className="fine">The first {spots === 1 ? "buyer" : `${spots} buyers`} on each side get it free if their team wins.</p>
+        {priceUsd >= 1 && (
+          <div className="sum-lines">
+            <div>
+              <span>Most it can cost you</span>
+              <b>${cap.toFixed(2)}</b>
+            </div>
+            {breakEven !== null && (
+              <div>
+                <span>Pays for itself after</span>
+                <b>
+                  {breakEven} extra {breakEven === 1 ? "sale" : "sales"}
+                </b>
+              </div>
             )}
           </div>
         )}
         {retry && (
-          <button className="btn" onClick={retry}>
+          <button className="btn block" onClick={retry}>
             Confirm with {biometric()}
           </button>
         )}
-        <button className="btn" hidden={!!retry} disabled={!!missing || status.kind === "working"} onClick={launch}>
-          {missing ?? `Get my link for ${short(m!.teamA)} v ${short(m!.teamB)}`}
+        <button className="btn block" hidden={!!retry} disabled={!!missing || status.kind === "working"} onClick={launch}>
+          {missing ?? `Get my link`}
         </button>
         {status.text && <p className={`status ${status.kind === "err" ? "err" : ""}`}>{status.text}</p>}
-      </div>
-      <ManagerChat
-        seller={account.address}
-        onProposal={(p) => {
-          setSlug(p.slug);
-          setDiscount(Math.min(20, Math.max(3, Math.round(p.effectiveBps / 100))));
-          setCap(p.capUsd);
-          if (p.shop) setName(p.shop);
-          if (p.product) setProduct(p.product);
-          if (p.priceUsd) setPrice(String(p.priceUsd));
-          if (p.image) setImage(p.image);
-        }}
-      />
+      </section>
+
+      <details className="ask">
+        <summary>Rather just chat? Ask your manager</summary>
+        <ManagerChat
+          seller={account.address}
+          onProposal={(p) => {
+            setSlug(p.slug);
+            if (p.shop) setName(p.shop);
+            if (p.product) setProduct(p.product);
+            if (p.priceUsd) setPrice(String(p.priceUsd));
+            if (p.image) setImage(p.image);
+            setWantCap(p.capUsd);
+          }}
+        />
+      </details>
     </div>
   );
 }

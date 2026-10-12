@@ -413,3 +413,33 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 .duties-bar { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .1); overflow: hidden; }
 .duties-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: scale .5s var(--ease); }
 @media (max-width: 640px) { .duties-stick { padding: 78px 10px 10px; } .duties-panel { border-radius: 30px; } .duties-panel li { grid-template-columns: 34px 1fr 18px; } .duties-panel header p { display: none; } }
+
+/* make a drop: three short steps */
+.maker { display: grid; gap: 18px; max-width: 680px; }
+.money-in { position: relative; display: block; }
+.money-in i { position: absolute; left: 16px; top: 50%; translate: 0 -50%; font-style: normal; color: var(--muted); font-weight: 500; }
+.money-in .input { padding-left: 30px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--surface-2); }
+.seg button { border: 0; background: transparent; cursor: pointer; padding: 11px 10px; border-radius: 12px; font-weight: 600; color: var(--muted); transition: background .2s, color .2s; }
+.seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.picks { display: grid; gap: 8px; }
+.pick { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; text-align: left; border: 0; cursor: pointer; background: var(--surface-2); border-radius: 18px; padding: 14px 16px; transition: box-shadow .25s var(--ease), background .25s; }
+.pick.on { background: var(--surface); box-shadow: inset 0 0 0 2px var(--accent-deep); }
+.pick .dots { padding-top: 5px; }
+.pick .t { display: grid; gap: 2px; }
+.pick .t small { color: var(--muted); font-size: .82rem; }
+.pick .t em { font-style: normal; font-size: .86rem; color: var(--accent-deep); }
+.spots { display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 10px; }
+.spots button { height: 56px; border-radius: 18px; border: 0; background: var(--surface-2); font-size: 1.6rem; cursor: pointer; color: var(--ink); transition: background .2s; }
+.spots button:hover:not(:disabled) { background: var(--accent-soft); }
+.spots button:disabled { opacity: .35; }
+.spots div { text-align: center; display: grid; }
+.spots b { font-size: 2.6rem; font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+.spots span { color: var(--muted); font-size: .86rem; }
+.sum-lines { display: grid; border-top: 1px solid var(--line); }
+.sum-lines div { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: .95rem; }
+.sum-lines span { color: var(--muted); }
+.ask { max-width: 680px; }
+.ask summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; padding: 8px 0; list-style: none; }
+.ask summary::-webkit-details-marker { display: none; }
+.ask[open] summary { margin-bottom: 10px; }
