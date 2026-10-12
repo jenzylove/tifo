@@ -2,6 +2,7 @@
 // "Pay with card": Circle's Arc Onramp widget, opened over the page. The buyer pays by card, Apple Pay or
 // Google Pay and the USDC lands in their own Tifo wallet on Arc, where the checkout is already watching the balance.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createOnrampKit, fetchOnrampSession } from "@circle-fin/onramp-kit";
 
 export default function CardTopUp({ address, amountUsd, onClose }: { address: string; amountUsd: number; onClose: (settled: boolean) => void }) {
@@ -37,7 +38,9 @@ export default function CardTopUp({ address, amountUsd, onClose }: { address: st
     };
   }, [address, amountUsd]);
 
-  return (
+  // Rendered on the page body: an animated parent would otherwise trap a fixed overlay inside itself.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="sheet" role="dialog" aria-modal="true" aria-label="Pay with card">
       <div className="sheet-card">
         <header>
@@ -52,6 +55,7 @@ export default function CardTopUp({ address, amountUsd, onClose }: { address: st
         <div ref={box} className="sheet-frame" hidden={state === "error"} />
         <p className="fine">Card payments are run by Circle and its partner. Tifo never sees your card.</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
