@@ -135,7 +135,7 @@ export function walletError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   const name = (e as Error)?.name ?? "";
   if (name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|cancel/i.test(m))
-    return `${biometric()} was cancelled or timed out. Tap the button again. If you haven't made a Tifo wallet on this phone yet, choose "Create".`;
+    return `The ${biometric()} prompt was closed or timed out, so nothing was charged. Tap the button again and finish the prompt. If your passkey is on your phone, keep the phone nearby.`;
   if (name === "InvalidStateError" || /already registered/i.test(m)) return "This phone already has a Tifo wallet. Tap \"I already have one\".";
   if (/Credential Management API not supported|PublicKeyCredential/i.test(m)) return "This browser can't use passkeys. Open the link in Safari or Chrome.";
   return m.split("\n")[0];
@@ -203,7 +203,9 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
   } catch (e) {
     const name = (e as Error)?.name ?? "";
     const msg = String((e as Error)?.message ?? "");
-    if (name === "NotAllowedError" || /not allowed by the user agent/i.test(msg)) {
+    // A browser that blocked the prompt, a prompt that timed out and a prompt the person closed all end here.
+    // Keep the prepared payment behind a "Confirm" button so one more tap retries it.
+    if (name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|operation either/i.test(msg)) {
       let used = false;
       throw new NeedsTap(async () => {
         if (used) throw new Error("This confirmation was already used. Start again.");
