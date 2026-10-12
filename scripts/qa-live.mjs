@@ -66,8 +66,8 @@ try {
   await seller.page.getByRole("button", { name: /Create my wallet/ }).click();
   await seller.page.getByText("New match drop").waitFor({ timeout: 90_000 });
   log("seller signed in");
-  await seller.page.getByPlaceholder("Dollars Glow").fill("Glow Studio");
-  await seller.page.getByPlaceholder("Notion budget template").fill("Budget planner kit");
+  await seller.page.getByPlaceholder("Dollars Glow").fill(process.env.QA_NAME ?? "Glow Studio");
+  await seller.page.getByPlaceholder("Notion budget template").fill(process.env.QA_PRODUCT ?? "Budget planner kit");
   const nums = seller.page.locator('.launch input[type="number"]');
   await nums.nth(0).fill("5");
   await nums.nth(1).fill("5");
@@ -94,6 +94,7 @@ try {
   await seller.shot("12-seller-live");
   const dropUrl = (await seller.page.locator(".done code").first().innerText()).trim();
   log("drop", dropUrl);
+  if (process.env.QA_STOP_AFTER_DROP) throw new Error("STOP: drop made, stopping as asked");
   await seller.page.getByRole("button", { name: "Overview" }).click();
   await seller.page.waitForTimeout(6000);
   await seller.shot("13-seller-overview", true);

@@ -9,6 +9,7 @@ import {
   getLoginVerification,
   getRegistrationOptions,
   getRegistrationVerification,
+  getUserOperationGasPrice,
   toCircleSmartAccount,
   toModularTransport,
   toPasskeyTransport,
@@ -29,7 +30,18 @@ function transports() {
   return {
     passkey,
     client: createPublicClient({ chain, transport: modular }),
-    bundler: createBundlerClient({ chain, transport: modular }),
+    // Fees come from Circle's own gas price service. The node's default tip is far below the 1 gwei the mainnet
+    // bundler requires, which made every operation fail its precheck.
+    bundler: createBundlerClient({
+      chain,
+      transport: modular,
+      userOperation: {
+        async estimateFeesPerGas({ bundlerClient }) {
+          const p = await getUserOperationGasPrice(bundlerClient);
+          return { maxFeePerGas: BigInt(p.medium.maxFeePerGas), maxPriorityFeePerGas: BigInt(p.medium.maxPriorityFeePerGas) };
+        },
+      },
+    }),
   };
 }
 
