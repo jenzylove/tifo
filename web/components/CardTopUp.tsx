@@ -41,10 +41,10 @@ export default function CardTopUp({ address, amountUsd, onClose }: { address: st
   // Rendered on the page body: an animated parent would otherwise trap a fixed overlay inside itself.
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="sheet" role="dialog" aria-modal="true" aria-label="Pay with card">
+    <div className="sheet" role="dialog" aria-modal="true" aria-label="Add money">
       <div className="sheet-card">
         <header>
-          <b>{state === "settled" ? "Money added" : "Pay with card"}</b>
+          <b>{state === "settled" ? "Money added" : "Add money"}</b>
           <button className="link" onClick={() => onClose(state === "settled")}>
             {state === "settled" ? "Continue" : "Close"}
           </button>
@@ -53,7 +53,7 @@ export default function CardTopUp({ address, amountUsd, onClose }: { address: st
         {state === "error" && <p className="status err">{err}</p>}
         {state === "settled" && <p className="status ok">Your balance is updating. Close this and tap Buy.</p>}
         <div ref={box} className="sheet-frame" hidden={state === "error"} />
-        <p className="fine">Card payments are run by Circle and its partner. Tifo never sees your card.</p>
+        <p className="fine">Pay by card or bank transfer in your own currency. Payments are run by Circle and its partner. Tifo never sees your card or bank details.</p>
       </div>
     </div>,
     document.body,

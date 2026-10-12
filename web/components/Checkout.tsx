@@ -309,7 +309,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
               </span>
               {cardOn && (
                 <button className="btn sm" style={{ justifySelf: "start" }} onClick={() => setCard(true)}>
-                  Pay with card
+                  Pay with card or bank
                 </button>
               )}
               <button
