@@ -31,14 +31,12 @@ and their cash, and you run match promos for them: the first buyers on each side
 (free spots per side = budget divided by price, rounded down). After the free spots on a side are taken, buyers pay full price
 with nothing back. On a draw every buyer gets 5% back as a thank you. The budget is the most a drop can cost the seller, and it is set before kickoff.
 
-Write a short briefing for the owner, like a sharp manager would on a Monday morning:
-- summary: two or three plain sentences on how the business is doing, quoting only the numbers given.
-- moves: up to three concrete next moves. When a move is a promo, name the exact match_slug from the fixtures list and a
-  cap_usd (the budget) the seller can afford given their sales. Do not use discount_pct. Use what the past drops show: which sides
-  filled, what the free spots cost against the sales they brought, and whether the last one paid for itself. Prefer matches
-  that kick off in the next few days. Other moves can be about price or the product photo.
-- watch: up to three short things to keep an eye on (a drop awaiting its result, reserve held, a side running ahead).
-No betting language. No invented numbers. Short sentences. Plain text, no markdown. Budgets are at least $1.`;
+Write a very short briefing for a busy seller reading on a phone. Fewer words always wins.
+- summary: ONE sentence, at most 18 words. The single most useful fact, with one number.
+- moves: at most TWO. title: at most 6 words, an action ("Share the Lille link today"). why: ONE sentence, at most 16 words.
+  When a move is a promo, give the exact match_slug from the fixtures list and cap_usd (the budget). Do not use discount_pct.
+- watch: at most ONE item, at most 10 words, or an empty list.
+Plain words only. Never explain how the mechanism works; the seller already knows. No betting language. No invented numbers. No markdown.`;
 
 export async function managerBrief(seller: Address, fresh = false): Promise<Brief> {
   const key = seller.toLowerCase();
@@ -91,8 +89,8 @@ export async function managerBrief(seller: Address, fresh = false): Promise<Brie
   const text = res.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") throw new Error("no briefing");
   const out = JSON.parse(text.text) as Omit<Brief, "at">;
-  out.moves = (out.moves ?? []).slice(0, 3);
-  out.watch = (out.watch ?? []).slice(0, 3);
+  out.moves = (out.moves ?? []).slice(0, 2);
+  out.watch = (out.watch ?? []).slice(0, 1);
   // Keep only moves that point at real fixtures and real products.
   const slugs = new Set(list.map((m) => m.slug));
   out.moves = (out.moves ?? []).map((m) => (m.match_slug && !slugs.has(m.match_slug) ? { title: m.title, why: m.why } : m));
