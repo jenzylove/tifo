@@ -86,3 +86,11 @@ The seller and buyer created during the live walk through kept going with nobody
 - **The agent then opened that seller's next drop by itself**, at 17:06 UTC: `0x6bf2d15ec3c4d89030b3090907c7e94209fd766f5f79a2369f5ea794f00a8cb0`, drop `0xaE5D7898C332fD4DBb9A415113CABd75Df014c9C` (Man City v PSG, 14 Oct, $10 budget, inside the seller's $25 weekly rule). Its reason on chain: the last drop "brought only 1 order on one side, 5 dollars in sales, and cost 0.25 dollars after the draw", so it kept the budget and moved to a higher profile match.
 - This seller signed up, made one drop and turned on autopilot entirely through the app's screens. Everything after that was the scheduler and the agent.
 - Still unverified: a proposal above the seller's rule being approved in the app.
+
+## 12 Oct 2026: live on Arc mainnet
+- Audit before mainnet (hold until fixed) and its fixes shipped in `ff6002e`: the seller chat and briefing describe only free spots, rate limits on the open endpoints, honest refund timing and a "What you trust" section in the README, cross chain pay in marked not built.
+- Mainnet factory `0x9cda0b646353dAc380156dAedc30892323876CEE`, deploy transaction `0xbf9395abbf0d11383d41883330945b51f71b4969f2b40e8b89f57eab42c9f5ed`. Fresh mainnet agent `0xabEC6CB40D2A2Fb251a1AC3Fbeb269E9C8DBb962`, funded with 2 USDC for gas (`0x8c5275813bb961d18313d6d559364fd313747e0f32cc9a7a63560adcb78dd3f1`). Same operator as testnet.
+- Circle mainnet setup: client key, passkey domain, and an active Gas Station policy for Arc (capped at $10 a day). Each was found missing by the live walk through and fixed in Console.
+- Found and fixed: the mainnet bundler requires a tip of at least 1 gwei, while the node suggested a tiny one, so every wallet operation failed. Fees now come from Circle's own gas price service.
+- First mainnet drop made by a brand new passkey wallet with gas sponsored by Circle: `0x1d5b6d812f6868e36015d74ad7761914bfe2a837` (a labelled check drop, not for sale).
+- Testnet history (all earlier entries) stays on Arc testnet and in this log; the live site now reads mainnet only.
