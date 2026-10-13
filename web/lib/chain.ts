@@ -34,7 +34,7 @@ const publicRpc = http(RPC_URL, { batch: true, retryCount: 3 });
 export const transport = CANTEEN_RPC ? fallback([http(CANTEEN_RPC, { retryCount: 1, timeout: 8_000 }), publicRpc]) : publicRpc;
 export const publicClient = createPublicClient({ chain, transport });
 
-// The practice version: the same app deployed on Arc testnet, where anyone can try a drop with free test USDC.
+// Practice version: the same app deployed on Arc testnet, where anyone can try a drop with free test USDC.
 // The real site reads its drops (reads only) to list them under the real ones, each linking to the practice site.
 export const PRACTICE_URL = (process.env.NEXT_PUBLIC_PRACTICE_URL ?? "").replace(/\/$/, "");
 export const MAIN_URL = (process.env.NEXT_PUBLIC_MAIN_URL ?? "").replace(/\/$/, "");
