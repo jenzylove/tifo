@@ -1,6 +1,7 @@
 "use client";
 // The buy box on a drop page: the product at full price, plus a promo that pays back a % if the chosen team wins.
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { keccak256, parseSignature, toHex, type Address, type Hex } from "viem";
 import { erc20Abi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
@@ -54,6 +55,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [cardOn, setCardOn] = useState(false); // card payments are set up on this deployment
   const [card, setCard] = useState(false);
   const [bridge, setBridge] = useState(false);
+  const [sheet, setSheet] = useState(false); // the pay sheet: wallet, ways to add money, other wallets
   const [tap, setTap] = useState<null | { go: () => Promise<Hex>; secret: Hex }>(null);
 
   useEffect(() => {
@@ -265,86 +267,103 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         <button className="btn block" disabled>
           Promo closed at kickoff
         </button>
-      ) : !circleEnabled() ? (
-        <button className="btn block" disabled={side === null || busy} onClick={payOtherWallet}>
-          {side === null ? "Choose a promo to continue" : `Buy for ${money(total)}`}
-        </button>
-      ) : !acct ? (
-        <div style={{ display: "grid", gap: 8 }}>
-          <button className="btn block" disabled={busy} onClick={() => wallet(hasSaved ? "login" : "register")}>
-            {hasSaved ? `Sign in with ${bio} to buy` : `Create a wallet with ${bio}`}
-          </button>
-          <p className="fine" style={{ textAlign: "center" }}>
-            {hasSaved ? (
-              <button className="link" onClick={() => wallet("register")}>Create a new wallet instead</button>
-            ) : (
-              <>
-                A Circle wallet in seconds. No seed phrase, no gas.{" "}
-                <button className="link" onClick={() => wallet("login")}>I already have one</button>
-              </>
-            )}
-          </p>
-        </div>
       ) : (
-        <div style={{ display: "grid", gap: 10 }}>
-          <div className="walletline">
-            Paying from <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code>
-            <span>
-              Balance <b style={{ color: "var(--ink)" }}>{balance === null ? "…" : money(Number(balance) / 1e6)}</b>
-            </span>
-          </div>
-          {balance !== null && !enough && (
-            <div className="fundbox">
-              <span>
-                Add {money(total - Number(balance) / 1e6)} or more in USDC on the <b>Arc</b> network to this wallet. You can withdraw from most big exchanges and
-                choose Arc.
-                {NETWORK === "testnet" && (
-                  <>
-                    {" "}
-                    On testnet, get free USDC at{" "}
-                    <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-                      faucet.circle.com
-                    </a>{" "}
-                    (pick Arc Testnet).
-                  </>
-                )}
-              </span>
-              {cardOn && (
-                <button className="btn sm" style={{ justifySelf: "start" }} onClick={() => setCard(true)}>
-                  Pay with card or bank
-                </button>
-              )}
-              <button className="btn sm ghost" style={{ justifySelf: "start" }} onClick={() => setBridge(true)}>
-                Move USDC from Base, Ethereum, Arbitrum or Polygon
-              </button>
-              <button
-                className="btn sm ghost"
-                style={{ justifySelf: "start" }}
-                onClick={() => {
-                  navigator.clipboard?.writeText(acct.address);
-                  setCopied(true);
-                }}
-              >
-                {copied ? "Address copied" : "Copy my wallet address"}
-              </button>
-            </div>
-          )}
-          {tap ? (
-            <button className="btn block" disabled={busy} onClick={confirmTap}>
-              Confirm {money(total)} with {bio}
-            </button>
-          ) : (
-            <button className="btn block" disabled={side === null || !enough || busy} onClick={pay}>
-              {side === null ? "Choose a promo to continue" : `Buy for ${money(total)}`}
-            </button>
-          )}
-        </div>
-      )}
-      {circleEnabled() && !closed && (
-        <button className="link" style={{ justifySelf: "center" }} onClick={payOtherWallet} disabled={busy || side === null}>
-          or pay with MetaMask / Rabby
+        <button
+          className="btn block"
+          disabled={side === null || busy}
+          onClick={() => (circleEnabled() && acct && enough && !tap ? pay() : setSheet(true))}
+        >
+          {side === null ? "Pick a side to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
         </button>
       )}
+      {acct && !sheet && (
+        <p className="fine" style={{ textAlign: "center" }}>
+          Tifo wallet <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code> · balance {balance === null ? "…" : money(Number(balance) / 1e6)}
+        </p>
+      )}
+      {sheet && side !== null && typeof document !== "undefined" &&
+        createPortal(
+          <div className="sheet" role="dialog" aria-modal="true" aria-label="Pay">
+            <div className="sheet-card pay-sheet">
+              <header>
+                <b>
+                  Pay {money(total)} <small className="fine">· {offerLabel(rates[side], teams[side])}</small>
+                </b>
+                <button className="link" onClick={() => setSheet(false)}>
+                  Close
+                </button>
+              </header>
+
+              {!circleEnabled() ? null : !acct ? (
+                <section>
+                  <h5>1. Your Tifo wallet</h5>
+                  <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Refunds land here after full time.</p>
+                  <button className="btn block" disabled={busy} onClick={() => wallet(hasSaved ? "login" : "register")}>
+                    {hasSaved ? `Sign in with ${bio}` : `Create a wallet with ${bio}`}
+                  </button>
+                  <button className="link fine" onClick={() => wallet(hasSaved ? "register" : "login")}>
+                    {hasSaved ? "Create a new wallet instead" : "I already have one"}
+                  </button>
+                </section>
+              ) : enough || tap ? (
+                <section>
+                  <h5>Ready</h5>
+                  <p className="fine">
+                    Paying from your Tifo wallet <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code>, balance {money(Number(balance ?? 0n) / 1e6)}.
+                  </p>
+                  <button className="btn block" disabled={busy} onClick={tap ? confirmTap : pay}>
+                    Confirm {money(total)} with {bio}
+                  </button>
+                </section>
+              ) : (
+                <section>
+                  <h5>2. Add {money(Math.max(total - Number(balance ?? 0n) / 1e6, 0))} to your Tifo wallet</h5>
+                  <p className="fine">
+                    Balance {balance === null ? "…" : money(Number(balance) / 1e6)}. Pick how you want to add money. This page pays as soon as it lands.
+                  </p>
+                  <div className="pay-ways">
+                    {cardOn && (
+                      <button onClick={() => setCard(true)}>
+                        <b>Card or bank transfer</b>
+                        <span>In your own currency, through Circle</span>
+                      </button>
+                    )}
+                    <button onClick={() => setBridge(true)}>
+                      <b>USDC on another chain</b>
+                      <span>Base, Ethereum, Arbitrum, Optimism or Polygon</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(acct.address);
+                        setCopied(true);
+                      }}
+                    >
+                      <b>{copied ? "Address copied" : "Send from an exchange"}</b>
+                      <span>{copied ? "Withdraw USDC to it and choose the Arc network" : "Copy your address, withdraw USDC on Arc"}</span>
+                    </button>
+                    {NETWORK === "testnet" && (
+                      <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
+                        <b>Free test USDC</b>
+                        <span>faucet.circle.com, pick Arc Testnet</span>
+                      </a>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              <section className="pay-alt">
+                <p className="fine">Already hold USDC on Arc in MetaMask or Rabby?</p>
+                <button className="btn sm ghost" disabled={busy} onClick={payOtherWallet}>
+                  Pay with MetaMask / Rabby
+                </button>
+              </section>
+
+              {status.kind === "working" && <p className="status">{status.text}</p>}
+              {status.kind === "error" && <p className="status err">{status.text}</p>}
+            </div>
+          </div>,
+          document.body,
+        )}
       {bridge && acct && <BridgeTopUp recipient={acct.address} neededUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setBridge(false)} />}
       {card && acct && <CardTopUp address={acct.address} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setCard(false)} />}
       {status.kind === "working" && <p className="status">{status.text}</p>}
