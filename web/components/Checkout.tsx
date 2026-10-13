@@ -319,7 +319,11 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 <section>
                   <h5>2. Add {money(Math.max(total - Number(balance ?? 0n) / 1e6, 0))} to your Tifo wallet</h5>
                   <p className="fine">
-                    Balance {balance === null ? "…" : money(Number(balance) / 1e6)}. Pick how you want to add money. This page pays as soon as it lands.
+                    Balance {balance === null ? "…" : money(Number(balance) / 1e6)} in <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code>. Pick how you want to add
+                    money. This page pays as soon as it lands.{" "}
+                    <button className="link" disabled={busy} onClick={() => wallet("login")}>
+                      Money in another Tifo wallet? Switch
+                    </button>
                   </p>
                   <div className="pay-ways">
                     {cardOn && (

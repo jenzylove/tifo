@@ -36,6 +36,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav>
               <a href="/drops" className="hide-sm">Drops</a>
               <a href="/proof" className="hide-sm">Proof</a>
+              <a href="/wallet" className="hide-sm">Wallet</a>
               <a href="/manage" className="btn sm">Make a drop</a>
             </nav>
           </div>
@@ -52,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <a href="/manage">Make a drop</a>
                 <a href="/drops">Drops</a>
                 <a href="/proof">Proof</a>
+                <a href="/wallet">Wallet</a>
                 {practice && <a href="/drops#practice">Try with test money</a>}
                 <a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">
                   GitHub
