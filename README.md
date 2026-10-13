@@ -1,6 +1,6 @@
 # Tifo
 
-**An AI sales manager with a budget it has to earn back.**
+**Put your stock on a big match. Every buyer gets money back if their team wins, and you know the most it can cost before you post.**
 
 Built for the [Tameion Agents Hackathon](https://tameion.thecanteenapp.com) (Canteen × Circle), settled in USDC on [Arc](https://docs.arc.network/). Everything here was built during the event, which opened on 27 September 2026.
 
@@ -8,12 +8,12 @@ Live: [tifo.vercel.app](https://tifo.vercel.app)
 
 ## What it does
 
-Someone who sells online gives Tifo one product and a budget. Tifo picks a real match, sets the offer and hands back one link to share.
+Someone who sells online gives Tifo one product, how many they have, and how much back: 25%, 50% or free. Tifo picks a big match and hands back one link to share.
 
 - Fans of both teams buy at full price and pick their side.
-- The first buyers on each side get the full price back if their team wins. It lands in their wallet about 20 minutes after full time: two result sources must agree, then a 15 minute correction window passes.
+- Every buyer gets that share back if their team wins. It lands in their wallet about 20 minutes after full time: two result sources must agree, then a 15 minute correction window passes.
 - On a draw every buyer gets a small thank you.
-- The seller's cost is the same whoever wins and can never pass the budget. A contract enforces that, not a prompt.
+- The stock caps the cost: 10 t-shirts at $20 with 25% back can cost at most $50. Because fans split and only one side wins, it usually costs about what a 10% off sale does. A contract enforces the cap, not a prompt.
 - A digital product opens on the page the moment the buyer pays.
 - After each match the seller sees what the drop brought in against what it cost.
 

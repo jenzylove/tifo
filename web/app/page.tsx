@@ -159,7 +159,7 @@ export default async function Landing() {
         <div className="fans">
           <Reveal>
             <span className="pill ac">If you are buying</span>
-            <h2 style={{ marginTop: 14 }}>Buy what you wanted anyway. It is free if your team wins.</h2>
+            <h2 style={{ marginTop: 14 }}>Buy what you wanted anyway. Money back if your team wins.</h2>
             <ol>
               <li>
                 <span>
