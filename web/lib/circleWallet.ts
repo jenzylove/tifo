@@ -192,7 +192,17 @@ async function sendAs<T>(account: SmartAccount, calls: Call[], failure: string, 
  * passkey prompt comes as late and as close to the tap as possible. */
 async function send(account: SmartAccount, calls: Call[], failure: string) {
   const { bundler } = transports();
-  const prepared = await bundler.prepareUserOperation({ account, calls, paymaster: true });
+  let prepared;
+  try {
+    prepared = await bundler.prepareUserOperation({ account, calls, paymaster: true });
+  } catch (e) {
+    console.error("[tifo] prepare failed", e);
+    if (/invalid account signature/i.test(errorText(e)))
+      throw new Error(
+        `Circle refused wallet ${account.address.slice(0, 8)}… before your passkey was asked to sign (while pricing the gas). The wallet setup itself is not accepted, not your passkey. Nothing was charged.`,
+      );
+    throw e;
+  }
   // Drop the account object before signing, but keep the paymaster address the service filled in. Removing it
   // sends the operation unsponsored, and a new wallet with no balance is then refused.
   const { account: _a, ...rest } = prepared as typeof prepared & { account?: unknown };
@@ -223,9 +233,17 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
         return submit();
       });
     }
-    if (/invalid account signature/i.test(`${msg} ${(e as { details?: string }).details ?? ""}`)) throw await diagnoseSignature(account, e);
+    if (/invalid account signature/i.test(errorText(e))) throw await diagnoseSignature(account, e);
     throw e;
   }
+}
+
+/** Every message and detail in an error and its causes, so a reason buried in `cause.details` is still found. */
+function errorText(e: unknown): string {
+  const out: string[] = [];
+  for (let x = e as { message?: string; details?: string; shortMessage?: string; cause?: unknown } | undefined, i = 0; x && i < 6; x = x.cause as typeof x, i++)
+    out.push(String(x.message ?? ""), String(x.details ?? ""), String(x.shortMessage ?? ""));
+  return out.join(" ");
 }
 
 /** Circle refused the signature. Check it here: does this passkey actually sign for this wallet's key? */
