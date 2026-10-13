@@ -1,7 +1,7 @@
 "use client";
 // Circle Modular Wallets: a passkey (Face ID / fingerprint) owns a Circle smart account on Arc.
 // Circle's paymaster sponsors gas, so a fan only ever needs USDC.
-import { createPublicClient, encodeFunctionData, erc20Abi, type Address, type Hex } from "viem";
+import { createPublicClient, encodeFunctionData, erc20Abi, keccak256, toBytes, type Address, type Hex } from "viem";
 import { createBundlerClient, formatUserOperationRequest, toWebAuthnAccount, type P256Credential, type SmartAccount, type UserOperation, type WebAuthnAccount } from "viem/account-abstraction";
 import {
   createRpClient,
@@ -14,7 +14,7 @@ import {
   toModularTransport,
   toPasskeyTransport,
 } from "@circle-fin/modular-wallets-core";
-import { base64UrlToBytes, bytesToCryptoKey, cryptoKeyToBytes, parseCredentialPublicKey, parsePublicKey, serializePublicKey } from "webauthn-p256";
+import { base64UrlToBytes, bytesToCryptoKey, cryptoKeyToBytes, parseCredentialPublicKey, parsePublicKey, serializePublicKey, verify as verifyP256 } from "webauthn-p256";
 import { tifoAccountAbi, tifoFactoryAbi, tifoPromoAbi } from "./abi";
 import { FACTORY, NETWORK, USDC, chain } from "./chain";
 
@@ -223,7 +223,27 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
         return submit();
       });
     }
+    if (/invalid account signature/i.test(`${msg} ${(e as { details?: string }).details ?? ""}`)) throw await diagnoseSignature(account, e);
     throw e;
+  }
+}
+
+/** Circle refused the signature. Check it here: does this passkey actually sign for this wallet's key? */
+async function diagnoseSignature(account: SmartAccount, original: unknown): Promise<Error> {
+  try {
+    const owner = (account as unknown as { owner?: WebAuthnAccount }).owner;
+    if (!owner?.sign) return original as Error;
+    const hash = keccak256(toBytes(`tifo-signature-check-${Date.now()}`));
+    const { signature, webauthn } = await owner.sign({ hash });
+    const ok = await verifyP256({ hash, publicKey: owner.publicKey, signature, webauthn: webauthn as never });
+    console.error("[tifo] signature check", { wallet: account.address, publicKey: owner.publicKey, rpId: (webauthn as { authenticatorData?: string }).authenticatorData?.slice(0, 66), ok });
+    return new Error(
+      ok
+        ? `Your passkey signed correctly for wallet ${account.address.slice(0, 8)}…, but Circle still refused it. This points at Circle's side (wallet version or domain). Nothing was charged. Your money is safe in this wallet.`
+        : `The passkey you picked does not match wallet ${account.address.slice(0, 8)}…. Tap "Switch wallet" and pick the other passkey, or check which device created this wallet. Nothing was charged.`,
+    );
+  } catch (e) {
+    return new Error(`Circle refused the signature, and the check could not finish (${(e as Error).message.split("\n")[0]}). Nothing was charged.`);
   }
 }
 
