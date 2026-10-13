@@ -128,7 +128,7 @@ export default async function Landing() {
         </div>
       </div>
 
-      <p className="trio-note">An example drop: a $20 product with a $100 budget is five free spots for each side.</p>
+      <p className="trio-note">An example drop: a $20 product at 50% back, with a $100 budget, covers the first ten buyers on the winning side.</p>
 
       <div className="wrap">
         <Reveal className="facts">

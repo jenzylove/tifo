@@ -94,3 +94,9 @@ The seller and buyer created during the live walk through kept going with nobody
 - Found and fixed: the mainnet bundler requires a tip of at least 1 gwei, while the node suggested a tiny one, so every wallet operation failed. Fees now come from Circle's own gas price service.
 - First mainnet drop made by a brand new passkey wallet with gas sponsored by Circle: `0x1d5b6d812f6868e36015d74ad7761914bfe2a837` (a labelled check drop, not for sale).
 - Testnet history (all earlier entries) stays on Arc testnet and in this log; the live site now reads mainnet only.
+
+## 13 Oct 2026: offer tiers, quieter spot counts, practice version
+- Sellers now pick how much comes back if the buyer's team wins: 25%, 50% or 100% (free). Round tiers only, so a drop reads like a promo and never like odds. The contract already took any fixed rate; the form, the planner, the seller chat and the briefing now choose a tier, and the budget covers `budget / (price x tier)` buyers per side.
+- Buyers no longer see "2 free spots left" from the start. The offer reads as open while the budget lasts, and a count appears only when the last two are left. Every buyer still sees exactly what they get before paying.
+- The draw thank you moved out of the checkout receipt into the "When do I get my money back?" small print.
+- Practice version: the same app on Arc testnet at tifo-test.vercel.app. Its drops are listed under the real ones on /drops ("Try it with test money"), and 20 practice drops were opened from 20 separate seller wallets by `scripts/seed-practice.mts` (GitHub Actions: seed practice drops). The scheduler settles them like real ones.

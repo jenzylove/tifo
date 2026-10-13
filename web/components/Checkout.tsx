@@ -7,6 +7,7 @@ import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
 import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
+import { lastFew } from "@/lib/offer";
 import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import Purchase, { saveOrder } from "./Purchase";
@@ -20,7 +21,7 @@ interface Props {
   cap: string;
   floorBps: number;
   drawBps: number;
-  spots?: [number | null, number | null]; // free spots left on each side, when the drop gives them
+  spots?: [number | null, number | null]; // buyers each side still covers at its offer (shown only when nearly gone)
   priceUsd: number;
   product: string;
   shop: string;
@@ -204,7 +205,6 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           {back(status.side) > 0
             ? `Your promo is locked: if ${t} win, ${money(back(status.side))} comes back to this wallet after full time.`
             : "Your order is in."}
-          {drawBps > 0 ? ` On a draw you get ${money((total * drawBps) / 10_000)} back as a thank you.` : ""}
         </p>
         {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -234,7 +234,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 <span className="radio" aria-hidden />
                 <span className="txt">
                   <b>{offerLabel(rates[s], teams[s])}</b>
-                  {spots?.[s] != null && <small>{spots[s] === 0 ? "Free spots are gone" : `${spots[s]} free ${spots[s] === 1 ? "spot" : "spots"} left`}</small>}
+                  {lastFew(spots?.[s] ?? null) && <small>{lastFew(spots?.[s] ?? null)}</small>}
                 </span>
                 <span className="amt">{rates[s] > 0 ? money(back(s)) : ""}</span>
               </button>

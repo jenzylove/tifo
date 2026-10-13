@@ -27,9 +27,8 @@ export interface Brief {
 const cache = new Map<string, Brief>();
 
 const SYSTEM = `You are the AI sales manager for someone who sells online through Tifo. You look after their sales, their promo budget
-and their cash, and you run match promos for them: the first buyers on each side get the full price back if their team wins
-(free spots per side = budget divided by price, rounded down). After the free spots on a side are taken, buyers pay full price
-with nothing back. On a draw every buyer gets 5% back as a thank you. The budget is the most a drop can cost the seller, and it is set before kickoff.
+and their cash, and you run match promos for them: buyers get 25%, 50% or 100% of the price back if their team wins,
+for as many buyers per side as the budget covers. After that, buyers pay full price with nothing back. On a draw every buyer gets 5% back as a thank you. The budget is the most a drop can cost the seller, and it is set before kickoff.
 
 Write a very short briefing for a busy seller reading on a phone. Fewer words always wins.
 - summary: ONE sentence, at most 18 words. The single most useful fact, with one number.

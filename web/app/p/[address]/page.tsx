@@ -9,6 +9,7 @@ import Purchase from "@/components/Purchase";
 import { settleNow } from "@/lib/agent";
 import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
+import { coverLeft, lastFew, tierLabel } from "@/lib/offer";
 import { offerLabel } from "@/lib/precheck";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
@@ -59,10 +60,11 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const image = p.meta.image;
   const digital = !!p.meta.delivery;
   const free = Math.max(...st.rates) >= 10_000;
-  // Free spots left on each side: what is left of the budget, in whole products.
+  // How many more buyers each side's budget covers at its offer. Shown to buyers only when nearly gone.
   const priceUnits = BigInt(Math.round(p.meta.priceUsd * 1e6));
-  const spots = [0, 1].map((s) => (free && priceUnits > 0n ? Number((st.cap > st.liability[s] ? st.cap - st.liability[s] : 0n) / priceUnits) : null));
-  const drawLine = st.drawBps > 0 ? `On a draw every buyer gets ${st.drawBps / 100}% back as a thank you.` : "A draw pays no rebate.";
+  const spots = [0, 1].map((s) => coverLeft(st.cap, st.liability[s], priceUnits, st.rates[s]));
+  const share = Math.max(...st.rates);
+  const drawLine = st.drawBps > 0 ? `If the match is a draw, every buyer gets a small thank you (${st.drawBps / 100}% of what they paid).` : "A draw pays nothing back.";
   const kick = new Date(p.meta.kickoff);
   // Once the match is over, anyone watching this page moves the settlement along: result, final check, refunds.
   const fullTime = Date.now() / 1000 >= st.settleNotBefore || st.proposed !== "None";
@@ -128,7 +130,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         </div>
 
         <div className="info">
-          <span className="pill ac" style={{ justifySelf: "start" }}>{free ? "Free if your team wins" : `Up to ${Math.max(...st.rates) / 100}% back if your team wins`}</span>
+          <span className="pill ac" style={{ justifySelf: "start" }}>{free ? "Free if your team wins" : `${share / 100}% back if your team wins`}</span>
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
           {description && <p className="desc">{description}</p>}
@@ -181,7 +183,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
                 <b>{team[s]}</b>
                 <span>
                   {fans[s].length} {fans[s].length === 1 ? "order" : "orders"} ·{" "}
-                  {spots[s] !== null ? (phase === "open" ? `${spots[s]} free ${spots[s] === 1 ? "spot" : "spots"} left` : "free if they win") : `${st.rates[s] / 100}% back now`}
+                  {phase === "open" ? (lastFew(spots[s]) ?? (spots[s] === 0 ? "offer used up" : tierLabel(st.rates[s]).toLowerCase() + " if they win")) : `${tierLabel(Math.max(...fans[s].map((o) => o.rateBps), 0)).toLowerCase()} if they win`}
                 </span>
               </header>
               <div className="tifo">
@@ -205,7 +207,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         <details>
           <summary>How this works</summary>
           <p>
-            You pay the normal price and pick the team you think will win. {free ? "The first buyers on each side hold a free spot: if their team wins, the whole price comes back to their wallet." : "If your team wins, part of the price comes back to your wallet."}{" "}
+            You pay the normal price and pick the team you think will win. {free ? "If your team wins, the whole price comes back to your wallet." : `If your team wins, ${share / 100}% of the price comes back to your wallet.`} The offer runs while the shop's budget lasts, and you see exactly what you get before you pay.{" "}
             {digital ? "Your purchase opens on this page as soon as you pay." : `${shopName} delivers as usual.`} You keep what you bought whatever happens.
           </p>
         </details>

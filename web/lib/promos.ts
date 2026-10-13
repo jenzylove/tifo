@@ -23,7 +23,8 @@ export interface PromoMeta {
   practice?: boolean; // opened on the practice version (Arc testnet) to try the flow with test USDC
   reason?: string; // why the agent chose this match and these terms
   contact?: string; // where a buyer sends delivery details for a physical product
-  shape?: "percent" | "free"; // "free": a full refund for the first buyers on each side
+  shape?: "percent" | "free" | "back"; // "free": 100% back; "back": a fixed tier (25% or 50%) back; "percent": older odds-based drops
+  backBps?: number; // the tier the seller chose: 2500, 5000 or 10000
   baseRates: [number, number];
   minBps: number;
   maxBps: number;

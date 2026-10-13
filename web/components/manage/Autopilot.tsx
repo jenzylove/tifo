@@ -190,7 +190,7 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
                   {plan.act === "open" ? "It will run" : "It wants to run"} {plan.match} with a ${plan.capUsd} budget.
                 </b>{" "}
                 {plan.offers?.join(" · ")}
-                {plan.spots ? ` · ${plan.spots} free ${plan.spots === 1 ? "spot" : "spots"} per side` : ""}
+                {plan.spots ? ` · covers ${plan.spots} ${plan.spots === 1 ? "buyer" : "buyers"} per side` : ""}
                 {plan.breakEvenSales ? ` · pays for itself at ${plan.breakEvenSales} extra ${plan.breakEvenSales === 1 ? "sale" : "sales"}` : ""}
               </p>
             )}

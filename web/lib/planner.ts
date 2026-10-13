@@ -2,7 +2,6 @@
 // The model judges and explains. Every number that moves money comes from the core math and the chain,
 // and the seller's rule on their account contract decides whether the agent may act or only propose.
 import Anthropic from "@anthropic-ai/sdk";
-import { initialRates } from "@tifo/core";
 import { keccak256, toBytes, type Address, type Hex } from "viem";
 import type { DropRow } from "./manager";
 import { shortTeam, type Match } from "./matches";
@@ -10,7 +9,7 @@ import { MODEL } from "./model";
 import type { PromoMeta } from "./promos";
 import type { AccountState } from "./tifoAccount";
 
-const MIN = 500, MAX = 6000, FULL = 10_000, DRAW = 500;
+const FULL = 10_000, DRAW = 500;
 
 export interface Terms {
   fixtureId: Hex;
@@ -31,7 +30,7 @@ export interface Plan {
   account?: Address;
   match?: string;
   kickoff?: string;
-  shape?: "free" | "percent";
+  shape?: "free" | "back";
   capUsd?: number;
   offers?: [string, string];
   spots?: number;
@@ -45,11 +44,14 @@ export interface Plan {
 
 const SYSTEM = `You are the sales manager for someone who sells online through Tifo. You run match drops for them:
 fans of both teams buy the product at full price and pick a side; if their team wins they get money back in USDC.
-The offer is always "free": a full refund for the first buyers on each side, as many as the budget covers
-(budget / price per side). After those spots are taken, buyers on that side pay full price with nothing back.
-On a draw every buyer gets 5% back. The budget is the most a drop can cost the seller, whoever wins.
+The offer is a fixed share of the price back if the buyer's team wins: back_pct is 25, 50 or 100 (100 means free).
+It covers the first buyers on each side, as many as the budget allows (budget / (price x back_pct / 100)).
+Buyers after that pay full price with nothing back. On a draw every buyer gets 5% back as a small thank you.
+The budget is the most a drop can cost the seller, whoever wins.
 
-Decide whether to run a drop now, and if so on which fixture and with what budget. Always answer shape "free".
+Decide whether to run a drop now, and if so on which fixture, at which back_pct and with what budget.
+- Choosing back_pct: 100 is the strongest hook but covers the fewest buyers. 25 or 50 covers more buyers for the same
+  budget and reads like a normal sale. Prefer 50 unless past_drops show a reason to change, and say why you chose it.
 - You are spending the seller's money to bring them sales. A drop must be able to pay for itself:
   compare the budget to profit_per_sale. If the margin cannot carry any sensible offer, skip and say why.
 - Learn from past_drops: which sides filled, what the refunds cost against sales, whether it paid for itself.
@@ -67,8 +69,7 @@ const schema = {
   properties: {
     act: { type: "string", enum: ["run", "skip"] },
     match_slug: { type: "string" },
-    shape: { type: "string", enum: ["free", "percent"] },
-    discount_pct: { type: "number" },
+    back_pct: { type: "integer", enum: [25, 50, 100] },
     budget_usd: { type: "number" },
     reason: { type: "string" },
   },
@@ -101,7 +102,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
     rule: { left_this_week_usd: +left.toFixed(2), per_drop_limit_usd: perDrop, last_7_days_sales_usd: usdc(account.recentSales) },
     past_drops: drops.slice(0, 6).map((d) => ({
       match: `${shortTeam(d.meta.teamA)} v ${shortTeam(d.meta.teamB)}`,
-      shape: d.meta.shape ?? "percent",
+      back_pct: d.meta.backBps ? d.meta.backBps / 100 : d.meta.shape === "free" ? 100 : null,
       budget_usd: usdc(d.cap),
       orders_by_side: d.bySide,
       sales_usd: usdc(d.sales),
@@ -130,34 +131,31 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   } as Parameters<typeof client.messages.create>[0] & { stream?: false });
   const text = res.content.find((b) => b.type === "text");
   if (!text || text.type !== "text") throw new Error("no decision");
-  const out = JSON.parse(text.text) as { act: "run" | "skip"; match_slug?: string; shape?: "free" | "percent"; discount_pct?: number; budget_usd?: number; reason: string };
+  const out = JSON.parse(text.text) as { act: "run" | "skip"; match_slug?: string; back_pct?: number; budget_usd?: number; reason: string };
   const reason = String(out.reason ?? "").slice(0, 900);
   if (out.act !== "run") return skip(reason || "Nothing worth running right now.");
 
   // From here the model's answer is only a suggestion: every figure is checked or recomputed.
   const m = fixtures.find((x) => x.slug === out.match_slug);
   if (!m?.odds) return skip("I picked a fixture I could not price, so I am not acting on it.");
-  const shape = "free" as "free" | "percent"; // one offer; the percent path stays for drops opened before
-  let capUsd = Math.round(Math.min(5000, Math.max(shape === "free" ? price : 5, Number(out.budget_usd) || 0)) * 100) / 100;
-  let discount = Math.min(20, Math.max(3, Math.round(Number(out.discount_pct) || 10)));
-  if (shape === "percent" && profit !== null && profit > 0) {
-    // Never give away more per sale than the seller makes.
-    while (discount > 3 && (price * discount) / 100 >= profit) discount--;
-    if ((price * discount) / 100 >= profit) return skip(`A money back offer would give away more than the $${profit.toFixed(2)} you make per sale, so I am not running one.`);
-  }
+  // Only the three round tiers exist. Anything else falls back to 50%.
+  const tier = ([2_500, 5_000, 10_000] as number[]).includes(Number(out.back_pct) * 100) ? Number(out.back_pct) * 100 : 5_000;
+  const shape: "free" | "back" = tier >= FULL ? "free" : "back";
+  const perBuyer = (price * tier) / FULL; // what one covered buyer costs the seller if their team wins
+  let capUsd = Math.round(Math.min(5000, Math.max(perBuyer, Number(out.budget_usd) || 0)) * 100) / 100;
   if (profit !== null && profit > 0 && capUsd / profit > 200) capUsd = Math.round(profit * 200 * 100) / 100;
-  const spots = Math.floor(capUsd / price);
-  if (shape === "free" && spots < 1) return skip("The budget would not cover one free product, so I am not running a free drop.");
+  const spots = Math.floor(capUsd / perBuyer + 1e-9);
+  if (spots < 1) return skip(`The budget would not cover even one buyer at ${tier / 100}% back, so I am not running a drop.`);
 
-  const rates = shape === "free" ? ([FULL, FULL] as [number, number]) : (initialRates(m.odds, discount * 100, MIN, MAX).map(Number) as [number, number]);
-  const [lo, hi] = shape === "free" ? [FULL, FULL] : [MIN, MAX];
+  const rates = [tier, tier] as [number, number];
+  const [lo, hi] = [tier, tier];
   const kickoff = Math.floor(Date.parse(m.kickoff) / 1000);
   const withinRule = capUsd <= perDrop && capUsd <= left;
   const meta: PromoMeta = {
     slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
     shop: template.shop, product: template.product, priceUsd: price, image: template.image, description: template.description,
     profitUsd: template.profitUsd, delivery: template.delivery, contact: template.contact,
-    shape, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: shape === "free" ? 0 : discount * 100,
+    shape, backBps: tier, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: shape === "free" ? 0 : tier,
     byAgent: withinRule, reason,
   };
   const A = shortTeam(m.teamA), B = shortTeam(m.teamB);
@@ -169,8 +167,8 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
     kickoff: m.kickoff,
     shape,
     capUsd,
-    offers: shape === "free" ? [`Free if ${A} win`, `Free if ${B} win`] : [`${rates[0] / 100}% back if ${A} win`, `${rates[1] / 100}% back if ${B} win`],
-    spots: shape === "free" ? spots : undefined,
+    offers: shape === "free" ? [`Free if ${A} win`, `Free if ${B} win`] : [`${tier / 100}% back if ${A} win`, `${tier / 100}% back if ${B} win`],
+    spots,
     breakEvenSales: profit && profit > 0 ? Math.ceil(capUsd / profit) : null,
     leftThisWeekUsd: +left.toFixed(2),
     perDropLimitUsd: perDrop,

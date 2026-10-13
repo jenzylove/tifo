@@ -32,22 +32,25 @@ export interface Proposal {
 }
 
 const SYSTEM = `You are Tifo, a sales rep for small online shops. You design one kind of promo, tied to a football match:
-the first buyers on each side get the full price back if their team wins. It is paid automatically in USDC on Arc after full time, once the result is confirmed.
+buyers pick a side and get a fixed share of the price back if their team wins: 25%, 50% or 100% (100% means free).
+It is paid automatically in USDC on Arc after full time, once the result is confirmed.
 
 How it works (explain it plainly when it helps the seller decide):
-- The seller gives a budget. Free spots per side = the budget divided by the price, rounded down.
-- The first buyers on each side take those free spots. If their team wins, they get the full price back, so the product was free.
-- After the free spots on a side are taken, buyers on that side pay full price with nothing back.
-- On a draw every buyer gets 5% back as a thank you.
+- The seller picks the share (25, 50 or 100% back) and a budget.
+- Buyers covered per side = the budget divided by (price x share), rounded down. The first buyers on each side are covered.
+- After that, buyers on that side pay full price with nothing back. Buyers only see a count when the last 2 are left.
+- Lower shares cover more buyers for the same budget and read like a normal sale. 100% is the strongest hook but covers the fewest.
+- On a draw every buyer gets a small thank you (5% back).
+- Both sides pay full price and only one side can win, so the seller keeps most of what the drop brings in.
 - The budget is the most a drop can ever cost the seller, whoever wins. A contract enforces it.
 
 Your job in this chat:
 1. Unless the seller is described below, find out what they sell, the price, the profit per sale, a photo link of the product (optional, it makes the drop page sell), and a budget they are comfortable spending (ask briefly if missing; one question at a time).
 2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience.
-3. Use price_promo to show the free spots per side, the worst case (the budget), and, when profit per sale is known, how many extra sales pay for it.
+3. Use price_promo to show the buyers covered per side at the share they pick (suggest 50% if they have no preference), the worst case (the budget), and, when profit per sale is known, how many extra sales pay for it.
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
 
-Rules: never invent prices or numbers, quote only what the tools return. No betting language ("bet", "wager", "odds boost", "win money"): it is a purchase with a free spot. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.`;
+Rules: never invent prices or numbers, quote only what the tools return. No betting language ("bet", "wager", "odds boost", "win money"): it is a purchase with money back if your team wins. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.`;
 
 function matchLine(m: Match) {
   const o = m.odds;
@@ -94,25 +97,27 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
 
   const pricePromo = betaZodTool({
     name: "price_promo",
-    description: "Show the free spots offer for one match: free spots per side, the worst case, and how many extra sales pay for it.",
+    description: "Show the offer for one match at 25, 50 or 100% back: buyers covered per side, the worst case, and how many extra sales pay for it.",
     inputSchema: z.object({
       slug: z.string(),
       budget_usd: z.number().min(1).max(5000),
       price_usd: z.number().min(1).max(10000),
+      back_pct: z.union([z.literal(25), z.literal(50), z.literal(100)]).describe("Share of the price back if their team wins"),
       profit_usd: z.number().positive().optional().describe("Profit per sale in USD, if the seller said"),
     }),
     run: async (i) => {
       const m = await matchBySlug(i.slug);
       if (!m) return JSON.stringify({ error: "match not found" });
-      const spots = Math.floor(i.budget_usd / i.price_usd);
-      if (spots < 1) return JSON.stringify({ error: "budget is lower than the price, so there would be no free spots" });
+      const spots = Math.floor(i.budget_usd / ((i.price_usd * i.back_pct) / 100) + 1e-9);
+      if (spots < 1) return JSON.stringify({ error: "the budget does not cover even one buyer at this share" });
+      const say = (t: string) => (i.back_pct === 100 ? `Free if ${t} win` : `${i.back_pct}% back if ${t} win`);
       return JSON.stringify({
         match: matchLine(m),
-        offers: { [shortTeam(m.teamA)]: `Free if ${shortTeam(m.teamA)} win`, [shortTeam(m.teamB)]: `Free if ${shortTeam(m.teamB)} win` },
-        free_spots_per_side: spots,
+        offers: { [shortTeam(m.teamA)]: say(shortTeam(m.teamA)), [shortTeam(m.teamB)]: say(shortTeam(m.teamB)) },
+        buyers_covered_per_side: spots,
         worst_case_usd: i.budget_usd,
-        draw: "every buyer gets 5% back",
-        after_free_spots: "buyers on that side pay full price with nothing back",
+        draw: "every buyer gets 5% back as a thank you",
+        after_that: "buyers on that side pay full price with nothing back",
         ...(i.profit_usd ? { extra_sales_to_break_even: Math.ceil(i.budget_usd / i.profit_usd) } : {}),
       });
     },
@@ -129,14 +134,16 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
       link: z.string().url().optional(),
       image_url: z.string().url().optional().describe("Direct link to a photo of the product, if the seller gave one"),
       cap_usd: z.number().min(1).max(5000).describe("The budget: the most the drop can cost the seller"),
+      back_pct: z.union([z.literal(25), z.literal(50), z.literal(100)]).describe("Share of the price back if their team wins"),
       explanation: z.string().max(600).describe("Two or three plain sentences for the seller: why this match and these terms."),
     }),
     run: async (i) => {
       const m = await matchBySlug(i.slug);
       if (!m?.odds) return JSON.stringify({ error: "cannot use this match" });
       if (Date.parse(m.kickoff) < Date.now() + 30 * 60_000) return JSON.stringify({ error: "kickoff is too close" });
-      const spots = Math.floor(i.cap_usd / i.price_usd);
-      if (spots < 1) return JSON.stringify({ error: "budget is lower than the price, so there would be no free spots" });
+      const tier = i.back_pct * 100;
+      const spots = Math.floor(i.cap_usd / ((i.price_usd * i.back_pct) / 100) + 1e-9);
+      if (spots < 1) return JSON.stringify({ error: "the budget does not cover even one buyer at this share" });
       proposal = {
         slug: m.slug,
         league: m.league.name,
@@ -148,15 +155,15 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
         priceUsd: i.price_usd,
         link: i.link,
         image: i.image_url,
-        effectiveBps: 0,
+        effectiveBps: tier, // the share back; the drop form turns it into its tier
         capUsd: i.cap_usd,
-        minBps: 10000,
-        maxBps: 10000,
-        rates: [10000, 10000],
+        minBps: tier,
+        maxBps: tier,
+        rates: [tier, tier],
         odds: m.odds,
         explanation: i.explanation,
       };
-      return JSON.stringify({ ok: true, free_spots_per_side: spots });
+      return JSON.stringify({ ok: true, buyers_covered_per_side: spots });
     },
   });
 

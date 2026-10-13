@@ -1,6 +1,6 @@
 "use client";
 // Make a drop in one short form. The seller says what they sell; the manager suggests the matches and the
-// number of free spots; the seller only confirms. Everything that moves money is checked by the contract.
+// offer (25%, 50% or 100% back if your team wins); the seller only confirms. Everything that moves money is checked by the contract.
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { keccak256, toBytes, type Address } from "viem";
@@ -10,6 +10,7 @@ import { biometric, createPromoWithCircle, openViaAccountWithCircle, type Create
 import { handleTap, type Retry } from "@/lib/tap";
 import { shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
+import { FULL, LOW, TIERS, type Tier } from "@/lib/offer";
 import ImageUpload from "./ImageUpload";
 
 interface ApiMatch {
@@ -26,13 +27,15 @@ export interface Prefill {
   slug?: string;
   discountPct?: number;
   capUsd?: number;
+  backBps?: number; // 2500, 5000 or 10000 when the manager suggests a tier
 }
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Kind = "digital" | "physical";
-const FULL = 10_000;
-const DRAW = 500; // on a draw every buyer gets 5% back as a thank you
+const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to buyers in the small print)
+const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
+const MAX_COVER = 50;
 
 // How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
 const LEAGUE_WEIGHT: Record<string, number> = {
@@ -69,7 +72,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slug, setSlug] = useState(prefill?.slug ?? "");
-  const [spots, setSpots] = useState(2);
+  const [spots, setSpots] = useState(4);
+  const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
   const [wantCap, setWantCap] = useState<number | null>(prefill?.capUsd ?? null);
   const [browse, setBrowse] = useState(false);
   const [query, setQuery] = useState("");
@@ -83,18 +87,20 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   useEffect(() => {
     if (prefill?.slug) setSlug(prefill.slug);
     if (prefill?.capUsd) setWantCap(prefill.capUsd);
+    const t = nearestTier(prefill?.backBps);
+    if (t) setTier(t);
   }, [prefill]);
 
   const priceUsd = Number(price);
   const costUsd = Math.max(0, Number(cost) || 0);
   const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
-  // A budget suggested by the manager becomes a number of free spots once the price is known.
+  // A budget suggested by the manager becomes how many buyers per side it covers, once the price is known.
   useEffect(() => {
     if (wantCap && priceUsd > 0) {
-      setSpots(Math.max(1, Math.min(20, Math.floor(wantCap / priceUsd))));
+      setSpots(Math.max(1, Math.min(MAX_COVER, Math.floor(wantCap / ((priceUsd * tier) / FULL)))));
       setWantCap(null);
     }
-  }, [wantCap, priceUsd]);
+  }, [wantCap, priceUsd, tier]);
 
   const picks = useMemo(() => suggest(matches ?? []), [matches]);
   useEffect(() => {
@@ -105,7 +111,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (matches ?? []).filter((m) => m.odds && Date.parse(m.kickoff) > Date.now() + 45 * 60_000 && (!q || m.title.toLowerCase().includes(q) || m.league.toLowerCase().includes(q)));
   }, [matches, query]);
   const m = matches?.find((x) => x.slug === slug);
-  const cap = priceUsd > 0 ? Math.round(spots * priceUsd * 100) / 100 : 0;
+  const cap = priceUsd > 0 ? Math.round(((spots * priceUsd * tier) / FULL) * 100) / 100 : 0;
   const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
   const missing = !name.trim()
     ? "Add your shop name"
@@ -136,11 +142,11 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind === "physical" && contact.trim() ? contact.trim() : undefined,
-        shape: "free", baseRates: [FULL, FULL], minBps: FULL, maxBps: FULL, effectiveBps: 0,
+        shape: tier >= FULL ? "free" : "back", backBps: tier, baseRates: [tier, tier], minBps: tier, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), FULL, FULL, FULL, FULL, 0, DRAW, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, meta,
       ];
       // With autopilot on, the drop opens through the seller's account so its sales land there and count toward the week.
       const { promo } = tifoAccount ? await openViaAccountWithCircle(account, tifoAccount, args) : await createPromoWithCircle(account, args);
@@ -157,7 +163,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={`${product.trim()} is free if your team wins. ${spots} ${spots === 1 ? "spot" : "spots"} for ${short(m.teamA)} fans, ${spots} for ${short(m.teamB)} fans. Pick your side before kickoff.`}
+        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before kickoff, while the offer lasts.`}
         again={() => setStatus({ kind: "idle" })}
       />
     );
@@ -260,7 +266,16 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       </section>
 
       <section className="panel launch">
-        <h3>Free spots</h3>
+        <h3>Money back if their team wins</h3>
+        <div className="tiers" role="radiogroup" aria-label="How much comes back">
+          {TIERS.map((t) => (
+            <button key={t} role="radio" aria-checked={tier === t} className={tier === t ? "on" : ""} onClick={() => setTier(t)}>
+              {t >= FULL ? "100%" : `${t / 100}%`}
+              <small>{t >= FULL ? "free" : "back"}</small>
+            </button>
+          ))}
+        </div>
+        <h3 style={{ marginTop: 18 }}>Buyers it covers</h3>
         <div className="spots">
           <button aria-label="One fewer" onClick={() => setSpots((n) => Math.max(1, n - 1))} disabled={spots <= 1}>
             −
@@ -269,11 +284,13 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             <b>{spots}</b>
             <span>per side</span>
           </div>
-          <button aria-label="One more" onClick={() => setSpots((n) => Math.min(20, n + 1))} disabled={spots >= 20}>
+          <button aria-label="One more" onClick={() => setSpots((n) => Math.min(MAX_COVER, n + 1))} disabled={spots >= MAX_COVER}>
             +
           </button>
         </div>
-        <p className="fine">The first {spots === 1 ? "buyer" : `${spots} buyers`} on each side get it free if their team wins.</p>
+        <p className="fine">
+          {tier >= FULL ? "It is free" : `${tier / 100}% of the price comes back`} for the first {spots === 1 ? "buyer" : `${spots} buyers`} on the winning side. Everyone after still buys at full price. Buyers only see a count when the last {LOW} are left.
+        </p>
         {priceUsd >= 1 && (
           <div className="sum-lines">
             <div>
@@ -311,6 +328,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             if (p.product) setProduct(p.product);
             if (p.priceUsd) setPrice(String(p.priceUsd));
             if (p.image) setImage(p.image);
+            const t = nearestTier(p.effectiveBps);
+            if (t) setTier(t);
             setWantCap(p.capUsd);
           }}
         />
