@@ -138,3 +138,16 @@ export function shortTeam(name: string): string {
   const base = name.replace(/\b(FC|AFC|CF|SC|FK|SK|AC|SSC|CD|CA|WFC|W\.F\.C\.)\b/g, "").replace(/\s+/g, " ").trim();
   return NICK[base.toLowerCase()] ?? base;
 }
+
+// Clubs and national teams ordinary buyers follow. A match is only suggested when at least one side is on this list,
+// so a wig seller's customers recognise it at a glance.
+const FAMOUS = [
+  "manchester city", "man city", "manchester united", "man united", "liverpool", "arsenal", "chelsea", "tottenham",
+  "real madrid", "barcelona", "atletico", "atlético", "paris saint-germain", "psg", "bayern", "juventus", "inter", "milan",
+  "napoli", "nigeria", "ghana", "senegal", "morocco", "egypt", "cameroon", "ivory coast", "côte d'ivoire",
+  "south africa", "england", "france", "spain", "brazil", "argentina", "portugal", "germany", "netherlands", "italy",
+];
+export function isBigMatch(teamA: string, teamB: string): boolean {
+  const t = `${teamA} | ${teamB}`.toLowerCase();
+  return FAMOUS.some((f) => t.includes(f));
+}

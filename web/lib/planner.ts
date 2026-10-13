@@ -4,7 +4,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { keccak256, toBytes, type Address, type Hex } from "viem";
 import type { DropRow } from "./manager";
-import { shortTeam, type Match } from "./matches";
+import { isBigMatch, shortTeam, type Match } from "./matches";
 import { MODEL } from "./model";
 import type { PromoMeta } from "./promos";
 import type { AccountState } from "./tifoAccount";
@@ -100,7 +100,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   const price = template.priceUsd;
   const profit = template.profitUsd ?? null;
   // Only matches ordinary buyers have heard of.
-  fixtures = fixtures.filter((m) => BIG.has(m.league.name));
+  fixtures = fixtures.filter((m) => BIG.has(m.league.name) && isBigMatch(m.teamA, m.teamB));
   if (!fixtures.length) return skip("No big match with reliable odds kicks off in the next six days.");
 
   const context = {

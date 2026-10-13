@@ -8,7 +8,7 @@ import type { SmartAccount } from "viem/account-abstraction";
 import type { Odds } from "@tifo/core";
 import { biometric, createPromoWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
-import { shortTeam as short } from "@/lib/matches";
+import { isBigMatch, shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 import { FULL, LOW, TIERS, type Tier } from "@/lib/offer";
 import ImageUpload from "./ImageUpload";
@@ -48,7 +48,7 @@ function suggest(matches: ApiMatch[]): { m: ApiMatch; why: string }[] {
   const now = Date.now();
   return matches
     // Only matches ordinary buyers have heard of: top leagues, Champions League, national teams.
-    .filter((m) => m.odds && (LEAGUE_WEIGHT[m.league] ?? 0) >= 3 && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
+    .filter((m) => m.odds && (LEAGUE_WEIGHT[m.league] ?? 0) >= 3 && isBigMatch(m.teamA, m.teamB) && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
     .map((m) => {
       const gap = Math.abs(m.odds!.pA - m.odds!.pB);
       const days = (Date.parse(m.kickoff) - now) / 86_400_000;
