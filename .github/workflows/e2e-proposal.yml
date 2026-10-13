@@ -1,0 +1,25 @@
+name: e2e seller rule
+# Deploys a throwaway testnet factory whose agent is the test wallet, then runs scripts/e2e-proposal.mts against it.
+on: workflow_dispatch
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - name: Throwaway factory
+        working-directory: contracts
+        env: { PK: "${{ secrets.PRACTICE_FUNDER_PK }}" }
+        run: |
+          ME=$(cast wallet address --private-key $PK)
+          OUT=$(forge create src/TifoFactory.sol:TifoFactory --rpc-url https://rpc.testnet.arc.io --private-key $PK --broadcast --constructor-args 0x3600000000000000000000000000000000000000 $ME $ME 2>&1) || { echo "::error::$(echo "$OUT" | tail -5 | tr '\n' ' ')"; exit 1; }
+          F=$(echo "$OUT" | grep -oE "Deployed to: 0x[0-9a-fA-F]{40}" | grep -oE "0x[0-9a-fA-F]{40}")
+          echo "::notice::throwaway factory $F (agent and operator = test wallet)"
+          echo "FACTORY=$F" >> $GITHUB_ENV
+      - run: npx tsx scripts/e2e-proposal.mts
+        env:
+          FUNDER_PK: ${{ secrets.PRACTICE_FUNDER_PK }}
