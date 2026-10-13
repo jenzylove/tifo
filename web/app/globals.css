@@ -481,3 +481,11 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 .pay-ways > button:hover, .pay-ways > a:hover { box-shadow: inset 0 0 0 2px var(--ink); background: var(--surface); }
 .pay-ways span { color: var(--muted); font-size: .86rem; }
 .pay-alt { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* Times on a bookable service: free and booked. */
+.times { margin-top: 28px; }
+.times ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.times li { display: flex; justify-content: space-between; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); }
+.times li span { color: var(--accent-deep); font-weight: 600; }
+.times li.taken { opacity: .55; }
+.times li.taken span { color: var(--muted); }

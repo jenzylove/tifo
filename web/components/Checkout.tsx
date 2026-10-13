@@ -9,6 +9,7 @@ import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
 import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { lastFew } from "@/lib/offer";
+import { slotLabel, slotRef } from "@/lib/booking";
 import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
@@ -30,6 +31,7 @@ interface Props {
   closed: boolean;
   digital: boolean; // the product opens on this page after payment
   contact?: string; // for a physical product: where the buyer sends delivery details
+  slots?: { i: number; at: string; taken: boolean }[]; // a bookable service: the times on offer
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
@@ -42,10 +44,12 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots }: Props) {
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
   const [qty, setQty] = useState(1);
+  const [slot, setSlot] = useState<number | null>(null); // the time picked, for a bookable service
+  const booking = !!slots?.length;
   const [balance, setBalance] = useState<bigint | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [hasSaved, setHasSaved] = useState(false);
@@ -103,15 +107,22 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     }
   }
 
+  /** A bookable service pays against the slot's own reference, so the contract refuses a second booking of it. */
+  function order(): { secret: Hex; orderRef: Hex } {
+    const o = newOrder();
+    return booking && slot !== null ? { secret: o.secret, orderRef: slotRef(promo, slot) } : o;
+  }
+
   async function pay() {
     if (!acct || side === null) return;
+    if (booking && slot === null) return setStatus({ kind: "error", text: "Pick a time first." });
     try {
       setStatus({ kind: "working", text: "Checking the promo…" });
       const pre = await precheck(promo, acct.address, side, amount, teams);
       if ("error" in pre) return setStatus({ kind: "error", text: pre.error });
       if (pre.rateBps < rates[side]) return setStatus({ kind: "error", text: GONE });
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
-      const { secret, orderRef } = newOrder();
+      const { secret, orderRef } = order();
       try {
         done(await buyWithCircle(acct, promo, side, amount, orderRef, rates[side]), secret);
       } catch (e) {
@@ -144,6 +155,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   async function payOtherWallet() {
     if (side === null) return;
+    if (booking && slot === null) return setStatus({ kind: "error", text: "Pick a time first." });
     try {
       setStatus({ kind: "working", text: "Connecting wallet…" });
       const { address, client } = await connect();
@@ -172,7 +184,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       });
       const { r, s, v, yParity } = parseSignature(sig);
       setStatus({ kind: "working", text: "Paying on Arc…" });
-      const { secret, orderRef } = newOrder();
+      const { secret, orderRef } = order();
       const res = await fetch("/api/relay", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -200,11 +212,14 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   if (status.kind === "done") {
     const t = teams[status.side];
-    const msg = `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
+    const when = booking && slot !== null ? slotLabel(slots!.find((x) => x.i === slot)!.at) : null;
+    const msg = when
+      ? `Hi ${shop}, I booked ${product} for ${when} on Tifo. Receipt: ${explorerTx(status.hash)}`
+      : `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
     const wa = contact ? (/^https?:/.test(contact) ? contact : `https://wa.me/${contact.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
     return (
       <div className="done">
-        <b>Order paid.</b>
+        <b>{when ? `Booked for ${when}.` : "Order paid."}</b>
         <p className="fine">
           {back(status.side) > 0
             ? `Your promo is locked: if ${t} win, ${money(back(status.side))} comes back to this wallet after full time.`
@@ -214,7 +229,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {wa && (
             <a className="btn sm" href={wa} target="_blank" rel="noreferrer">
-              Send delivery details to {shop}
+              {when ? `Message ${shop} on WhatsApp` : `Send delivery details to ${shop}`}
             </a>
           )}
           <a className="btn sm ghost" href={explorerTx(status.hash)} target="_blank" rel="noreferrer">
@@ -252,7 +267,22 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         </p>
       </div>
 
-      <div className="totals">
+      {booking && (
+        <div className="promo">
+          <h4>Pick a time</h4>
+          <div className="chips">
+            {slots!.map((x) => (
+              <button key={x.i} className={slot === x.i ? "on" : ""} disabled={x.taken || closed} onClick={() => setSlot(x.i)} title={x.taken ? "Already booked" : ""}>
+                {slotLabel(x.at)}
+                {x.taken ? " · booked" : ""}
+              </button>
+            ))}
+          </div>
+          {slots!.every((x) => x.taken) && <p className="fine">Every time is booked.</p>}
+        </div>
+      )}
+
+      <div className="totals" hidden={booking}>
         <div className="qty" aria-label="Quantity">
           <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="One less">−</button>
           <span>{qty}</span>
@@ -270,10 +300,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       ) : (
         <button
           className="btn block"
-          disabled={side === null || busy}
+          disabled={side === null || busy || (booking && slot === null)}
           onClick={() => (circleEnabled() && acct && enough && !tap ? pay() : setSheet(true))}
         >
-          {side === null ? "Pick a side to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
+          {side === null ? "Pick a side to continue" : booking && slot === null ? "Pick a time to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
         </button>
       )}
       {acct && !sheet && (
@@ -380,7 +410,7 @@ const GONE = "That offer just ran out. Refresh the page to see what is left.";
 
 function friendly(msg: string) {
   if (/OfferGone/i.test(msg)) return GONE;
-  if (/DuplicateOrder/i.test(msg)) return "This order already went through. You were charged once.";
+  if (/DuplicateOrder/i.test(msg)) return "This order already went through, or that time was just booked by someone else. You were not charged twice. Refresh to see the free times.";
   if (/OverCap/i.test(msg)) return "The shop's budget for this offer is used up at this size. Try fewer items or the other offer.";
   if (/OneSidePerWallet/i.test(msg)) return "This wallet already took the other offer in this promo.";
   if (/Closed/i.test(msg)) return "This promo closed at kickoff.";

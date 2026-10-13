@@ -93,6 +93,8 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   const at = Date.now();
   const skip = (reason: string): Plan => ({ act: "skip", reason, at });
   const template = drops[0].meta;
+  // A bookable service needs the seller's own free times, which only they know. The agent does not invent them.
+  if (template.slots?.length) return skip("Your last drop was a booking, and new times have to come from you. Make the next one with the times you are free.");
   const left = Math.max(0, usdc(account.allowance) - usdc(account.committed));
   const perDrop = usdc(account.perDealCap);
   const price = template.priceUsd;

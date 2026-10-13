@@ -31,7 +31,7 @@ export interface Prefill {
 }
 
 type Msg = { role: "user" | "assistant"; content: string };
-type Kind = "digital" | "physical";
+type Kind = "digital" | "physical" | "booking";
 const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to buyers in the small print)
 const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
@@ -72,6 +72,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [kind, setKind] = useState<Kind>("digital");
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
+  const [slots, setSlots] = useState<string[]>([""]); // datetime-local values, for a bookable service
   const [slug, setSlug] = useState(prefill?.slug ?? "");
   const [stock, setStock] = useState("10"); // how many the seller has to sell; this caps the most the drop can cost
   const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
@@ -96,7 +97,9 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const costUsd = Math.max(0, Number(cost) || 0);
   const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
   // A budget suggested by the manager becomes a share back that fits it, once price and stock are known.
-  const units = Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
+  const slotTimes = slots.filter((x) => x && Date.parse(x) > Date.now());
+  // A bookable service has exactly as many units as times on offer.
+  const units = kind === "booking" ? slotTimes.length : Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
   useEffect(() => {
     if (wantCap && priceUsd > 0 && units > 0) {
       const fits = [...TIERS].reverse().find((t) => (units * priceUsd * t) / FULL <= wantCap + 1e-9);
@@ -127,6 +130,10 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       ? "Name the product"
       : !(priceUsd >= 1)
         ? "Set a price"
+        : kind === "booking" && units < 1
+          ? "Add at least one time"
+        : kind === "booking" && !contact.trim()
+          ? "Add your WhatsApp number"
         : !(units >= 1)
           ? "Say how many you have"
         : kind === "digital" && !delivery.trim()
@@ -151,7 +158,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       const meta = JSON.stringify({
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
-        profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind === "physical" && contact.trim() ? contact.trim() : undefined,
+        profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
+        slots: kind === "booking" ? slotTimes.map((x) => new Date(x).toISOString()).sort() : undefined,
         shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: tier, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
@@ -215,8 +223,29 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
           <div className="seg">
             <button className={kind === "digital" ? "on" : ""} onClick={() => setKind("digital")}>Download or link</button>
             <button className={kind === "physical" ? "on" : ""} onClick={() => setKind("physical")}>I deliver it</button>
+            <button className={kind === "booking" ? "on" : ""} onClick={() => setKind("booking")}>Book a time</button>
           </div>
-          {kind === "digital" ? (
+          {kind === "booking" ? (
+            <>
+              <small>A consultation, an appointment, a lesson. Add the times you are free. Each time can be booked once, and the drop sells as many as you add.</small>
+              {slots.map((v, i) => (
+                <div key={i} style={{ display: "flex", gap: 8 }}>
+                  <input className="input" type="datetime-local" value={v} onChange={(e) => setSlots((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))} />
+                  {slots.length > 1 && (
+                    <button className="btn sm ghost" aria-label="Remove this time" onClick={() => setSlots((xs) => xs.filter((_, j) => j !== i))}>
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              {slots.length < 30 && (
+                <button className="link fine" style={{ justifySelf: "start" }} onClick={() => setSlots((xs) => [...xs, ""])}>
+                  + Add another time
+                </button>
+              )}
+              <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number. Buyers message you here after booking" />
+            </>
+          ) : kind === "digital" ? (
             <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link. Only buyers see it." />
           ) : (
             <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number for delivery details" />
@@ -285,7 +314,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             </button>
           ))}
         </div>
-        <label className="field" style={{ marginTop: 18 }}>
+        <label className="field" style={{ marginTop: 18 }} hidden={kind === "booking"}>
           How many do you have to sell?
           <input className="input" type="number" min={1} max={MAX_STOCK} step={1} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
         </label>
