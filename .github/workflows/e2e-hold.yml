@@ -1,0 +1,19 @@
+name: e2e delivery hold
+on:
+  workflow_dispatch:
+    inputs:
+      factory:
+        description: Testnet factory address
+        required: true
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx tsx scripts/e2e-hold.mts
+        env:
+          FACTORY: ${{ inputs.factory }}
+          FUNDER_PK: ${{ secrets.PRACTICE_FUNDER_PK }}

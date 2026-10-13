@@ -30,7 +30,7 @@ jobs:
           AGENT=$(cast call $OLD "agent()(address)" --rpc-url $RPC)
           OPERATOR=$(cast call $OLD "operator()(address)" --rpc-url $RPC)
           echo "::notice::$NETWORK agent $AGENT operator $OPERATOR (copied from $OLD)"
-          OUT=$(forge create src/TifoFactory.sol:TifoFactory --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --constructor-args $USDC $AGENT $OPERATOR)
+          OUT=$(forge create src/TifoFactory.sol:TifoFactory --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast --constructor-args $USDC $AGENT $OPERATOR 2>&1) || { echo "::error::$(echo "$OUT" | tail -5 | tr '\n' ' ')"; exit 1; }
           echo "$OUT" | tail -4
           ADDR=$(echo "$OUT" | grep -oE "Deployed to: 0x[0-9a-fA-F]{40}" | grep -oE "0x[0-9a-fA-F]{40}")
           TX=$(echo "$OUT" | grep -oE "Transaction hash: 0x[0-9a-fA-F]{64}" | grep -oE "0x[0-9a-fA-F]{64}")
