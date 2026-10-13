@@ -100,3 +100,8 @@ The seller and buyer created during the live walk through kept going with nobody
 - Buyers no longer see "2 free spots left" from the start. The offer reads as open while the budget lasts, and a count appears only when the last two are left. Every buyer still sees exactly what they get before paying.
 - The draw thank you moved out of the checkout receipt into the "When do I get my money back?" small print.
 - Practice version: the same app on Arc testnet at tifo-test.vercel.app. Its drops are listed under the real ones on /drops ("Try it with test money"), and 20 practice drops were opened from 20 separate seller wallets by `scripts/seed-practice.mts` (GitHub Actions: seed practice drops). The scheduler settles them like real ones.
+
+## 13 Oct 2026: first mainnet settlement
+- Drop `0x6D65b62AA1AEFd6b1125f0BF54c1629bD782E162` (Arsenal v Lille OSC, one real order on Arsenal at 100% back). Arsenal won 3 to 0.
+- The agent `0xabEC6CB40D2A2Fb251a1AC3Fbeb269E9C8DBb962` did all of it, nobody clicked anything: journal note `0x032c46fb165d079b7b7f227d3b75e1613ed506460f8de3a8bb0614d26188a799` and result proposed `0x6704ea18a04df2a461355824b7bb65d732cbadc2f265956c784dd108ac96ed6b` at 20:56 UTC, then after the 15 minute window `finalize()` `0x5bec46b902f0c13f0c407ad4f6a8d1b285db4d988390c74f59c0998e794bdb71` and the payout transactions `0xf0a800df76bb0d45f03ef5f81c5f30faff67f07e45712dfa20b3d7339ce0d8b1` and `0x333db60b78dc59fa9d0b0d3e4242e59980bb891ed8f38b197a56fbd35832b3bb` at 21:11 UTC.
+- The buyer got $2.00 back and the contract's balance is zero.
