@@ -38,7 +38,18 @@ type Phase =
   | { k: "done" }
   | { k: "error"; text: string };
 
-export default function BridgeTopUp({ recipient, neededUsd, onClose }: { recipient: string; neededUsd: number; onClose: (moved: boolean) => void }) {
+/** Links that open the top up page inside a wallet app's own browser, with the Tifo address and amount filled in. */
+export function walletLinks(recipient: string, neededUsd: number) {
+  const origin = typeof location === "undefined" ? "https://tifo.vercel.app" : location.origin;
+  const page = `${origin}/topup?to=${recipient}&amount=${cents(Math.max(neededUsd, 1)).toFixed(2)}`;
+  return {
+    metamask: `https://metamask.app.link/dapp/${page.replace(/^https?:\/\//, "")}`,
+    coinbase: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(page)}`,
+    page,
+  };
+}
+
+export default function BridgeTopUp({ recipient, neededUsd, onClose, inline = false }: { recipient: string; neededUsd: number; onClose: (moved: boolean) => void; inline?: boolean }) {
   const [src, setSrc] = useState<Source>(SOURCES[0]);
   const [phase, setPhase] = useState<Phase>({ k: "pick" });
   const [need] = useState(cents(Math.max(neededUsd, 1)));
@@ -46,6 +57,8 @@ export default function BridgeTopUp({ recipient, neededUsd, onClose }: { recipie
   const adapter = useRef<unknown>(null);
   const quote = useRef<unknown>(null);
   const hasWallet = !!injected();
+  const links = walletLinks(recipient, neededUsd);
+  const [copied, setCopied] = useState(false);
 
   async function setup() {
     const [{ BridgeKit }, { createViemAdapterFromProvider }] = await Promise.all([import("@circle-fin/bridge-kit"), import("@circle-fin/adapter-viem-v2")]);
@@ -109,21 +122,49 @@ export default function BridgeTopUp({ recipient, neededUsd, onClose }: { recipie
   }
 
   if (typeof document === "undefined") return null;
-  return createPortal(
-    <div className="sheet" role="dialog" aria-modal="true" aria-label="Move USDC from another chain">
-      <div className="sheet-card">
+  const wrap = (card: React.ReactNode) =>
+    inline ? (
+      <div className="sheet-card" style={{ margin: "0 auto" }}>{card}</div>
+    ) : (
+      createPortal(
+        <div className="sheet" role="dialog" aria-modal="true" aria-label="Move USDC from another chain">
+          <div className="sheet-card">{card}</div>
+        </div>,
+        document.body,
+      )
+    );
+  return wrap(
+    <>
         <header>
           <b>{phase.k === "done" ? "On its way" : "Move USDC from another chain"}</b>
-          <button className="link" onClick={() => onClose(phase.k === "done")}>
-            {phase.k === "done" ? "Continue" : "Close"}
-          </button>
+          {!inline && (
+            <button className="link" onClick={() => onClose(phase.k === "done")}>
+              {phase.k === "done" ? "Continue" : "Close"}
+            </button>
+          )}
         </header>
 
         {!hasWallet ? (
-          <p className="fine">
-            Open this page in the browser inside MetaMask, Coinbase Wallet or Rabby, where your USDC is. Then tap this again. You can also send USDC on Arc straight
-            to your Tifo wallet from an exchange.
-          </p>
+          <>
+            <p className="fine">
+              Your USDC is in another wallet app. Open the top up there: your Tifo address and {money(need)} are filled in. Sign once, then come back here and tap Buy.
+            </p>
+            <a className="btn block" href={links.metamask}>
+              Open in MetaMask
+            </a>
+            <a className="btn block ghost" href={links.coinbase}>
+              Open in Coinbase Wallet
+            </a>
+            <button
+              className="link fine"
+              onClick={() => {
+                navigator.clipboard?.writeText(links.page);
+                setCopied(true);
+              }}
+            >
+              {copied ? "Link copied. Paste it in your wallet app's browser" : "Using another wallet? Copy the link"}
+            </button>
+          </>
         ) : phase.k === "pick" || phase.k === "quoting" || phase.k === "error" ? (
           <>
             <p className="fine">Where is your USDC now? You sign once there. Circle moves it to your Tifo wallet on Arc, usually within a few minutes.</p>
@@ -168,12 +209,14 @@ export default function BridgeTopUp({ recipient, neededUsd, onClose }: { recipie
             <p className="fine">{phase.step}. Keep this page open.</p>
           </>
         ) : (
-          <p className="status ok">Sent. Your balance updates when it lands on Arc, then tap Buy.</p>
+          <p className="status ok">
+            Sent. {inline ? "Go back to the drop page in your usual browser: your balance updates when it lands on Arc, then tap Buy." : "Your balance updates when it lands on Arc, then tap Buy."}
+          </p>
         )}
-        <p className="fine">Runs on Circle&apos;s CCTP. Tifo never holds your money on the way.</p>
-      </div>
-    </div>,
-    document.body,
+        <p className="fine">
+          Runs on Circle&apos;s CCTP. Tifo never holds your money on the way. Sending to <code>{recipient.slice(0, 6)}…{recipient.slice(-4)}</code> on Arc.
+        </p>
+    </>,
   );
 }
 
