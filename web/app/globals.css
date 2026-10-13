@@ -502,3 +502,4 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 html, body { overflow-x: clip; }
 /* The longer sticker reaches past the edge on 1280px laptops; pull it in there. */
 @media (min-width: 561px) and (max-width: 1360px) { .mega .sticker { left: 91%; font-size: .15em; } }
+@media (min-width: 561px) and (max-width: 1180px) { .mega .sticker { left: 86%; font-size: .125em; } }
