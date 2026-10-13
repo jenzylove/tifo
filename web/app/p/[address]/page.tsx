@@ -207,8 +207,10 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               <header>
                 <b>{team[s]}</b>
                 <span>
-                  {fans[s].length} {fans[s].length === 1 ? "order" : "orders"} ·{" "}
-                  {phase === "open" ? (lastFew(spots[s]) ?? (spots[s] === 0 ? "offer used up" : tierLabel(st.rates[s]).toLowerCase() + " if they win")) : `${tierLabel(Math.max(...fans[s].map((o) => o.rateBps), 0)).toLowerCase()} if they win`}
+                  {fans[s].length} {fans[s].length === 1 ? "order" : "orders"}
+                  {phase === "open"
+                    ? ` · ${lastFew(spots[s]) ?? (spots[s] === 0 ? "offer used up" : tierLabel(st.rates[s]).toLowerCase() + " if they win")}`
+                    : fans[s].length > 0 && ` · ${tierLabel(Math.max(...fans[s].map((o) => o.rateBps), 0)).toLowerCase()} if they win`}
                 </span>
               </header>
               <div className="tifo">

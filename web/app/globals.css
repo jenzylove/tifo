@@ -498,3 +498,5 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 
 /* Opened inside an app's built-in browser: send the buyer to Safari or Chrome. */
 .inapp { display: grid; gap: 10px; }
+/* Tilted cards reach a few pixels past a phone screen; never let the page slide sideways. */
+html, body { overflow-x: clip; }
