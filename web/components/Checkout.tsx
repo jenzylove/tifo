@@ -10,6 +10,7 @@ import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { lastFew } from "@/lib/offer";
 import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
+import BridgeTopUp from "./BridgeTopUp";
 import Purchase, { saveOrder } from "./Purchase";
 
 interface Props {
@@ -52,6 +53,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [bio, setBio] = useState("Face ID or fingerprint");
   const [cardOn, setCardOn] = useState(false); // card payments are set up on this deployment
   const [card, setCard] = useState(false);
+  const [bridge, setBridge] = useState(false);
   const [tap, setTap] = useState<null | { go: () => Promise<Hex>; secret: Hex }>(null);
 
   useEffect(() => {
@@ -312,6 +314,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                   Pay with card or bank
                 </button>
               )}
+              <button className="btn sm ghost" style={{ justifySelf: "start" }} onClick={() => setBridge(true)}>
+                Move USDC from Base, Ethereum, Arbitrum or Polygon
+              </button>
               <button
                 className="btn sm ghost"
                 style={{ justifySelf: "start" }}
@@ -340,6 +345,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           or pay with MetaMask / Rabby
         </button>
       )}
+      {bridge && acct && <BridgeTopUp recipient={acct.address} neededUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setBridge(false)} />}
       {card && acct && <CardTopUp address={acct.address} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setCard(false)} />}
       {status.kind === "working" && <p className="status">{status.text}</p>}
       {status.kind === "error" && <p className="status err">{status.text}</p>}
