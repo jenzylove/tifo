@@ -36,9 +36,10 @@ export const publicClient = createPublicClient({ chain, transport });
 
 // Practice version: the same app deployed on Arc testnet, where anyone can try a drop with free test USDC.
 // The real site reads its drops (reads only) to list them under the real ones, each linking to the practice site.
-export const PRACTICE_URL = (process.env.NEXT_PUBLIC_PRACTICE_URL ?? "").replace(/\/$/, "");
-export const MAIN_URL = (process.env.NEXT_PUBLIC_MAIN_URL ?? "").replace(/\/$/, "");
-const PRACTICE_FACTORY = (process.env.NEXT_PUBLIC_PRACTICE_FACTORY ?? "") as Address;
+export const PRACTICE_URL = (process.env.NEXT_PUBLIC_PRACTICE_URL ?? "").trim().replace(/^["']|["']$/g, "").replace(/\/$/, "");
+export const MAIN_URL = (process.env.NEXT_PUBLIC_MAIN_URL ?? "").trim().replace(/^["']|["']$/g, "").replace(/\/$/, "");
+// Values pasted on a phone can carry spaces, quotes or a line break; keep only the address.
+const PRACTICE_FACTORY = ((process.env.NEXT_PUBLIC_PRACTICE_FACTORY ?? "").match(/0x[0-9a-fA-F]{40}/)?.[0] ?? "") as Address;
 export const practice =
   NETWORK === "mainnet" && PRACTICE_URL && /^0x[0-9a-fA-F]{40}$/.test(PRACTICE_FACTORY)
     ? { url: PRACTICE_URL, factory: PRACTICE_FACTORY, client: createPublicClient({ chain: arcTestnet, transport: http(arcTestnet.rpcUrls.default.http[0], { batch: true, retryCount: 3 }) }) as unknown as typeof publicClient }
