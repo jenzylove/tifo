@@ -9,7 +9,7 @@ export async function dropCards(filter?: (seller: string) => boolean, limit = 24
   // but are not shown to shoppers on the boards.
   const isCheck = (name: string) => /not for sale|check|testnet run/i.test(name);
   const promos = (await listPromos(src))
-    .filter((p) => !isCheck(p.meta.product) && (!filter || filter(p.seller.toLowerCase())))
+    .filter((p) => !isCheck(p.meta.product) && !isCheck(p.meta.shop ?? "") && (!filter || filter(p.seller.toLowerCase())))
     .slice(0, limit);
   const now = Date.now() / 1000;
   return Promise.all(
