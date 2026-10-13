@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAddress, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerTx } from "@/lib/chain";
+import Books from "./Books";
 import { handleTap, type Retry } from "@/lib/tap";
 import { biometric, circleEnabled, connectCircle, preparePasskey, savedCredential, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import type { Brief } from "@/lib/brief";
@@ -66,7 +67,7 @@ export default function Manager() {
             ["overview", "Overview"],
             ["drops", "Match drops"],
             ["autopilot", "Autopilot"],
-            ["money", "Money"],
+            ["money", "Books"],
           ] as [Tab, string][]
         ).map(([t, l]) => (
           <button key={t} className={view === t ? "on" : ""} onClick={() => go(t)}>
@@ -325,16 +326,8 @@ function Money({ data }: { data: ManagerData }) {
   const t = data.totals;
   return (
     <>
-      <div className="mgr-head">
-        <div>
-          <h1>Money</h1>
-          <p className="muted">
-            Your sales land as USDC on Arc{data.account ? ", in your account on the Autopilot tab. Move them here to cash out" : " in this Circle wallet"}. Send them to your exchange
-            account to cash out.
-          </p>
-        </div>
-      </div>
-      <div className="two" style={{ marginTop: 0 }}>
+      <Books books={data.books} />
+      <div className="two">
         <div className="panel money">
           <span className="fine">Wallet balance</span>
           <div className="bal">{bal === null ? "…" : $(bal)}</div>

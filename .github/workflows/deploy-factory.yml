@@ -25,7 +25,7 @@ jobs:
         run: |
           set -e
           if [ "$NETWORK" = "mainnet" ]; then RPC=https://rpc.mainnet.arc.io; OLD=0x9cda0b646353dAc380156dAedc30892323876CEE;
-          else RPC=https://rpc.testnet.arc.io; OLD=0x5E7aCE925Fb504C88ECd7b2Bb86b77af0EEaD6Bd; fi
+          else RPC=https://rpc.testnet.arc.io; OLD=0x304794174DD2f795055bd3B43B6757fd0F72bC3A; fi
           USDC=0x3600000000000000000000000000000000000000
           AGENT=$(cast call $OLD "agent()(address)" --rpc-url $RPC)
           OPERATOR=$(cast call $OLD "operator()(address)" --rpc-url $RPC)

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress, isHex } from "viem";
 import { z } from "zod";
-import { maybeRebalance, relayBuy } from "@/lib/agent";
+import { maybeRebalance, payoutsTick, relayBuy } from "@/lib/agent";
 import { listPromos } from "@/lib/promos";
 
 export const maxDuration = 60;
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       s: p.data.s as `0x${string}`,
     });
     let rebalanced = null;
+    await payoutsTick(promo.seller).catch((e) => console.error(e));
     try {
       rebalanced = await maybeRebalance(promo);
     } catch (e) {

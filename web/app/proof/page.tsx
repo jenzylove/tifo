@@ -1,6 +1,7 @@
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { explorerAddr, NETWORK, usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
+import { agentRecord } from "@/lib/record";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function Proof() {
   const volume = orders.reduce((t, o) => t + o.amount, 0n);
   const paidBack = rows.reduce((t, r) => t + r.st.refundedTotal, 0n);
   const decisions = rows.reduce((t, r) => t + r.journal.length, 0);
+  const record = await agentRecord(rows.map((r) => ({ p: r.p, st: r.st, volume: r.orders.reduce((t, o) => t + o.amount, 0n) })));
   return (
     <section className="wrap">
       <div className="pagehead">
@@ -32,7 +34,18 @@ export default async function Proof() {
         <div className="kpi"><span>Paid in by fans</span><b>{usd(volume)}</b></div>
         <div className="kpi"><span>Refunded to winners</span><b>{usd(paidBack)}</b></div>
       </div>
-      <p className="fine">{decisions} agent decisions recorded on chain across {promos.length} drops.</p>
+      <h3 className="proof-h">What the agent did with the money</h3>
+      <div className="stats">
+        <div className="kpi"><span>Businesses it runs</span><b>{record.businesses}</b></div>
+        <div className="kpi"><span>Sent on to sellers</span><b>{usd(record.sentToSellers)}</b></div>
+        <div className="kpi"><span>Results paid with nobody clicking</span><b>{record.settled} of {record.due}</b></div>
+        <div className="kpi"><span>Did by itself</span><b>{record.alone}</b></div>
+        <div className="kpi"><span>Asked the seller first</span><b>{record.asked}{record.asked > 0 ? `, ${record.agreed} approved` : ""}</b></div>
+      </div>
+      <p className="fine">
+        A business is a seller with an account on Arc that holds their rule: how much the agent&apos;s drops may cost in a week. Inside it the agent acts alone;
+        over it, it can only ask. {decisions} agent decisions are written on chain across {promos.length} drops.
+      </p>
       {rows.map(({ p, st, orders, journal }) => (
         <div key={p.address} className="proofrow panel">
           <h3>

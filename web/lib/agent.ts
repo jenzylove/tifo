@@ -1,14 +1,14 @@
 // The agent's on-chain hands. Server-only: the key never reaches the browser.
 // Its contract role can only change future offers, log decisions, propose results and push refunds.
 import "server-only";
-import { createWalletClient, type Address, type Hex } from "viem";
+import { createWalletClient, erc20Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { rebalance } from "@tifo/core";
 import { tifoAccountAbi, tifoPromoAbi } from "./abi";
 import { planFor, type Plan } from "./autopilot";
 import { accountOf } from "./tifoAccount";
-import { FACTORY, chain, publicClient, transport } from "./chain";
-import { matchBySlug } from "./matches";
+import { FACTORY, USDC, chain, publicClient, transport, usd } from "./chain";
+import { matchBySlug, shortTeam } from "./matches";
 import { checkResult } from "./results";
 import { listPromos, promoOrders, promoState, type PromoSummary } from "./promos";
 import { dueAction, readDeliveries } from "./shipments";
@@ -121,6 +121,52 @@ export async function tick(): Promise<TickResult[]> {
       out.push({ promo: p.address, action: `delivery error: ${(e as Error).message.slice(0, 200)}` });
     }
   }
+  out.push(...(await payoutsTick().catch((e) => [{ promo: FACTORY, action: `payout error: ${(e as Error).message.slice(0, 200)}` }])));
+  return out;
+}
+
+const MIN_PAYOUT = 100_000n; // $0.10: below this the transfer is not worth a transaction
+
+/**
+ * A seller's money does not wait for a person. Whatever an account holds is sent to the payout wallet its owner
+ * chose; the contract allows no other destination. Refund money never passes through the account: each drop keeps
+ * its own until full time, so everything in the account is the seller's.
+ */
+export async function payoutsTick(only?: Address): Promise<TickResult[]> {
+  const promos = await listPromos();
+  const sellers = [...new Set(promos.map((p) => p.seller.toLowerCase() as Address))].filter((s) => !only || s === only.toLowerCase());
+  if (!sellers.length) return [];
+  const reads = await publicClient.multicall({
+    contracts: sellers.flatMap((s) => [
+      { address: s, abi: tifoAccountAbi, functionName: "payout" } as const,
+      { address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [s] } as const,
+    ]),
+  });
+  const out: TickResult[] = [];
+  for (let i = 0; i < sellers.length; i++) {
+    const payout = reads[2 * i], balance = reads[2 * i + 1];
+    // A seller that is a plain wallet, or an account from before payouts existed, has no payout() to read.
+    if (payout.status !== "success" || balance.status !== "success" || (balance.result as bigint) < MIN_PAYOUT) continue;
+    const account = sellers[i];
+    try {
+      const mine = promos.filter((p) => p.seller.toLowerCase() === account);
+      const states = await Promise.all(mine.map((p) => promoState(p.address)));
+      const open = mine.filter((_, k) => states[k].finalOutcome === "None");
+      const locked = states.reduce((t, st) => t + (st.finalOutcome === "None" ? st.reserve : 0n), 0n);
+      const from = mine[0] ? `${shortTeam(mine[0].meta.teamA)} v ${shortTeam(mine[0].meta.teamB)}` : "your drops";
+      const reason =
+        open.length && locked > 0n
+          ? `${usd(balance.result as bigint)} from ${mine.length === 1 ? `your ${from} drop` : "your drops"}. The ${usd(locked)} that could be owed back to buyers stays locked inside ${open.length === 1 ? "the open drop" : "the open drops"}, so all of this is yours.`
+          : `${usd(balance.result as bigint)} from ${mine.length === 1 ? `your ${from} drop` : "your drops"}. Nothing more is owed to any buyer, so all of this is yours.`;
+      const w = wallet();
+      const { request } = await publicClient.simulateContract({ account: w.account, address: account, abi: tifoAccountAbi, functionName: "payOut", args: [reason] });
+      const hash = await w.writeContract(request);
+      await publicClient.waitForTransactionReceipt({ hash });
+      out.push({ promo: account, action: `paid out ${usd(balance.result as bigint)} to ${(payout.result as Address).slice(0, 8)}…`, hash });
+    } catch (e) {
+      out.push({ promo: account, action: `payout error: ${(e as Error).message.slice(0, 200)}` });
+    }
+  }
   return out;
 }
 
@@ -168,6 +214,8 @@ export async function settleNow(p: PromoSummary): Promise<TickResult[]> {
   } catch (e) {
     out.push({ promo: p.address, action: `error: ${(e as Error).message.slice(0, 200)}` });
   }
+  // What came back to the seller's account at full time goes on to their wallet in the same pass.
+  if (out.some((r) => r.action === "release remainder")) out.push(...(await payoutsTick(p.seller).catch(() => [])));
   return out;
 }
 

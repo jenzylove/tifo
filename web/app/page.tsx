@@ -64,8 +64,8 @@ export default async function Landing() {
           </span>
         </h1>
         <p className="sub">
-          Put your stock on a big match. Every buyer gets money back if their team wins, and you know the most it can cost before you post. A 25% back offer
-          usually costs about what a 10% off sale does.
+          Put your stock on a big match and an agent runs the money: it picks the match, pays winning fans back and sends you the rest, inside a weekly
+          limit you set. You know the most it can cost before you post.
         </p>
         <div className="ctas">
           <a className="btn ac" href="/manage">

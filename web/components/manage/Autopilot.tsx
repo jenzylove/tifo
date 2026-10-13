@@ -2,10 +2,10 @@
 // The seller's standing rule for their manager: how much it may put at risk each week without asking,
 // what it plans to do next and why, and the proposals that need the seller's answer.
 import { useCallback, useEffect, useState } from "react";
-import type { Address } from "viem";
+import { isAddress, type Address } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
 import { explorerAddr } from "@/lib/chain";
-import { biometric, createAccountWithCircle, decideWithCircle, setLimitsWithCircle, walletError, withdrawFromAccountWithCircle } from "@/lib/circleWallet";
+import { biometric, createAccountWithCircle, decideWithCircle, setLimitsWithCircle, setPayoutWithCircle, walletError, withdrawFromAccountWithCircle } from "@/lib/circleWallet";
 import type { Plan } from "@/lib/autopilot";
 import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
@@ -21,6 +21,7 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
   const [perDrop, setPerDrop] = useState(a ? Number(a.perDealCap) / 1e6 : 25);
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "ok" | "err"; text?: string }>({ kind: "idle" });
   const [retry, setRetry] = useState<Retry>(null);
+  const [newPayout, setNewPayout] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [planErr, setPlanErr] = useState("");
   const [thinking, setThinking] = useState(false);
@@ -98,17 +99,17 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
         <div className="mgr-head">
           <div>
             <h1>Autopilot</h1>
-            <p className="muted">Let your manager run drops for you, inside a limit you set. It can never take money out, and anything over the limit waits for your yes.</p>
+            <p className="muted">Let your manager run drops for you, inside a limit you set. The only place it can send money is your own wallet, and anything over the limit waits for your yes.</p>
           </div>
         </div>
         <div className="panel launch" style={{ maxWidth: 640 }}>
           <h3>Set your rule</h3>
           {rule}
           <p className="fine">
-            This opens an account on Arc that only you control. Sales from your drops land in it, and you can move them to your wallet at any time. Your manager
-            can open a drop from it only inside this rule.
+            This opens an account on Arc that only you control. Sales from your drops pass through it and your manager sends them on to your wallet. It can open a
+            drop from it only inside this rule.
           </p>
-          <button className="btn" hidden={!!retry} disabled={status.kind === "working"} onClick={() => run("Autopilot is on.", () => createAccountWithCircle(acct, Math.round(share * 100), units(base), units(perDrop)))}>
+          <button className="btn" hidden={!!retry} disabled={status.kind === "working"} onClick={() => run("Autopilot is on.", () => createAccountWithCircle(acct, Math.round(share * 100), units(base), units(perDrop), acct.address))}>
             Turn on autopilot
           </button>
           {feedback}
@@ -218,8 +219,30 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
         <div className="panel">
           <h3>Your account</h3>
           <div className="mini-row">
-            <span>Balance</span>
+            <span>Sent to you so far</span>
+            <b>{$(a.paidOut)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Waiting to be sent</span>
             <b>{$(a.balance)}</b>
+          </div>
+          <div className="mini-row">
+            <span>Your money goes to</span>
+            <b>
+              <a href={explorerAddr(a.payout)} target="_blank" rel="noreferrer">
+                {a.payout.toLowerCase() === acct.address.toLowerCase() ? "this Tifo wallet" : `${a.payout.slice(0, 6)}…${a.payout.slice(-4)}`}
+              </a>
+            </b>
+          </div>
+          <div className="dl-actions" style={{ marginTop: 8 }}>
+            <input className="input" value={newPayout} onChange={(e) => setNewPayout(e.target.value.trim())} placeholder="Send it somewhere else: 0x… on Arc" />
+            <button
+              className="btn sm ghost"
+              disabled={!isAddress(newPayout) || status.kind === "working"}
+              onClick={() => run("Payout wallet changed.", () => setPayoutWithCircle(acct, a.address, newPayout as Address).then(() => setNewPayout("")))}
+            >
+              Change
+            </button>
           </div>
           <div className="mini-row">
             <span>Sales in the last 7 days</span>
@@ -231,10 +254,11 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
             disabled={BigInt(a.balance) === 0n || status.kind === "working"}
             onClick={() => run("Moved to your wallet.", () => withdrawFromAccountWithCircle(acct, a.address, acct.address as Address, BigInt(a.balance)))}
           >
-            Move it all to my wallet
+            Send it to this wallet now
           </button>
           <p className="fine" style={{ marginTop: 12 }}>
-            Only your wallet can take money out. Your manager can open drops inside your rule and nothing else. The rule is enforced by{" "}
+            Your manager sends what lands here on to the wallet above, and that is the only place it can send money. Only you can change that wallet. The rule
+            is enforced by{" "}
             <a href={explorerAddr(a.address)} target="_blank" rel="noreferrer">
               your account contract on Arc
             </a>

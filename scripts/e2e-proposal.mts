@@ -29,7 +29,7 @@ await wait(await aw.writeContract({ address: USDC, abi: erc20Abi, functionName: 
 // The seller's rule: $3 a week, at most $2 per drop.
 let account = (await pub.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "accountOf", args: [seller.address] })) as Hex;
 if (/^0x0+$/.test(account)) {
-  const h = await sw.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createAccount", args: [0, parseUnits("3", 6), parseUnits("2", 6)] });
+  const h = await sw.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createAccount", args: [0, parseUnits("3", 6), parseUnits("2", 6), "0x0000000000000000000000000000000000000000"] });
   await wait(h);
   account = (await pub.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "accountOf", args: [seller.address] })) as Hex;
   ok(`seller opened an account ${account} with a $3 weekly rule and $2 per drop (${h})`);

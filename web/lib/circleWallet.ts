@@ -300,10 +300,39 @@ export async function sendUsdcWithCircle(account: SmartAccount, to: Address, amo
 
 // ---------------------------------------------------------------- the seller's account
 
-/** Open the seller's account with their weekly rule for the agent. Returns the transaction hash. */
-export async function createAccountWithCircle(account: SmartAccount, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
-  const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createAccount", args: [weeklyBps, baseWeekly, perDealCap] });
+/** Open the seller's account with their weekly rule for the agent, and where their money is sent. */
+export async function createAccountWithCircle(account: SmartAccount, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint, payout: Address): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createAccount", args: [weeklyBps, baseWeekly, perDealCap, payout] });
   return sendAs(account, [{ to: FACTORY, data }], "Your account was not created. Nothing changed.", (r) => r.transactionHash);
+}
+
+/** A new seller's first step in one confirmation: the account with its rule and payout wallet, and the first drop. */
+export async function createAccountAndOpenWithCircle(
+  account: SmartAccount,
+  weeklyBps: number,
+  baseWeekly: bigint,
+  perDealCap: bigint,
+  payout: Address,
+  args: NonNullable<CreatePromoArgs>,
+): Promise<{ hash: Hex; promo: Address }> {
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
+  const data = encodeFunctionData({
+    abi: tifoFactoryAbi,
+    functionName: "createAccountAndOpen",
+    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
+  });
+  return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => {
+    // The factory logs the new drop (PromoCreated, drop address first) and the new account (AccountCreated).
+    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase() && l.topics.length === 4);
+    if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
+    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
+  });
+}
+
+/** Change where the account's money is sent. Only the owner's wallet can. */
+export async function setPayoutWithCircle(account: SmartAccount, tifoAccount: Address, to: Address): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoAccountAbi, functionName: "setPayout", args: [to] });
+  return sendAs(account, [{ to: tifoAccount, data }], "Your payout wallet was not changed.", (r) => r.transactionHash);
 }
 
 export async function setLimitsWithCircle(account: SmartAccount, tifoAccount: Address, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
