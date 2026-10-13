@@ -451,3 +451,12 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 .sheet-card header { display: flex; justify-content: space-between; align-items: center; }
 .sheet-frame { height: min(640px, 70vh); border-radius: 18px; overflow: hidden; background: var(--surface-2); }
 .sheet-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+/* Practice version (Arc testnet): a strip on the practice site, and its drops listed under the real ones. */
+.practice-bar { background: var(--ink); color: var(--surface); font-size: .86rem; text-align: center; padding: 9px 16px; line-height: 1.4; }
+.practice-bar a { color: inherit; text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.practice { margin-top: 64px; padding-top: 40px; border-top: 1px dashed var(--line); }
+.practice-note { color: var(--muted); max-width: 640px; margin: -4px 0 26px; }
+.practice-note a { color: var(--accent-deep); font-weight: 600; }
+.practice .dcard { opacity: .92; }
+.practice-more { margin-top: 26px; }

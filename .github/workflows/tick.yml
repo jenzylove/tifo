@@ -21,12 +21,19 @@ jobs:
         env:
           TIFO_URL: ${{ secrets.TIFO_URL }}
           TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          PRACTICE_URL: ${{ secrets.PRACTICE_URL }}
+          PRACTICE_TICK_SECRET: ${{ secrets.PRACTICE_TICK_SECRET }}
         run: |
           end=$(( $(date +%s) + 5 * 3600 + 15 * 60 ))
           path="/api/tick?plan=1"
           while [ "$(date +%s)" -lt "$end" ]; do
             curl -sS -m 240 -H "Authorization: Bearer $TICK_SECRET" "$TIFO_URL$path" | head -c 2000 || true
             echo
+            # The practice version (testnet) settles the same way, when it is set up.
+            if [ -n "$PRACTICE_URL" ]; then
+              curl -sS -m 240 -H "Authorization: Bearer ${PRACTICE_TICK_SECRET:-$TICK_SECRET}" "$PRACTICE_URL/api/tick" | head -c 1000 || true
+              echo
+            fi
             path="/api/tick"
             sleep 120
           done

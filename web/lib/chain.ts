@@ -34,7 +34,24 @@ const publicRpc = http(RPC_URL, { batch: true, retryCount: 3 });
 export const transport = CANTEEN_RPC ? fallback([http(CANTEEN_RPC, { retryCount: 1, timeout: 8_000 }), publicRpc]) : publicRpc;
 export const publicClient = createPublicClient({ chain, transport });
 
-export const explorerTx = (h: string) => `${chain.blockExplorers.default.url}/tx/${h}`;
+// The practice version: the same app deployed on Arc testnet, where anyone can try a drop with free test USDC.
+// The real site reads its drops (reads only) to list them under the real ones, each linking to the practice site.
+export const PRACTICE_URL = (process.env.NEXT_PUBLIC_PRACTICE_URL ?? "").replace(/\/$/, "");
+export const MAIN_URL = (process.env.NEXT_PUBLIC_MAIN_URL ?? "").replace(/\/$/, "");
+const PRACTICE_FACTORY = (process.env.NEXT_PUBLIC_PRACTICE_FACTORY ?? "") as Address;
+export const practice =
+  NETWORK === "mainnet" && PRACTICE_URL && /^0x[0-9a-fA-F]{40}$/.test(PRACTICE_FACTORY)
+    ? { url: PRACTICE_URL, factory: PRACTICE_FACTORY, client: createPublicClient({ chain: arcTestnet, transport: http(arcTestnet.rpcUrls.default.http[0], { batch: true, retryCount: 3 }) }) as unknown as typeof publicClient }
+    : null;
+
+/** Where a set of drops lives: the factory to read and the client that reads it. */
+export interface Source {
+  factory: Address;
+  client: typeof publicClient;
+}
+export const mainSource: Source = { factory: FACTORY, client: publicClient };
+
+export const explorerTx =(h: string) => `${chain.blockExplorers.default.url}/tx/${h}`;
 export const explorerAddr = (a: string) => `${chain.blockExplorers.default.url}/address/${a}`;
 
 /** USDC base units (6 decimals) to a display string. */

@@ -3,7 +3,7 @@
 // a few batched calls however old a promo is.
 import type { Address } from "viem";
 import { tifoFactoryAbi, tifoPromoAbi } from "./abi";
-import { FACTORY, publicClient } from "./chain";
+import { mainSource, publicClient, type Source } from "./chain";
 
 export interface PromoMeta {
   slug: string;
@@ -20,6 +20,7 @@ export interface PromoMeta {
   profitUsd?: number; // what the seller keeps per sale before the promo, for the break-even line
   delivery?: string; // sealed; opened only for a paid order (see lib/delivery.ts)
   byAgent?: boolean; // the agent opened this drop by itself, inside the seller's rule
+  practice?: boolean; // opened on the practice version (Arc testnet) to try the flow with test USDC
   reason?: string; // why the agent chose this match and these terms
   contact?: string; // where a buyer sends delivery details for a physical product
   shape?: "percent" | "free"; // "free": a full refund for the first buyers on each side
@@ -38,7 +39,8 @@ export interface PromoSummary {
   meta: PromoMeta;
 }
 
-export async function listPromos(): Promise<PromoSummary[]> {
+export async function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
+  const { factory: FACTORY, client: publicClient } = src;
   if (/^0x0+$/.test(FACTORY)) return [];
   const count = Number(await publicClient.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "promosCount" }));
   const out: PromoSummary[] = [];
@@ -84,9 +86,9 @@ export interface PromoState {
   drawLiability: bigint;
 }
 
-export async function promoState(address: Address): Promise<PromoState> {
+export async function promoState(address: Address, src: Source = mainSource): Promise<PromoState> {
   const c = { address, abi: tifoPromoAbi } as const;
-  const r = await publicClient.multicall({
+  const r = await src.client.multicall({
     allowFailure: false,
     contracts: [
       { ...c, functionName: "book" },

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import "./globals.css";
 import Logo from "@/components/Logo";
-import { NETWORK } from "@/lib/chain";
+import { MAIN_URL, NETWORK, practice } from "@/lib/chain";
 
 const sans = Host_Grotesk({ subsets: ["latin"], variable: "--sans" });
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--mono" });
@@ -18,6 +18,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${sans.variable} ${mono.variable}`}>
       <body>
+        {NETWORK === "testnet" && (
+          <div className="practice-bar">
+            Practice version: test USDC only, nothing is shipped.{" "}
+            <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">Get test USDC</a>
+            {MAIN_URL && (
+              <>
+                {" · "}
+                <a href={MAIN_URL}>Go to the real site</a>
+              </>
+            )}
+          </div>
+        )}
         <header className="top">
           <div className="bar">
             <Logo />
@@ -40,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <a href="/manage">Make a drop</a>
                 <a href="/drops">Drops</a>
                 <a href="/proof">Proof</a>
+                {practice && <a href="/drops#practice">Try with test money</a>}
                 <a href="https://github.com/jenzylove/tifo" target="_blank" rel="noreferrer">
                   GitHub
                 </a>

@@ -2,19 +2,19 @@
 import "server-only";
 import type { DropCardData } from "@/components/DropCard";
 import { listPromos, promoState } from "./promos";
-import { usd } from "./chain";
+import { usd, mainSource, type Source } from "./chain";
 
-export async function dropCards(filter?: (seller: string) => boolean, limit = 24): Promise<DropCardData[]> {
+export async function dropCards(filter?: (seller: string) => boolean, limit = 24, src: Source = mainSource): Promise<DropCardData[]> {
   // Drops we opened only to check the system (labelled "check" or "not for sale") stay on chain and on /proof,
   // but are not shown to shoppers on the boards.
   const isCheck = (name: string) => /not for sale|check|testnet run/i.test(name);
-  const promos = (await listPromos())
+  const promos = (await listPromos(src))
     .filter((p) => !isCheck(p.meta.product) && (!filter || filter(p.seller.toLowerCase())))
     .slice(0, limit);
   const now = Date.now() / 1000;
   return Promise.all(
     promos.map(async (p) => {
-      const st = await promoState(p.address);
+      const st = await promoState(p.address, src);
       const settled = st.finalOutcome !== "None";
       const phase = settled ? "settled" : st.proposed !== "None" ? "result" : now >= st.closesAt ? "live" : "open";
       const note = settled

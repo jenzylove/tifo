@@ -9,15 +9,16 @@ export interface DropCardData {
   phase: "open" | "live" | "result" | "settled";
   fans: number;
   note?: string;
+  base?: string; // another site that hosts this drop (the practice version)
 }
 
 /** One drop as a product card: photo first, the match as the promo layer on top. */
-export default function DropCard({ p, rates, phase, fans, note }: DropCardData) {
+export default function DropCard({ p, rates, phase, fans, note, base = "" }: DropCardData) {
   const [ca, cb] = teamColors(p.meta.teamA, p.meta.teamB);
   const A = shortTeam(p.meta.teamA), B = shortTeam(p.meta.teamB);
   const kick = new Date(p.meta.kickoff);
   return (
-    <a href={`/p/${p.address}`} className="dcard" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+    <a href={`${base}/p/${p.address}`} className="dcard" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
       <div className="ph">
         {p.meta.image ? <img src={p.meta.image} alt={p.meta.product} /> : <span className="ph-name">{p.meta.product}</span>}
         {phase === "open" ? (

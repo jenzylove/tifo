@@ -1,0 +1,23 @@
+name: seed practice drops
+# Opens practice drops on Arc testnet from separate seller wallets (scripts/seed-practice.mts). Run it by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: How many drops to open
+        default: "20"
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npx tsx scripts/seed-practice.mts
+        env:
+          COUNT: ${{ inputs.count }}
+          FUNDER_PK: ${{ secrets.PRACTICE_FUNDER_PK }}
+          FACTORY: ${{ secrets.PRACTICE_FACTORY }}
+          PRACTICE_SEED: ${{ secrets.PRACTICE_SEED }}
+          PRACTICE_URL: ${{ secrets.PRACTICE_URL }}
