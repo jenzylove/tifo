@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 interface IERC20Lite {
     function transfer(address to, uint256 amount) external returns (bool);
+    function balanceOf(address who) external view returns (uint256);
 }
 
 interface ITifoFactory {
@@ -31,7 +32,8 @@ interface ITifoPromoSales {
 /// Sales from the seller's drops land here. The owner sets one rule: how much the agent may put
 /// at risk on drops each week (a fixed base plus a share of the last 7 days of sales) and the most
 /// for a single drop. Inside the rule the agent opens drops by itself. Outside it, the agent can only
-/// write a proposal that the owner approves. The agent has no way to take money out.
+/// write a proposal that the owner approves. The agent cannot take money out for itself: the only place it can send
+/// the account's balance is the payout wallet the owner chose.
 contract TifoAccount {
     struct Terms {
         bytes32 fixtureId;
@@ -52,6 +54,16 @@ contract TifoAccount {
         uint64 createdAt;
         uint64 closesAt;
         uint256 cap;
+        bool byAgent; // opened by the agent alone, inside the rule
+        string reason; // the agent's own words, or the approved proposal's
+    }
+
+    /// One transfer of the account's balance to the owner's payout wallet.
+    struct Payout {
+        uint64 at;
+        address to;
+        uint256 amount;
+        string reason;
     }
 
     struct Proposal {
@@ -73,21 +85,27 @@ contract TifoAccount {
     uint16 public weeklyBps; // share of the last 7 days of sales the agent may put at risk each week
     uint256 public baseWeekly; // a fixed weekly amount on top, so a new seller is not stuck at zero
     uint256 public perDealCap; // the most one drop may cost
+    address public payout; // where the seller's money goes; only the owner can change it
+    uint256 public paidOutTotal;
 
     Deal[] internal deals;
     Proposal[] internal proposals;
+    Payout[] internal payouts;
 
     event LimitsSet(uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap);
     event DealOpened(address indexed promo, uint256 cap, bool byAgent, string reason);
     event Proposed(uint256 indexed id, uint256 cap, string reason);
     event Decided(uint256 indexed id, bool approved);
     event Withdrawn(address indexed to, uint256 amount);
+    event PayoutSet(address to);
+    event PaidOut(address indexed to, uint256 amount, string reason);
 
     error NotOwner();
     error NotAgent();
     error OverLimit();
     error AlreadyDecided();
     error TransferFailed();
+    error NotFactory();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -99,7 +117,7 @@ contract TifoAccount {
         _;
     }
 
-    constructor(address usdc_, address owner_, address agent_, address factory_, uint16 weeklyBps_, uint256 baseWeekly_, uint256 perDealCap_) {
+    constructor(address usdc_, address owner_, address agent_, address factory_, uint16 weeklyBps_, uint256 baseWeekly_, uint256 perDealCap_, address payout_) {
         require(weeklyBps_ <= BPS, "share");
         usdc = IERC20Lite(usdc_);
         owner = owner_;
@@ -108,9 +126,24 @@ contract TifoAccount {
         weeklyBps = weeklyBps_;
         baseWeekly = baseWeekly_;
         perDealCap = perDealCap_;
+        payout = payout_ == address(0) ? owner_ : payout_;
     }
 
     // ---------------------------------------------------------------- owner
+
+    /// @notice Where the account's money is sent. Only the owner can set it, so the agent can only ever pay the owner.
+    function setPayout(address to) external onlyOwner {
+        require(to != address(0), "payout");
+        payout = to;
+        emit PayoutSet(to);
+    }
+
+    /// @notice The first drop, opened in the same step that creates the account. Only the factory calls this, and only
+    /// for the wallet that asked it to create this account.
+    function openFirst(Terms calldata t, string calldata meta) external returns (address) {
+        if (msg.sender != address(factory) || deals.length != 0) revert NotFactory();
+        return _open(t, meta, false, "");
+    }
 
     function setLimits(uint16 weeklyBps_, uint256 baseWeekly_, uint256 perDealCap_) external onlyOwner {
         require(weeklyBps_ <= BPS, "share");
@@ -144,6 +177,18 @@ contract TifoAccount {
     function openDeal(Terms calldata t, string calldata meta, string calldata reason) external onlyAgent returns (address) {
         if (t.cap > perDealCap || committed() + t.cap > allowance()) revert OverLimit();
         return _open(t, meta, true, reason);
+    }
+
+    /// @notice Send everything the account holds to the owner's payout wallet. The agent (or the owner) decides when;
+    /// neither chooses where. Refunds are never at risk: each drop keeps its own refund money until full time.
+    function payOut(string calldata reason) external returns (uint256 amount) {
+        if (msg.sender != agent && msg.sender != owner) revert NotAgent();
+        amount = usdc.balanceOf(address(this));
+        if (amount == 0) return 0;
+        paidOutTotal += amount;
+        payouts.push(Payout(uint64(block.timestamp), payout, amount, reason));
+        if (!usdc.transfer(payout, amount)) revert TransferFailed();
+        emit PaidOut(payout, amount, reason);
     }
 
     /// @notice Anything outside the rule is only a proposal until the owner approves it.
@@ -186,6 +231,16 @@ contract TifoAccount {
         return proposals.length;
     }
 
+    function payoutsCount() external view returns (uint256) {
+        return payouts.length;
+    }
+
+    function getPayouts(uint256 start, uint256 n) external view returns (Payout[] memory out) {
+        uint256 end = start + n > payouts.length ? payouts.length : start + n;
+        out = new Payout[](end > start ? end - start : 0);
+        for (uint256 i = start; i < end; i++) out[i - start] = payouts[i];
+    }
+
     function getDeals(uint256 start, uint256 n) external view returns (Deal[] memory out) {
         uint256 end = start + n > deals.length ? deals.length : start + n;
         out = new Deal[](end > start ? end - start : 0);
@@ -202,7 +257,7 @@ contract TifoAccount {
 
     function _open(Terms memory t, string memory meta, bool byAgent, string memory reason) internal returns (address promo) {
         promo = factory.createPromo(t.fixtureId, t.closesAt, t.settleNotBefore, t.cap, t.minBps, t.maxBps, t.rateA, t.rateB, t.floorBps, t.drawBps, t.holdSecs, meta);
-        deals.push(Deal(promo, uint64(block.timestamp), t.closesAt, t.cap));
+        deals.push(Deal(promo, uint64(block.timestamp), t.closesAt, t.cap, byAgent, reason));
         emit DealOpened(promo, t.cap, byAgent, reason);
     }
 }

@@ -155,7 +155,7 @@ contract TifoDeliveryTest is Test {
 
     function test_accountOwnerCanMarkSent() public {
         vm.prank(seller);
-        TifoAccount acct = TifoAccount(factory.createAccount(0, 100e6, 50e6));
+        TifoAccount acct = TifoAccount(factory.createAccount(0, 100e6, 50e6, address(0)));
         vm.prank(seller);
         TifoPromo p = TifoPromo(
             acct.open(TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, HOLD), "{}")

@@ -13,9 +13,9 @@ contract TifoAccountDeployer {
         factory = msg.sender;
     }
 
-    function deploy(address usdc, address owner, address agent, uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap) external returns (address) {
+    function deploy(address usdc, address owner, address agent, uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap, address payout) external returns (address) {
         require(msg.sender == factory, "factory");
-        return address(new TifoAccount(usdc, owner, agent, factory, weeklyBps, baseWeekly, perDealCap));
+        return address(new TifoAccount(usdc, owner, agent, factory, weeklyBps, baseWeekly, perDealCap, payout));
     }
 }
 
@@ -76,11 +76,21 @@ contract TifoFactory {
     }
 
     /// @notice Open an account with a standing rule for the agent. One per seller wallet.
-    function createAccount(uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap) external returns (address account) {
+    /// @param payout where the account's money is sent; the zero address means the seller's own wallet.
+    function createAccount(uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap, address payout) public returns (address account) {
         require(accountOf[msg.sender] == address(0), "exists");
-        account = accountDeployer.deploy(usdc, msg.sender, agent, weeklyBps, baseWeekly, perDealCap);
+        account = accountDeployer.deploy(usdc, msg.sender, agent, weeklyBps, baseWeekly, perDealCap, payout);
         accountOf[msg.sender] = account;
         emit AccountCreated(msg.sender, account);
+    }
+
+    /// @notice A new seller's first step in one transaction: the account with its rule, and the first drop through it.
+    function createAccountAndOpen(uint16 weeklyBps, uint256 baseWeekly, uint256 perDealCap, address payout, TifoAccount.Terms calldata t, string calldata meta)
+        external
+        returns (address account, address promo)
+    {
+        account = createAccount(weeklyBps, baseWeekly, perDealCap, payout);
+        promo = TifoAccount(account).openFirst(t, meta);
     }
 
     function promosCount() external view returns (uint256) {

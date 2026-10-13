@@ -115,7 +115,7 @@ contract TifoMoneyTest is Test {
     function test_account_agentActsInsideTheRuleAndOnlyProposesOutsideIt() public {
         // The owner lets the agent risk $50 a week plus 10% of last week's sales, and at most $40 on one drop.
         vm.prank(seller);
-        TifoAccount acct = TifoAccount(factory.createAccount(1000, 50e6, 40e6));
+        TifoAccount acct = TifoAccount(factory.createAccount(1000, 50e6, 40e6, address(0)));
         assertEq(factory.accountOf(seller), address(acct));
 
         vm.startPrank(agent);
