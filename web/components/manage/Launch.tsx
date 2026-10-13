@@ -35,7 +35,7 @@ type Kind = "digital" | "physical";
 const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to buyers in the small print)
 const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
-const MAX_COVER = 50;
+const MAX_STOCK = 500;
 
 // How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
 const LEAGUE_WEIGHT: Record<string, number> = {
@@ -47,7 +47,8 @@ const LEAGUE_WEIGHT: Record<string, number> = {
 function suggest(matches: ApiMatch[]): { m: ApiMatch; why: string }[] {
   const now = Date.now();
   return matches
-    .filter((m) => m.odds && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
+    // Only matches ordinary buyers have heard of: top leagues, Champions League, national teams.
+    .filter((m) => m.odds && (LEAGUE_WEIGHT[m.league] ?? 0) >= 3 && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
     .map((m) => {
       const gap = Math.abs(m.odds!.pA - m.odds!.pB);
       const days = (Date.parse(m.kickoff) - now) / 86_400_000;
@@ -72,7 +73,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slug, setSlug] = useState(prefill?.slug ?? "");
-  const [spots, setSpots] = useState(4);
+  const [stock, setStock] = useState("10"); // how many the seller has to sell; this caps the most the drop can cost
   const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
   const [wantCap, setWantCap] = useState<number | null>(prefill?.capUsd ?? null);
   const [browse, setBrowse] = useState(false);
@@ -94,13 +95,15 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const priceUsd = Number(price);
   const costUsd = Math.max(0, Number(cost) || 0);
   const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
-  // A budget suggested by the manager becomes how many buyers per side it covers, once the price is known.
+  // A budget suggested by the manager becomes a share back that fits it, once price and stock are known.
+  const units = Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
   useEffect(() => {
-    if (wantCap && priceUsd > 0) {
-      setSpots(Math.max(1, Math.min(MAX_COVER, Math.floor(wantCap / ((priceUsd * tier) / FULL)))));
+    if (wantCap && priceUsd > 0 && units > 0) {
+      const fits = [...TIERS].reverse().find((t) => (units * priceUsd * t) / FULL <= wantCap + 1e-9);
+      if (fits) setTier(fits);
       setWantCap(null);
     }
-  }, [wantCap, priceUsd, tier]);
+  }, [wantCap, priceUsd, units]);
 
   const picks = useMemo(() => suggest(matches ?? []), [matches]);
   useEffect(() => {
@@ -111,7 +114,12 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (matches ?? []).filter((m) => m.odds && Date.parse(m.kickoff) > Date.now() + 45 * 60_000 && (!q || m.title.toLowerCase().includes(q) || m.league.toLowerCase().includes(q)));
   }, [matches, query]);
   const m = matches?.find((x) => x.slug === slug);
-  const cap = priceUsd > 0 ? Math.round(((spots * priceUsd * tier) / FULL) * 100) / 100 : 0;
+  // Every buyer gets the same share back. The worst case is all the stock selling to the side that wins.
+  const cap = priceUsd > 0 ? Math.round(((units * priceUsd * tier) / FULL) * 100) / 100 : 0;
+  // What it usually costs: buyers split between the two teams, one side wins, a draw pays only the small thank you.
+  const odds = matches?.find((x) => x.slug === slug)?.odds ?? null;
+  const usual = odds && priceUsd > 0 ? (units * priceUsd * (tier / FULL) * (odds.pA + odds.pB)) / 2 : null;
+  const likePct = usual !== null && units > 0 ? Math.round((usual / (units * priceUsd)) * 100) : null;
   const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
   const missing = !name.trim()
     ? "Add your shop name"
@@ -119,6 +127,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       ? "Name the product"
       : !(priceUsd >= 1)
         ? "Set a price"
+        : !(units >= 1)
+          ? "Say how many you have"
         : kind === "digital" && !delivery.trim()
           ? "Add what the buyer receives"
           : !m
@@ -142,7 +152,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind === "physical" && contact.trim() ? contact.trim() : undefined,
-        shape: tier >= FULL ? "free" : "back", backBps: tier, baseRates: [tier, tier], minBps: tier, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
+        shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: tier, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
@@ -163,7 +173,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before kickoff, while the offer lasts.`}
+        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before kickoff. Only ${units} available.`}
         again={() => setStatus({ kind: "idle" })}
       />
     );
@@ -275,21 +285,13 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             </button>
           ))}
         </div>
-        <h3 style={{ marginTop: 18 }}>Buyers it covers</h3>
-        <div className="spots">
-          <button aria-label="One fewer" onClick={() => setSpots((n) => Math.max(1, n - 1))} disabled={spots <= 1}>
-            −
-          </button>
-          <div>
-            <b>{spots}</b>
-            <span>per side</span>
-          </div>
-          <button aria-label="One more" onClick={() => setSpots((n) => Math.min(MAX_COVER, n + 1))} disabled={spots >= MAX_COVER}>
-            +
-          </button>
-        </div>
+        <label className="field" style={{ marginTop: 18 }}>
+          How many do you have to sell?
+          <input className="input" type="number" min={1} max={MAX_STOCK} step={1} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
+        </label>
         <p className="fine">
-          {tier >= FULL ? "It is free" : `${tier / 100}% of the price comes back`} for the first {spots === 1 ? "buyer" : `${spots} buyers`} on the winning side. Everyone after still buys at full price. Buyers only see a count when the last {LOW} are left.
+          Every buyer gets {tier >= FULL ? "the full price" : `${tier / 100}%`} back if their team wins. Nobody is left out. Your stock is what caps the cost: even if all {units || "of them"}{" "}
+          sell to fans of the team that wins, it cannot cost more than the figure below. Buyers see how many are left once only {LOW} remain.
         </p>
         {priceUsd >= 1 && (
           <div className="sum-lines">
@@ -297,6 +299,19 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
               <span>Most it can cost you</span>
               <b>${cap.toFixed(2)}</b>
             </div>
+            {usual !== null && likePct !== null && (
+              <div>
+                <span>Usually costs about</span>
+                <b>
+                  ${usual.toFixed(2)} · like {likePct}% off
+                </b>
+              </div>
+            )}
+            {usual !== null && (
+              <small className="fine">
+                From the match odds, if your buyers split evenly between the two teams. Only one side can win, and a draw pays back very little.
+              </small>
+            )}
             {breakEven !== null && (
               <div>
                 <span>Pays for itself after</span>
@@ -330,7 +345,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             if (p.image) setImage(p.image);
             const t = nearestTier(p.effectiveBps);
             if (t) setTier(t);
-            setWantCap(p.capUsd);
+            if (p.stock) setStock(String(p.stock));
+            else setWantCap(p.capUsd);
           }}
         />
       </details>
@@ -376,6 +392,7 @@ interface ChatProposal {
   slug: string;
   effectiveBps: number;
   capUsd: number;
+  stock?: number;
   shop?: string;
   product?: string;
   priceUsd?: number;

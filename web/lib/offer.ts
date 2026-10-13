@@ -15,4 +15,4 @@ export function coverLeft(cap: bigint, liability: bigint, priceUnits: bigint, ra
 
 /** Only shown when nearly gone, so a drop reads as open to everyone until it really is not. */
 export const LOW = 2;
-export const lastFew = (n: number | null) => (n !== null && n > 0 && n <= LOW ? `Last ${n} at this offer` : null);
+export const lastFew = (n: number | null) => (n !== null && n > 0 && n <= LOW ? `Only ${n} left` : null);

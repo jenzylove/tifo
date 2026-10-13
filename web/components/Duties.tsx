@@ -4,8 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 
 const ITEMS: [string, string][] = [
-  ["Plans the drop", "It looks at how your past drops went and the matches coming up, then picks one and sets the budget. It tells you how many extra sales pay for it before you say yes."],
-  ["Keeps your cost fixed", "The first buyers on each side get it free if their team wins. Whoever wins, it costs you the same, and it can never go over your budget, because a contract holds the money, not the AI."],
+  ["Plans the drop", "It looks at how your past drops went and the big matches coming up, then picks one and the share back that fits your margin. It tells you the most it can cost and what it usually costs before you say yes."],
+  ["Keeps your cost capped", "Every buyer gets the same share back if their team wins. Your stock caps the cost, so it can never go over the figure you saw, because a contract holds the money, not the AI."],
   ["Pays the winners", "It checks the result against three sources and pays as soon as two agree. No claim form, no waiting a week."],
   ["Shows you the score", "After every match you see what the drop brought in, what it cost, and whether it paid for itself."],
   ["Runs by itself, if you let it", "Give it a weekly limit and it runs drops for you. Anything bigger than the limit, it has to ask first. It can never take money out."],

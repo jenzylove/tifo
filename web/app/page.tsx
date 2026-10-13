@@ -27,10 +27,12 @@ export default async function Landing() {
   const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
   const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
   const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#d92b3a", "#2b5fd9"];
-  const rates = [10_000, 10_000];
-  const product = "Budget planner kit";
+  // The example on the cards: 10 t-shirts at $20, 25% back for every buyer, so the most it can cost is $50.
+  const rates = [2_500, 2_500];
+  const product = "Team t-shirt";
   const price = 20;
-  const budget = 100;
+  const stock = 10;
+  const budget = (stock * price * rates[0]) / 10_000;
   const bigEnough = paidState && paidState.refundedTotal >= 5_000_000n;
 
   return (
@@ -58,12 +60,12 @@ export default async function Landing() {
           ))}
           <span className="hl" style={i(HEAD.length)}>
             sales
-            <span className="sticker">free if your team wins</span>
+            <span className="sticker">money back if your team wins</span>
           </span>
         </h1>
         <p className="sub">
-          Give Tifo one product and a budget. It hands you a link to share. Fans of both teams buy, the first ones in get it free if their team wins, and it never costs
-          you more than the budget you set.
+          Put your stock on a big match. Every buyer gets money back if their team wins, and you know the most it can cost before you post. A 25% back offer
+          usually costs about what a 10% off sale does.
         </p>
         <div className="ctas">
           <a className="btn ac" href="/manage">
@@ -82,12 +84,12 @@ export default async function Landing() {
               {product} <small>${price}</small>
             </div>
             <div className="row">
-              Budget <small>${budget} at most</small>
+              {stock} in stock <small>${budget} at most</small>
             </div>
             <div className="row go">Get my link</div>
           </div>
           <p className="cap">
-            <b>Step 1</b>Add one product and the most you are willing to spend.
+            <b>Step 1</b>Add your product, how many you have, and how much back: 25%, 50% or free.
           </p>
         </div>
         <div className="step" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
@@ -119,7 +121,7 @@ export default async function Landing() {
               ))}
             </div>
             <div className="row">
-              Paid back to winners <small>${budget}</small>
+              Paid back to winners <small>up to ${budget}</small>
             </div>
           </div>
           <p className="cap">
@@ -128,7 +130,7 @@ export default async function Landing() {
         </div>
       </div>
 
-      <p className="trio-note">An example drop: a $20 product at 50% back, with a $100 budget, covers the first ten buyers on the winning side.</p>
+      <p className="trio-note">An example drop: 10 t-shirts at $20, 25% back for every buyer. The most it can cost is $50. Fans split between two teams and only one wins, so it usually costs about $20.</p>
 
       <div className="wrap">
         <Reveal className="facts">
@@ -171,7 +173,7 @@ export default async function Landing() {
               </li>
               <li>
                 <span>
-                  <b>Your money back after full time</b>The first buyers on each side get the full price back if their team wins. It lands in your wallet by itself.
+                  <b>Your money back after full time</b>If your team wins, your share of the price comes back to you. It lands in your wallet by itself.
                 </span>
               </li>
             </ol>

@@ -44,12 +44,13 @@ export interface Plan {
 
 const SYSTEM = `You are the sales manager for someone who sells online through Tifo. You run match drops for them:
 fans of both teams buy the product at full price and pick a side; if their team wins they get money back in USDC.
-The offer is a fixed share of the price back if the buyer's team wins: back_pct is 25, 50 or 100 (100 means free).
-It covers the first buyers on each side, as many as the budget allows (budget / (price x back_pct / 100)).
-Buyers after that pay full price with nothing back. On a draw every buyer gets 5% back as a small thank you.
-The budget is the most a drop can cost the seller, whoever wins.
+The offer is the same for every buyer: a fixed share of the price back if their team wins. back_pct is 25, 50 or 100 (100 means free).
+The seller's stock caps the cost: the most a drop can cost is stock x price x back_pct / 100, if every unit sells to fans of the
+winning team. What it usually costs is far less, because buyers split between two teams and only one can win.
+On a draw every buyer gets 5% back as a small thank you.
 
-Decide whether to run a drop now, and if so on which fixture, at which back_pct and with what budget.
+Decide whether to run a drop now, and if so on which fixture and at which back_pct. When the seller's stock is known, the budget
+is set by the stock and back_pct; pick the highest back_pct whose cap fits the seller's rule. Otherwise give budget_usd.
 - Choosing back_pct: 100 is the strongest hook but covers the fewest buyers. 25 or 50 covers more buyers for the same
   budget and reads like a normal sale. Prefer 50 unless past_drops show a reason to change, and say why you chose it.
 - You are spending the seller's money to bring them sales. A drop must be able to pay for itself:
@@ -86,6 +87,8 @@ export interface PlanInput {
 }
 
 /** Decide from what is known. Reads nothing and sends nothing. */
+const BIG = new Set(["Premier League", "Champions League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "Europa League", "UEFA Nations League", "International"]);
+
 export async function planFrom({ name, account, drops, fixtures }: PlanInput): Promise<Plan> {
   const at = Date.now();
   const skip = (reason: string): Plan => ({ act: "skip", reason, at });
@@ -94,11 +97,13 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   const perDrop = usdc(account.perDealCap);
   const price = template.priceUsd;
   const profit = template.profitUsd ?? null;
-  if (!fixtures.length) return skip("No fixture with reliable odds kicks off in the next six days.");
+  // Only matches ordinary buyers have heard of.
+  fixtures = fixtures.filter((m) => BIG.has(m.league.name));
+  if (!fixtures.length) return skip("No big match with reliable odds kicks off in the next six days.");
 
   const context = {
     seller: name,
-    product: { name: template.product, price_usd: price, profit_per_sale_usd: profit },
+    product: { name: template.product, price_usd: price, profit_per_sale_usd: profit, stock: template.stock ?? null },
     rule: { left_this_week_usd: +left.toFixed(2), per_drop_limit_usd: perDrop, last_7_days_sales_usd: usdc(account.recentSales) },
     past_drops: drops.slice(0, 6).map((d) => ({
       match: `${shortTeam(d.meta.teamA)} v ${shortTeam(d.meta.teamB)}`,
@@ -142,7 +147,9 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   const tier = ([2_500, 5_000, 10_000] as number[]).includes(Number(out.back_pct) * 100) ? Number(out.back_pct) * 100 : 5_000;
   const shape: "free" | "back" = tier >= FULL ? "free" : "back";
   const perBuyer = (price * tier) / FULL; // what one covered buyer costs the seller if their team wins
-  let capUsd = Math.round(Math.min(5000, Math.max(perBuyer, Number(out.budget_usd) || 0)) * 100) / 100;
+  const stock = template.stock && template.stock > 0 ? template.stock : null;
+  // With a stock count the cap follows from it; without one, the model's budget is used.
+  let capUsd = Math.round(Math.min(5000, Math.max(perBuyer, stock ? stock * perBuyer : Number(out.budget_usd) || 0)) * 100) / 100;
   if (profit !== null && profit > 0 && capUsd / profit > 200) capUsd = Math.round(profit * 200 * 100) / 100;
   const spots = Math.floor(capUsd / perBuyer + 1e-9);
   if (spots < 1) return skip(`The budget would not cover even one buyer at ${tier / 100}% back, so I am not running a drop.`);
@@ -155,7 +162,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
     slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
     shop: template.shop, product: template.product, priceUsd: price, image: template.image, description: template.description,
     profitUsd: template.profitUsd, delivery: template.delivery, contact: template.contact,
-    shape, backBps: tier, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: shape === "free" ? 0 : tier,
+    shape, backBps: tier, stock: stock ?? undefined, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: shape === "free" ? 0 : tier,
     byAgent: withinRule, reason,
   };
   const A = shortTeam(m.teamA), B = shortTeam(m.teamB);

@@ -24,6 +24,7 @@ export interface Proposal {
   description?: string;
   effectiveBps: number;
   capUsd: number;
+  stock?: number;
   minBps: number;
   maxBps: number;
   rates: [number, number];
@@ -36,18 +37,20 @@ buyers pick a side and get a fixed share of the price back if their team wins: 2
 It is paid automatically in USDC on Arc after full time, once the result is confirmed.
 
 How it works (explain it plainly when it helps the seller decide):
-- The seller picks the share (25, 50 or 100% back) and a budget.
-- Buyers covered per side = the budget divided by (price x share), rounded down. The first buyers on each side are covered.
-- After that, buyers on that side pay full price with nothing back. Buyers only see a count when the last 2 are left.
-- Lower shares cover more buyers for the same budget and read like a normal sale. 100% is the strongest hook but covers the fewest.
+- The seller picks the share (25, 50 or 100% back) and says how many they have (stock).
+- Every buyer gets that share back if their team wins. Nobody is left out.
+- The stock caps the cost: the most it can cost is stock x price x share, if every unit sells to fans of the team that wins.
+- What it usually costs is much less, because buyers split between two teams and only one can win. A 25% back offer
+  usually costs about what a 10% off sale does. Say this plainly to sellers: that is why they would use it.
+- Only big matches: top European leagues, the Champions League and national teams.
 - On a draw every buyer gets a small thank you (5% back).
 - Both sides pay full price and only one side can win, so the seller keeps most of what the drop brings in.
 - The budget is the most a drop can ever cost the seller, whoever wins. A contract enforces it.
 
 Your job in this chat:
-1. Unless the seller is described below, find out what they sell, the price, the profit per sale, a photo link of the product (optional, it makes the drop page sell), and a budget they are comfortable spending (ask briefly if missing; one question at a time).
+1. Unless the seller is described below, find out what they sell, the price, the profit per sale, how many they have, and a photo link of the product (optional, it makes the drop page sell). Ask briefly if missing; one question at a time.
 2. Use find_matches to pick a real upcoming match whose fan bases overlap the shop's audience.
-3. Use price_promo to show the buyers covered per side at the share they pick (suggest 50% if they have no preference), the worst case (the budget), and, when profit per sale is known, how many extra sales pay for it.
+3. Use price_promo to show the most it can cost and what it usually costs at the share they pick (suggest 25% if they have no preference), the worst case (the budget), and, when profit per sale is known, how many extra sales pay for it.
 4. When the seller is happy, call propose_promo with the final terms. The seller then launches it with one click from their own wallet.
 
 Rules: never invent prices or numbers, quote only what the tools return. No betting language ("bet", "wager", "odds boost", "win money"): it is a purchase with money back if your team wins. Keep replies short and concrete. Plain text only: no markdown, no asterisks or headings.`;
@@ -97,10 +100,10 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
 
   const pricePromo = betaZodTool({
     name: "price_promo",
-    description: "Show the offer for one match at 25, 50 or 100% back: buyers covered per side, the worst case, and how many extra sales pay for it.",
+    description: "Show the offer for one match at 25, 50 or 100% back for every buyer: the most it can cost (from stock), what it usually costs, and how many extra sales pay for it.",
     inputSchema: z.object({
       slug: z.string(),
-      budget_usd: z.number().min(1).max(5000),
+      stock: z.number().int().min(1).max(500).describe("How many the seller has to sell"),
       price_usd: z.number().min(1).max(10000),
       back_pct: z.union([z.literal(25), z.literal(50), z.literal(100)]).describe("Share of the price back if their team wins"),
       profit_usd: z.number().positive().optional().describe("Profit per sale in USD, if the seller said"),
@@ -108,17 +111,19 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
     run: async (i) => {
       const m = await matchBySlug(i.slug);
       if (!m) return JSON.stringify({ error: "match not found" });
-      const spots = Math.floor(i.budget_usd / ((i.price_usd * i.back_pct) / 100) + 1e-9);
-      if (spots < 1) return JSON.stringify({ error: "the budget does not cover even one buyer at this share" });
+      const worst = Math.round(i.stock * i.price_usd * i.back_pct) / 100;
+      const usual = m.odds ? Math.round(((worst * (m.odds.pA + m.odds.pB)) / 2) * 100) / 100 : null;
       const say = (t: string) => (i.back_pct === 100 ? `Free if ${t} win` : `${i.back_pct}% back if ${t} win`);
       return JSON.stringify({
         match: matchLine(m),
         offers: { [shortTeam(m.teamA)]: say(shortTeam(m.teamA)), [shortTeam(m.teamB)]: say(shortTeam(m.teamB)) },
-        buyers_covered_per_side: spots,
-        worst_case_usd: i.budget_usd,
+        every_buyer_gets_back_if_their_team_wins: `${i.back_pct}%`,
+        most_it_can_cost_usd: worst,
+        usually_costs_usd: usual,
+        usually_like_a_discount_of_pct: usual !== null ? Math.round((usual / (i.stock * i.price_usd)) * 100) : null,
         draw: "every buyer gets 5% back as a thank you",
         after_that: "buyers on that side pay full price with nothing back",
-        ...(i.profit_usd ? { extra_sales_to_break_even: Math.ceil(i.budget_usd / i.profit_usd) } : {}),
+        ...(i.profit_usd && usual !== null ? { extra_sales_that_pay_for_the_usual_cost: Math.ceil(usual / i.profit_usd) } : {}),
       });
     },
   });
@@ -133,7 +138,7 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
       price_usd: z.number().min(1).max(10000),
       link: z.string().url().optional(),
       image_url: z.string().url().optional().describe("Direct link to a photo of the product, if the seller gave one"),
-      cap_usd: z.number().min(1).max(5000).describe("The budget: the most the drop can cost the seller"),
+      stock: z.number().int().min(1).max(500).describe("How many the seller has to sell"),
       back_pct: z.union([z.literal(25), z.literal(50), z.literal(100)]).describe("Share of the price back if their team wins"),
       explanation: z.string().max(600).describe("Two or three plain sentences for the seller: why this match and these terms."),
     }),
@@ -142,8 +147,7 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
       if (!m?.odds) return JSON.stringify({ error: "cannot use this match" });
       if (Date.parse(m.kickoff) < Date.now() + 30 * 60_000) return JSON.stringify({ error: "kickoff is too close" });
       const tier = i.back_pct * 100;
-      const spots = Math.floor(i.cap_usd / ((i.price_usd * i.back_pct) / 100) + 1e-9);
-      if (spots < 1) return JSON.stringify({ error: "the budget does not cover even one buyer at this share" });
+      const capUsd = Math.round(i.stock * i.price_usd * i.back_pct) / 100;
       proposal = {
         slug: m.slug,
         league: m.league.name,
@@ -156,14 +160,15 @@ export async function runSellerChat(history: Anthropic.Beta.BetaMessageParam[], 
         link: i.link,
         image: i.image_url,
         effectiveBps: tier, // the share back; the drop form turns it into its tier
-        capUsd: i.cap_usd,
+        capUsd,
+        stock: i.stock,
         minBps: tier,
         maxBps: tier,
         rates: [tier, tier],
         odds: m.odds,
         explanation: i.explanation,
       };
-      return JSON.stringify({ ok: true, buyers_covered_per_side: spots });
+      return JSON.stringify({ ok: true, most_it_can_cost_usd: capUsd });
     },
   });
 

@@ -18,7 +18,7 @@ export default async function Drops() {
       <div className="pagehead">
         <span className="eyebrow">This matchday</span>
         <h1>Live drops</h1>
-        <p>Real products from independent sellers. Pick your team when you buy. If they win, the first buyers on each side get the full price back after full time.</p>
+        <p>Real products from independent sellers. Pick your team when you buy. If they win, you get money back after full time.</p>
       </div>
       {open.length === 0 ? <p className="empty panel">No drops open right now. Shops open new ones before each matchday.</p> : <div className="drops">{open.map((c) => <DropCard key={c.p.address} {...c} />)}</div>}
       {rest.length > 0 && (

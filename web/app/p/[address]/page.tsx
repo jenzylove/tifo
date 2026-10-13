@@ -62,7 +62,10 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const free = Math.max(...st.rates) >= 10_000;
   // How many more buyers each side's budget covers at its offer. Shown to buyers only when nearly gone.
   const priceUnits = BigInt(Math.round(p.meta.priceUsd * 1e6));
-  const spots = [0, 1].map((s) => coverLeft(st.cap, st.liability[s], priceUnits, st.rates[s]));
+  // With a stock count, what is left is the stock minus everything sold, whichever side bought it.
+  const sold = priceUnits > 0n ? Number(orders.reduce((t, o) => t + o.amount, 0n) / priceUnits) : 0;
+  const stockLeft = p.meta.stock ? Math.max(0, p.meta.stock - sold) : null;
+  const spots = [0, 1].map((s) => (stockLeft !== null ? stockLeft : coverLeft(st.cap, st.liability[s], priceUnits, st.rates[s])));
   const share = Math.max(...st.rates);
   const drawLine = st.drawBps > 0 ? `If the match is a draw, every buyer gets a small thank you (${st.drawBps / 100}% of what they paid).` : "A draw pays nothing back.";
   const kick = new Date(p.meta.kickoff);
