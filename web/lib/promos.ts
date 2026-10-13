@@ -43,8 +43,13 @@ export interface PromoSummary {
 }
 
 export async function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
-  const { factory: FACTORY, client: publicClient } = src;
-  if (/^0x0+$/.test(FACTORY)) return [];
+  const all = await Promise.all(
+    [src.factory, ...(src.older ?? [])].filter((f) => !/^0x0+$/.test(f)).map((f) => fromFactory(f, src.client).catch(() => [] as PromoSummary[])),
+  );
+  return all.flat().sort((a, b) => b.closesAt - a.closesAt);
+}
+
+async function fromFactory(FACTORY: Address, publicClient: Source["client"]): Promise<PromoSummary[]> {
   const count = Number(await publicClient.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "promosCount" }));
   const out: PromoSummary[] = [];
   for (let start = 0; start < count; start += 100) {

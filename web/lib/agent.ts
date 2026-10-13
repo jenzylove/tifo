@@ -10,7 +10,8 @@ import { accountOf } from "./tifoAccount";
 import { FACTORY, chain, publicClient, transport } from "./chain";
 import { matchBySlug } from "./matches";
 import { checkResult } from "./results";
-import { listPromos, promoState, type PromoSummary } from "./promos";
+import { listPromos, promoOrders, promoState, type PromoSummary } from "./promos";
+import { dueAction, readDeliveries } from "./shipments";
 
 function wallet() {
   const pk = process.env.AGENT_PRIVATE_KEY as Hex | undefined;
@@ -103,7 +104,7 @@ async function step(p: PromoSummary, now: number): Promise<TickResult | null> {
   return { promo: p.address, action: `wait: ${c.reason}` };
 }
 
-/** One pass over every promo: settle what's ready, finalize what's past the window, push refunds. */
+/** One pass over every promo: settle what's ready, finalize what's past the window, push refunds, settle deliveries. */
 export async function tick(): Promise<TickResult[]> {
   const out: TickResult[] = [];
   const now = Math.floor(Date.now() / 1000);
@@ -114,6 +115,33 @@ export async function tick(): Promise<TickResult[]> {
     } catch (e) {
       out.push({ promo: p.address, action: `error: ${(e as Error).message.slice(0, 200)}` });
     }
+    try {
+      out.push(...(await deliveriesTick(p, now)));
+    } catch (e) {
+      out.push({ promo: p.address, action: `delivery error: ${(e as Error).message.slice(0, 200)}` });
+    }
+  }
+  return out;
+}
+
+/**
+ * Physical orders: pay the seller once the window after "sent" passes with no dispute, and return the money to
+ * buyers whose order was never marked sent. Both are open to anyone on the contract; the agent just keeps them moving.
+ * Disputes are left alone: only the operator settles those.
+ */
+export async function deliveriesTick(p: PromoSummary, now: number): Promise<TickResult[]> {
+  if (!p.meta.contact && p.meta.delivery) return []; // digital
+  const st = await promoState(p.address);
+  if (!st.ordersCount) return [];
+  const d = await readDeliveries(p.address, st.ordersCount);
+  if (!d) return [];
+  const orders = await promoOrders(p.address, st.ordersCount);
+  const out: TickResult[] = [];
+  for (let i = 0; i < d.list.length; i++) {
+    const act = dueAction(d.list[i], orders[i].at, d.holdSecs, now);
+    if (!act) continue;
+    const hash = await send(p.address, act, [BigInt(i)]);
+    out.push({ promo: p.address, action: act === "release" ? `delivery ${i}: paid the seller` : `delivery ${i}: never sent, returned to buyer`, hash });
   }
   return out;
 }

@@ -2,7 +2,7 @@
 # Rebuild contracts and regenerate web/lib/abi.ts
 set -e
 cd "$(dirname "$0")/.."
-(cd contracts && forge build -q)
+(cd contracts && forge build -q ${FORGE_FLAGS:-})
 python3 - <<'PY'
 import json
 out=[]

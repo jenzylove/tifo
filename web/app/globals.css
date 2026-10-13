@@ -503,3 +503,12 @@ html, body { overflow-x: clip; }
 /* The longer sticker reaches past the edge on 1280px laptops; pull it in there. */
 @media (min-width: 561px) and (max-width: 1360px) { .mega .sticker { left: 91%; font-size: .15em; } }
 @media (min-width: 561px) and (max-width: 1180px) { .mega .sticker { left: 86%; font-size: .125em; } }
+
+/* Delivery panel on physical drops: the buyer's orders, or the seller's orders to send. */
+.delivery { display: grid; gap: 12px; margin-top: 18px; }
+.delivery h3 { margin: 0; }
+.dl-row { display: grid; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.dl-row small { display: block; color: var(--muted); margin-top: 4px; }
+.dl-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dl-actions .input { flex: 1 1 220px; }
+.delivery-note { margin-top: 14px; }

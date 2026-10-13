@@ -324,15 +324,30 @@ export async function withdrawFromAccountWithCircle(account: SmartAccount, tifoA
 
 /** Open a drop through the seller's account, so its sales land there and it counts toward the week. */
 export async function openViaAccountWithCircle(account: SmartAccount, tifoAccount: Address, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
   const data = encodeFunctionData({
     abi: tifoAccountAbi,
     functionName: "open",
-    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps }, meta],
+    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
   });
   return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
     if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
     return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
   });
+}
+
+/** Delivery steps on a drop that holds payment: the seller marks sent, the buyer confirms or disputes. */
+export async function deliveryWithCircle(
+  account: SmartAccount,
+  promo: Address,
+  step: "markSent" | "confirmReceived" | "dispute",
+  order: number,
+  tracking = "",
+): Promise<Hex> {
+  const data =
+    step === "markSent"
+      ? encodeFunctionData({ abi: tifoPromoAbi, functionName: "markSent", args: [BigInt(order), tracking] })
+      : encodeFunctionData({ abi: tifoPromoAbi, functionName: step, args: [BigInt(order)] });
+  return sendAs(account, [{ to: promo, data }], "Nothing changed. Try again.", (r) => r.transactionHash);
 }
