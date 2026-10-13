@@ -190,6 +190,21 @@ async function sendAs<T>(account: SmartAccount, calls: Call[], failure: string, 
   }
 }
 
+/** Tell our own server what a refused signature looked like, so it can be fixed without a screenshot. Nothing here is
+ * secret: an address, a public key, a signature over a test value, the browser name. */
+function report(stage: string, account: SmartAccount, extra: Record<string, unknown>) {
+  try {
+    const owner = (account as unknown as { owner?: { id?: string; publicKey?: string } }).owner;
+    const body = JSON.stringify(
+      { stage, wallet: account.address, network: NETWORK, host: location.hostname, ua: navigator.userAgent, credentialId: owner?.id, publicKey: owner?.publicKey, ...extra },
+      (_, v) => (typeof v === "bigint" ? v.toString() : v),
+    ).slice(0, 7500);
+    fetch("/api/diag", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
+  } catch {
+    // reporting must never get in the way of the person's next try
+  }
+}
+
 /** Send calls as one user operation; Circle's paymaster pays the gas. Prepares first, then signs, so the
  * passkey prompt comes as late and as close to the tap as possible. */
 async function send(account: SmartAccount, calls: Call[], failure: string) {
@@ -199,6 +214,7 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
     prepared = await bundler.prepareUserOperation({ account, calls, paymaster: true });
   } catch (e) {
     console.error("[tifo] prepare failed", e);
+    report("prepare", account, { error: errorText(e).slice(0, 1200) });
     if (/invalid account signature/i.test(errorText(e)))
       throw new Error(
         `Circle refused wallet ${account.address.slice(0, 8)}… before your passkey was asked to sign (while pricing the gas). The wallet setup itself is not accepted, not your passkey. Nothing was charged.`,
@@ -235,7 +251,15 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
         return submit();
       });
     }
-    if (/invalid account signature/i.test(errorText(e))) throw await diagnoseSignature(account, e);
+    if (/invalid account signature/i.test(errorText(e))) {
+      const o = op as unknown as Record<string, unknown>;
+      report("submit", account, {
+        error: errorText(e).slice(0, 1200),
+        op: { sender: o.sender, nonce: o.nonce, factory: o.factory, factoryData: String(o.factoryData ?? "").slice(0, 600), paymaster: o.paymaster, callGasLimit: o.callGasLimit, verificationGasLimit: o.verificationGasLimit },
+      });
+      throw await diagnoseSignature(account, e);
+    }
+    if (!(e instanceof NeedsTap) && name !== "NotAllowedError") report("submit-other", account, { error: errorText(e).slice(0, 1200) });
     throw e;
   }
 }
@@ -257,6 +281,9 @@ async function diagnoseSignature(account: SmartAccount, original: unknown): Prom
     const { signature, webauthn } = await owner.sign({ hash });
     const ok = await verifyP256({ hash, publicKey: owner.publicKey, signature, webauthn: webauthn as never });
     console.error("[tifo] signature check", { wallet: account.address, publicKey: owner.publicKey, rpId: (webauthn as { authenticatorData?: string }).authenticatorData?.slice(0, 66), ok });
+    // Byte 33 of the authenticator data holds the flags: bit 0 is "person present", bit 2 is "person verified".
+    const flags = parseInt(String((webauthn as { authenticatorData?: string }).authenticatorData ?? "").slice(66, 68) || "0", 16);
+    report("check", account, { localVerify: ok, hash, signature, flags, userPresent: !!(flags & 1), userVerified: !!(flags & 4), webauthn });
     return new Error(
       ok
         ? `Your passkey signed correctly for wallet ${account.address.slice(0, 8)}…, but Circle still refused it. This points at Circle's side (wallet version or domain). Nothing was charged. Your money is safe in this wallet.`
