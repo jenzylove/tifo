@@ -10,6 +10,7 @@ import type { PromoMeta } from "./promos";
 import type { AccountState } from "./tifoAccount";
 
 const FULL = 10_000, DRAW = 500;
+const HOLD_SECS = 7 * 86_400; // physical products: the seller is paid on delivery, or 7 days after marking it sent
 
 export interface Terms {
   fixtureId: Hex;
@@ -22,6 +23,7 @@ export interface Terms {
   rateB: number;
   floorBps: number;
   drawBps: number;
+  holdSecs: number; // 0 for digital products; otherwise payment waits for delivery
 }
 
 export interface Plan {
@@ -178,6 +180,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
       settleNotBefore: BigInt(kickoff + 110 * 60),
       cap: BigInt(Math.round(capUsd * 1e6)),
       minBps: lo, maxBps: hi, rateA: rates[0], rateB: rates[1], floorBps: 0, drawBps: DRAW,
+      holdSecs: template.delivery ? 0 : HOLD_SECS,
     },
     meta: JSON.stringify(meta),
     at,

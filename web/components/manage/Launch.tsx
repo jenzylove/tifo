@@ -36,6 +36,7 @@ const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to
 const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
 const MAX_COVER = 50;
+const HOLD_SECS = 7 * 86_400; // physical products: payment waits for delivery (see TifoPromo.markSent)
 
 // How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
 const LEAGUE_WEIGHT: Record<string, number> = {
@@ -146,7 +147,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, meta,
       ];
       // With autopilot on, the drop opens through the seller's account so its sales land there and count toward the week.
       const { promo } = tifoAccount ? await openViaAccountWithCircle(account, tifoAccount, args) : await createPromoWithCircle(account, args);
@@ -209,7 +210,13 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
           {kind === "digital" ? (
             <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link. Only buyers see it." />
           ) : (
+            <>
             <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number for delivery details" />
+            <small>
+              Buyers&apos; payments wait in the drop until they have the product. You are paid when they confirm, or 7 days after you mark the order sent.
+              Mark each order sent within 7 days, or that buyer gets their money back.
+            </small>
+            </>
           )}
         </div>
       </section>

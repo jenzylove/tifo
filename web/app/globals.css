@@ -481,3 +481,12 @@ h2.h small { font-size: .9rem; font-weight: 500; letter-spacing: 0; color: var(-
 .pay-ways > button:hover, .pay-ways > a:hover { box-shadow: inset 0 0 0 2px var(--ink); background: var(--surface); }
 .pay-ways span { color: var(--muted); font-size: .86rem; }
 .pay-alt { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* Delivery panel on physical drops: the buyer's orders, or the seller's orders to send. */
+.delivery { display: grid; gap: 12px; margin-top: 18px; }
+.delivery h3 { margin: 0; }
+.dl-row { display: grid; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.dl-row small { display: block; color: var(--muted); margin-top: 4px; }
+.dl-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dl-actions .input { flex: 1 1 220px; }
+.delivery-note { margin-top: 14px; }
