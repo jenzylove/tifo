@@ -73,6 +73,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slots, setSlots] = useState<string[]>([""]); // datetime-local values, for a bookable service
+  const [fill, setFill] = useState({ day: "", from: "10:00", to: "14:00", every: "30" }); // shortcut: fill a day with times
   const [slug, setSlug] = useState(prefill?.slug ?? "");
   const [stock, setStock] = useState("10"); // how many the seller has to sell; this caps the most the drop can cost
   const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
@@ -243,6 +244,37 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                   + Add another time
                 </button>
               )}
+              <details className="fill-day">
+                <summary className="fine">Or fill a whole day at once</summary>
+                <div className="fill-row">
+                  <input className="input" type="date" value={fill.day} onChange={(e) => setFill((f) => ({ ...f, day: e.target.value }))} aria-label="Day" />
+                  <input className="input" type="time" value={fill.from} onChange={(e) => setFill((f) => ({ ...f, from: e.target.value }))} aria-label="From" />
+                  <input className="input" type="time" value={fill.to} onChange={(e) => setFill((f) => ({ ...f, to: e.target.value }))} aria-label="To" />
+                  <select className="input" value={fill.every} onChange={(e) => setFill((f) => ({ ...f, every: e.target.value }))} aria-label="Each session">
+                    {["15", "20", "30", "45", "60", "90", "120"].map((m) => (
+                      <option key={m} value={m}>
+                        {m} min each
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  className="btn sm ghost"
+                  disabled={!fill.day}
+                  onClick={() => {
+                    const [fh, fm] = fill.from.split(":").map(Number);
+                    const [th, tm] = fill.to.split(":").map(Number);
+                    const step = Number(fill.every);
+                    const out: string[] = [];
+                    for (let t = fh * 60 + fm; t + step <= th * 60 + tm && out.length < 30; t += step)
+                      out.push(`${fill.day}T${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`);
+                    // Keep times already added, add the new ones, no duplicates, in order, at most 30.
+                    setSlots((xs) => [...new Set([...xs.filter(Boolean), ...out])].sort().slice(0, 30));
+                  }}
+                >
+                  Add these times
+                </button>
+              </details>
               <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number. Buyers message you here after booking" />
             </>
           ) : kind === "digital" ? (
