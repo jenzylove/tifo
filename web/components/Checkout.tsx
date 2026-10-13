@@ -14,6 +14,7 @@ import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
 import Purchase, { saveOrder } from "./Purchase";
+import { inAppBrowser, openOutside, type InApp } from "@/lib/inapp";
 
 interface Props {
   promo: Address;
@@ -59,7 +60,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [cardOn, setCardOn] = useState(false); // card payments are set up on this deployment
   const [card, setCard] = useState(false);
   const [bridge, setBridge] = useState(false);
-  const [sheet, setSheet] = useState(false); // the pay sheet: wallet, ways to add money, other wallets
+  const [sheet, setSheet] = useState(false);
+  const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
+  const [linkCopied, setLinkCopied] = useState(false);
+  useEffect(() => setInApp(inAppBrowser()), []); // the pay sheet: wallet, ways to add money, other wallets
   const [tap, setTap] = useState<null | { go: () => Promise<Hex>; secret: Hex }>(null);
 
   useEffect(() => {
@@ -324,7 +328,30 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 </button>
               </header>
 
-              {!circleEnabled() ? null : !acct ? (
+              {!circleEnabled() ? null : inApp && !acct ? (
+                <section className="inapp">
+                  <h5>Open this page in {inApp.ios ? "Safari" : "Chrome"} to pay</h5>
+                  <p className="fine">
+                    You opened the link inside {inApp.name}. Phones do not allow {bio} in {inApp.name}&apos;s built-in browser, so the wallet cannot be made here.
+                    It takes one tap to continue in {inApp.ios ? "Safari" : "Chrome"}.
+                  </p>
+                  <a className="btn block" href={openOutside()}>
+                    Open in {inApp.ios ? "Safari" : "Chrome"}
+                  </a>
+                  <button
+                    className="link fine"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(location.href);
+                      setLinkCopied(true);
+                    }}
+                  >
+                    {linkCopied ? `Link copied. Paste it in ${inApp.ios ? "Safari" : "Chrome"}` : "Didn't open? Copy the link instead"}
+                  </button>
+                  <p className="fine">
+                    Or tap the <b>⋯</b> menu in {inApp.name} and choose &quot;Open in {inApp.ios ? "Safari" : "browser"}&quot;.
+                  </p>
+                </section>
+              ) : !acct ? (
                 <section>
                   <h5>1. Your Tifo wallet</h5>
                   <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Refunds land here after full time.</p>

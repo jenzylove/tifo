@@ -134,6 +134,8 @@ export function biometric(): string {
 export function walletError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   const name = (e as Error)?.name ?? "";
+  if (typeof navigator !== "undefined" && /Instagram|FBAN|FBAV|Telegram|musical_ly|TikTok|Snapchat/i.test(navigator.userAgent + ((window as unknown as { TelegramWebviewProxy?: unknown }).TelegramWebviewProxy ? " Telegram" : "")))
+    return `This app's built-in browser does not allow ${biometric()}. Open the link in your phone's own browser (Safari or Chrome) and try again. Nothing was charged.`;
   if (name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|cancel/i.test(m))
     return `The ${biometric()} prompt was closed or timed out, so nothing was charged. Tap the button again and finish the prompt. If your passkey is on your phone, keep the phone nearby.`;
   if (name === "InvalidStateError" || /already registered/i.test(m)) return "This phone already has a Tifo wallet. Tap \"I already have one\".";
