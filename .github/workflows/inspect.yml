@@ -1,0 +1,24 @@
+name: inspect address
+# Read-only look at one address on Arc: code, nonce, USDC balance, proxy slots and recent logs. Sends nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      address: { description: Address, required: true }
+      network: { description: testnet or mainnet, default: mainnet }
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+      - env: { A: "${{ inputs.address }}", N: "${{ inputs.network }}" }
+        run: |
+          if [ "$N" = mainnet ]; then RPC=https://rpc.mainnet.arc.io; else RPC=https://rpc.testnet.arc.io; fi
+          CODE=$(cast code $A --rpc-url $RPC)
+          echo "::notice::code bytes $(( (${#CODE} - 2) / 2 )) nonce $(cast nonce $A --rpc-url $RPC) usdc $(cast call 0x3600000000000000000000000000000000000000 'balanceOf(address)(uint256)' $A --rpc-url $RPC)"
+          echo "::notice::code head ${CODE:0:130}"
+          echo "::notice::eip1967 impl $(cast storage $A 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc --rpc-url $RPC)"
+          HEAD=$(cast block-number --rpc-url $RPC)
+          for t in "Transfer(address,address,uint256)"; do
+            TO=$(cast logs --rpc-url $RPC --from-block $((HEAD-400000)) --address 0x3600000000000000000000000000000000000000 "$t" --topic2 $(cast to-uint256 $A | sed 's/^0x//;s/^/0x/') 2>/dev/null | grep -E "transactionHash|blockNumber" | head -6 | tr '\n' ' ')
+            echo "::notice::usdc in: $TO"
+          done
