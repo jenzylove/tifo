@@ -3,7 +3,7 @@
 //  B) buy -> never marked sent -> after the hold, anyone returns it to the buyer
 // The drops are labelled "check, not for sale" so they never show on the boards.
 // Usage: FUNDER_PK=0x.. FACTORY=0x.. npx tsx scripts/e2e-hold.mts
-import { createPublicClient, createWalletClient, erc20Abi, http, keccak256, parseUnits, toBytes, type Hex } from "viem";
+import { createPublicClient, createWalletClient, erc20Abi, http, keccak256, parseEventLogs, parseUnits, toBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { tifoFactoryAbi, tifoPromoAbi } from "../web/lib/abi.ts";
 import { arcTestnet } from "../web/lib/chain.ts";
@@ -75,7 +75,6 @@ const ship = async (promo: Hex) => (await pub.readContract({ address: promo, abi
 // B) never sent: a 60 second hold so the return can be shown now
 {
   const promo = await openDrop(60, "B");
-  const b0 = await bal(buyer.address);
   await buy(promo, `B-${Date.now()}`);
   try {
     await pub.simulateContract({ account: seller, address: promo, abi: tifoPromoAbi, functionName: "refundUnsent", args: [0n] });
@@ -84,9 +83,11 @@ const ship = async (promo: Hex) => (await pub.readContract({ address: promo, abi
     ok("B: no refund before the hold ends");
   }
   await new Promise((r) => setTimeout(r, 70_000));
+  const b1 = await bal(buyer.address); // after the buyer's own gas (gas on Arc is paid in USDC)
   const back = await sw.writeContract({ address: promo, abi: tifoPromoAbi, functionName: "refundUnsent", args: [0n] });
-  await wait(back);
-  const b1 = await bal(buyer.address);
-  check(b1 === b0 - PRICE + parseUnits("0.5", 6), `B: never sent, the held $0.50 went back to the buyer (${back})`);
+  const rc = await wait(back);
+  const ev = parseEventLogs({ abi: tifoPromoAbi, logs: rc.logs, eventName: "DeliveryReleased" })[0];
+  check(!!ev && ev.args.to.toLowerCase() === buyer.address.toLowerCase() && ev.args.amount === parseUnits("0.5", 6) && ev.args.toBuyer, `B: never sent, the held $0.50 went back to the buyer (${back})`);
+  check((await bal(buyer.address)) - b1 === parseUnits("0.5", 6), "B: buyer's balance rose by exactly $0.50 (the seller paid the gas for this call)");
   check((await ship(promo)).state === 5, "B: order shows Refunded");
 }
