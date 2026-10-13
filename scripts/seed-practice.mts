@@ -7,14 +7,19 @@
 //   FUNDER_PK=0x... FACTORY=0x<testnet factory> PRACTICE_SEED=<any secret string> \
 //   PRACTICE_URL=https://<practice site> COUNT=20 npx tsx scripts/seed-practice.mts
 // DRY=1 prints the plan without sending anything.
-import { createPublicClient, createWalletClient, http, keccak256, parseUnits, toBytes, type Hex } from "viem";
+import { createPublicClient, createWalletClient, erc20Abi, http, keccak256, parseUnits, toBytes, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { tifoFactoryAbi, erc20Abi } from "../web/lib/abi.ts";
+import { tifoFactoryAbi } from "../web/lib/abi.ts";
 import { arcTestnet } from "../web/lib/chain.ts";
 import { upcomingMatches, type Match } from "../web/lib/matches.ts";
 
 const env = process.env as Record<string, string | undefined>;
-const need = (k: string) => env[k] || (() => { throw new Error(`set ${k}`); })();
+const need = (k: string): string => env[k]?.trim() || (() => { console.log(`::error::secret ${k} is not set`); process.exit(1); })();
+// In GitHub Actions, notices and errors show on the run page (and through the API), not only in the raw log.
+const GH = !!env.GITHUB_ACTIONS;
+const note = (m: string) => console.log(GH ? `::notice::${m}` : m);
+const fail = (m: string) => console.log(GH ? `::error::${m}` : `ERROR ${m}`);
+for (const ev of ["unhandledRejection", "uncaughtException"] as const) process.on(ev, (e) => { fail(String((e as Error)?.stack ?? e).split("\n").slice(0, 3).join(" | ")); process.exit(1); });
 const DRY = env.DRY === "1";
 const COUNT = Number(env.COUNT ?? 20);
 const FACTORY = need("FACTORY") as Hex;
@@ -53,7 +58,8 @@ const SHOPS: { shop: string; product: string; price: number; spots: number; digi
 
 // Spread drops over the coming days: kickoff at least 2 hours away so people have time to buy.
 const all = (await upcomingMatches(Date.now() + 2 * 3600_000, Date.now() + 7 * 86_400_000)).filter((m) => m.odds);
-if (all.length === 0) throw new Error("no upcoming matches with odds");
+if (all.length === 0) { fail("no upcoming matches with odds"); process.exit(1); }
+note(`${all.length} upcoming matches with odds`);
 const byDay = new Map<string, Match[]>();
 for (const m of all) {
   const d = m.kickoff.slice(0, 10);
@@ -65,12 +71,25 @@ for (let round = 0; picks.length < Math.min(COUNT, all.length); round++)
   for (const d of days) if (d[round] && picks.length < COUNT) picks.push(d[round]);
 while (picks.length < COUNT) picks.push(picks[picks.length % all.length]); // fewer matches than drops: reuse
 
-async function sealText(text: string): Promise<string> {
-  const r = await fetch(`${SITE}/api/seal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-  const j = (await r.json()) as { sealed?: string; error?: string };
-  if (!r.ok || !j.sealed) throw new Error(`seal failed: ${j.error ?? r.status}`);
-  return j.sealed;
+
+// A digital drop opens its content on the page after paying. If the practice site cannot seal it
+// (DELIVERY_SECRET not set there), the drop still opens, just without that step.
+let sealWorks = true;
+async function sealText(text: string): Promise<string | undefined> {
+  if (!sealWorks) return undefined;
+  try {
+    const r = await fetch(`${SITE}/api/seal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    const j = (await r.json()) as { sealed?: string; error?: string };
+    if (r.ok && j.sealed) return j.sealed;
+    fail(`instant delivery is off on the practice site (${j.error ?? r.status}); digital drops open without it`);
+  } catch (e) {
+    fail(`could not reach ${SITE}/api/seal: ${(e as Error).message}`);
+  }
+  sealWorks = false;
+  return undefined;
 }
+
+let opened = 0;
 
 for (let i = 0; i < COUNT; i++) {
   const s = SHOPS[i % SHOPS.length];
@@ -79,7 +98,7 @@ for (let i = 0; i < COUNT; i++) {
   const cap = parseUnits(String(s.spots * s.price), 6);
   console.log(`#${i + 1} ${s.shop} · ${s.product} $${s.price} · ${s.spots} free per side · ${m.title} ${m.kickoff} · seller ${seller.address}`);
   if (DRY) continue;
-
+  try {
   // Top up gas. Selling needs no balance: the seller only pays gas to open the drop.
   const bal = (await pub.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [seller.address] })) as bigint;
   if (bal < GAS_FLOAT / 2n) {
@@ -105,5 +124,11 @@ for (let i = 0; i < COUNT; i++) {
   const rc = await pub.waitForTransactionReceipt({ hash });
   const log = rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
   const promo = log?.topics[1] ? `0x${log.topics[1].slice(26)}` : "(address not found)";
-  console.log(`   opened ${SITE}/p/${promo}  tx ${hash}`);
+  note(`#${i + 1} ${s.product} on ${m.title}: ${SITE}/p/${promo}`);
+  opened++;
+  } catch (e) {
+    fail(`#${i + 1} ${s.product} on ${m.title} failed: ${((e as { shortMessage?: string }).shortMessage ?? (e as Error).message).split("\n")[0]}`);
+  }
 }
+note(`opened ${opened} of ${COUNT} practice drops`);
+if (opened === 0) process.exit(1);
