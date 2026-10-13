@@ -32,28 +32,28 @@ const FULL = 10_000, DRAW = 500;
 const pub = createPublicClient({ chain: arcTestnet, transport: http() });
 const funder = DRY ? null : createWalletClient({ account: privateKeyToAccount(need("FUNDER_PK") as Hex), chain: arcTestnet, transport: http() });
 
-// Invented practice shops. Half sell something digital (it opens on the page after paying), half something shipped.
-const SHOPS: { shop: string; product: string; price: number; spots: number; digital: boolean; description: string }[] = [
-  { shop: "Kola Prints", product: "Matchday poster pack", price: 3, spots: 2, digital: true, description: "Six printable posters for your wall." },
-  { shop: "Ada Bakes", product: "Chin chin, large jar", price: 4, spots: 2, digital: false, description: "Crunchy, sweet, made fresh." },
-  { shop: "Glow by Ify", product: "Shea body butter", price: 5, spots: 2, digital: false, description: "Whipped shea with a light citrus scent." },
-  { shop: "Tunde Templates", product: "Budget planner sheet", price: 2, spots: 3, digital: true, description: "Monthly budget tracker you can copy." },
-  { shop: "Thread Lane", product: "Team colour wristband", price: 2, spots: 3, digital: false, description: "Woven band in your side's colours." },
-  { shop: "Chef Nkem", product: "Jollof recipe ebook", price: 3, spots: 2, digital: true, description: "Twelve party jollof recipes." },
-  { shop: "Pure Leaf", product: "Hibiscus tea, 20 bags", price: 4, spots: 2, digital: false, description: "Zobo tea, no added sugar." },
-  { shop: "Beatroom", product: "Afrobeats drum kit", price: 5, spots: 2, digital: true, description: "120 drum samples for producers." },
-  { shop: "Soft Glow", product: "Clay face mask", price: 3, spots: 2, digital: false, description: "Kaolin clay mask for oily skin." },
-  { shop: "Lens & Light", product: "Lightroom preset pack", price: 2, spots: 3, digital: true, description: "Ten warm presets for phone photos." },
-  { shop: "Mama Cee Snacks", product: "Plantain chips, 6 packs", price: 3, spots: 2, digital: false, description: "Salted and sweet." },
-  { shop: "Study Hub", product: "Exam timetable kit", price: 2, spots: 3, digital: true, description: "Printable study planner." },
-  { shop: "Ankara Corner", product: "Ankara tote bag", price: 6, spots: 1, digital: false, description: "Lined tote with a zip pocket." },
-  { shop: "FitWith Femi", product: "4 week home workout plan", price: 4, spots: 2, digital: true, description: "No equipment needed." },
-  { shop: "Scent Story", product: "Mini perfume oil", price: 5, spots: 2, digital: false, description: "10ml roll-on, oud and vanilla." },
-  { shop: "Code Kitchen", product: "Portfolio site template", price: 5, spots: 2, digital: true, description: "One page site, ready to edit." },
-  { shop: "Brew Spot", product: "Cold brew coffee bottle", price: 3, spots: 2, digital: false, description: "500ml, ready to drink." },
-  { shop: "Word Craft", product: "Caption pack for sellers", price: 2, spots: 3, digital: true, description: "100 captions for product posts." },
-  { shop: "Kicks Care", product: "Sneaker cleaning kit", price: 6, spots: 1, digital: false, description: "Brush, foam and cloth." },
-  { shop: "Voice Notes", product: "Podcast intro jingle", price: 4, spots: 2, digital: true, description: "Three short intros, royalty free." },
+// Invented practice shops. Photos are free to use, from Unsplash. Half sell something digital (it opens on the page after paying), half something shipped.
+const SHOPS: { shop: string; product: string; image: string; price: number; spots: number; digital: boolean; description: string }[] = [
+  { shop: "Kola Prints", product: "Matchday poster pack", image: "https://images.unsplash.com/photo-1605002713581-123e77bcf83d?w=900&h=900&fit=crop&q=80", price: 3, spots: 2, digital: true, description: "Six printable posters for your wall." },
+  { shop: "Ada Bakes", product: "Chin chin, large jar", image: "https://images.unsplash.com/photo-1588856062859-561c223f0cdd?w=900&h=900&fit=crop&q=80", price: 4, spots: 2, digital: false, description: "Crunchy, sweet, made fresh." },
+  { shop: "Glow by Ify", product: "Shea body butter", image: "https://images.unsplash.com/photo-1768936190600-3b9ffd674783?w=900&h=900&fit=crop&q=80", price: 5, spots: 2, digital: false, description: "Whipped shea with a light citrus scent." },
+  { shop: "Tunde Templates", product: "Budget planner sheet", image: "https://images.unsplash.com/photo-1632772998001-cc9bf6f7c852?w=900&h=900&fit=crop&q=80", price: 2, spots: 3, digital: true, description: "Monthly budget tracker you can copy." },
+  { shop: "Thread Lane", product: "Team colour wristband", image: "https://images.unsplash.com/photo-1708221235482-a6e2a807198f?w=900&h=900&fit=crop&q=80", price: 2, spots: 3, digital: false, description: "Woven band in your side's colours." },
+  { shop: "Chef Nkem", product: "Jollof recipe ebook", image: "https://images.unsplash.com/photo-1665332195309-9d75071138f0?w=900&h=900&fit=crop&q=80", price: 3, spots: 2, digital: true, description: "Twelve party jollof recipes." },
+  { shop: "Pure Leaf", product: "Hibiscus tea, 20 bags", image: "https://images.unsplash.com/photo-1563636680-28d36aeb83a4?w=900&h=900&fit=crop&q=80", price: 4, spots: 2, digital: false, description: "Zobo tea, no added sugar." },
+  { shop: "Beatroom", product: "Afrobeats drum kit", image: "https://images.unsplash.com/photo-1535979014625-490762ceb2ff?w=900&h=900&fit=crop&q=80", price: 5, spots: 2, digital: true, description: "120 drum samples for producers." },
+  { shop: "Soft Glow", product: "Clay face mask", image: "https://images.unsplash.com/photo-1626783416763-67a92e5e7266?w=900&h=900&fit=crop&q=80", price: 3, spots: 2, digital: false, description: "Kaolin clay mask for oily skin." },
+  { shop: "Lens & Light", product: "Lightroom preset pack", image: "https://images.unsplash.com/photo-1515401558980-f84ec141ebf9?w=900&h=900&fit=crop&q=80", price: 2, spots: 3, digital: true, description: "Ten warm presets for phone photos." },
+  { shop: "Mama Cee Snacks", product: "Plantain chips, 6 packs", image: "https://images.unsplash.com/photo-1762884601729-0eeeafbdfb8a?w=900&h=900&fit=crop&q=80", price: 3, spots: 2, digital: false, description: "Salted and sweet." },
+  { shop: "Study Hub", product: "Exam timetable kit", image: "https://images.unsplash.com/photo-1601342630314-8427c38bf5e6?w=900&h=900&fit=crop&q=80", price: 2, spots: 3, digital: true, description: "Printable study planner." },
+  { shop: "Ankara Corner", product: "Canvas tote bag", image: "https://images.unsplash.com/photo-1574365569389-a10d488ca3fb?w=900&h=900&fit=crop&q=80", price: 6, spots: 1, digital: false, description: "Lined tote with a zip pocket." },
+  { shop: "FitWith Femi", product: "4 week home workout plan", image: "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=900&h=900&fit=crop&q=80", price: 4, spots: 2, digital: true, description: "No equipment needed." },
+  { shop: "Scent Story", product: "Mini perfume oil", image: "https://images.unsplash.com/photo-1594125311687-3b1b3eafa9f4?w=900&h=900&fit=crop&q=80", price: 5, spots: 2, digital: false, description: "10ml roll-on, oud and vanilla." },
+  { shop: "Code Kitchen", product: "Portfolio site template", image: "https://images.unsplash.com/photo-1558655146-d09347e92766?w=900&h=900&fit=crop&q=80", price: 5, spots: 2, digital: true, description: "One page site, ready to edit." },
+  { shop: "Brew Spot", product: "Cold brew coffee bottle", image: "https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=900&h=900&fit=crop&q=80", price: 3, spots: 2, digital: false, description: "500ml, ready to drink." },
+  { shop: "Word Craft", product: "Caption pack for sellers", image: "https://images.unsplash.com/photo-1736767431540-0d590ba5efc2?w=900&h=900&fit=crop&q=80", price: 2, spots: 3, digital: true, description: "100 captions for product posts." },
+  { shop: "Kicks Care", product: "Sneaker cleaning kit", image: "https://images.unsplash.com/photo-1707109322343-3fe79f5d5c0b?w=900&h=900&fit=crop&q=80", price: 6, spots: 1, digital: false, description: "Brush, foam and cloth." },
+  { shop: "Voice Notes", product: "Podcast intro jingle", image: "https://images.unsplash.com/photo-1485579149621-3123dd979885?w=900&h=900&fit=crop&q=80", price: 4, spots: 2, digital: true, description: "Three short intros, royalty free." },
 ];
 
 // Spread drops over the coming days: kickoff at least 2 hours away so people have time to buy.
@@ -109,7 +109,7 @@ for (let i = 0; i < COUNT; i++) {
   const kickoff = Math.floor(Date.parse(m.kickoff) / 1000);
   const meta = JSON.stringify({
     slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
-    shop: s.shop, product: s.product, priceUsd: s.price, description: s.description,
+    shop: s.shop, product: s.product, priceUsd: s.price, image: s.image, description: s.description,
     profitUsd: s.digital ? s.price : Math.round(s.price * 0.6 * 100) / 100,
     delivery: s.digital ? await sealText(`Practice drop: in a real drop, ${s.product.toLowerCase()} would open here right after paying.`) : undefined,
     contact: s.digital ? undefined : "Practice drop: nothing is shipped.",
