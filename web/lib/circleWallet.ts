@@ -138,6 +138,16 @@ export function walletError(e: unknown): string {
     return `The ${biometric()} prompt was closed or timed out, so nothing was charged. Tap the button again and finish the prompt. If your passkey is on your phone, keep the phone nearby.`;
   if (name === "InvalidStateError" || /already registered/i.test(m)) return "This phone already has a Tifo wallet. Tap \"I already have one\".";
   if (/Credential Management API not supported|PublicKeyCredential/i.test(m)) return "This browser can't use passkeys. Open the link in Safari or Chrome.";
+  // RPC errors from Circle hide the reason behind "An unknown RPC error occurred": surface code and details.
+  const x = e as { code?: number; details?: string; shortMessage?: string; cause?: { code?: number; message?: string; details?: string } };
+  console.error("[tifo] wallet error", e);
+  const detail = x.details || x.cause?.details || x.cause?.message;
+  const code = x.code ?? x.cause?.code;
+  if (/unknown RPC error/i.test(m) || detail) {
+    if (/domain|origin|rp ?id|not allowed/i.test(detail ?? "")) return `Circle refused this site's address for passkeys (${detail}). The passkey domain in Circle Console must be ${location.hostname}.`;
+    if (/key|unauthori[sz]ed|forbidden|401|403/i.test(`${detail} ${code}`)) return `Circle refused the wallet key (${detail ?? code}). Check the client key for this network in Circle Console.`;
+    return `Circle's wallet service said: ${detail ?? "no details"}${code ? ` (code ${code})` : ""}. Nothing was charged; try again in a minute.`;
+  }
   return m.split("\n")[0];
 }
 
