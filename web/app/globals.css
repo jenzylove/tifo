@@ -98,9 +98,9 @@ input[type="range"] { width: 100%; accent-color: var(--accent-deep); }
 .foot { margin-top: 40px; padding: 70px 0 0; color: var(--muted); font-size: .92rem; overflow: hidden; }
 .foot-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 30px; flex-wrap: wrap; padding-bottom: 44px; }
 .foot-top p { max-width: 300px; margin-top: 12px; }
-.foot-top nav { display: flex; gap: 6px; flex-wrap: wrap; }
-.foot-top nav a { padding: 9px 16px; border-radius: 999px; color: var(--ink); font-weight: 500; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); transition: background .2s, color .2s, translate .2s var(--ease); }
-.foot-top nav a:hover { background: var(--ink); color: var(--bg); translate: 0 -2px; }
+.foot-top nav { display: flex; gap: 10px 28px; flex-wrap: wrap; padding-top: 6px; }
+.foot-top nav a { color: var(--ink); font-weight: 500; background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat; padding-bottom: 2px; transition: background-size .3s var(--ease), color .2s; }
+.foot-top nav a:hover { background-size: 100% 1px; color: var(--accent-deep); }
 .foot-bottom { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 22px 0; border-top: 1px solid var(--line); font-size: .84rem; }
 .foot-word { font-weight: 800; letter-spacing: -.07em; line-height: .74; font-size: clamp(6rem, 26vw, 20rem); text-align: center; color: transparent; background: linear-gradient(180deg, color-mix(in srgb, var(--ink) 13%, transparent), transparent 82%); -webkit-background-clip: text; background-clip: text; user-select: none; margin-bottom: -.12em; }
 

@@ -49,7 +49,7 @@ export default function Duties() {
             <h2>
               It does the work. You set the <em>limit</em>
             </h2>
-            <p>An AI sales manager with a budget it has to earn back. Every decision it makes is written down where you can check it.</p>
+            <p>Your matchday sales, run by an agent. Every decision it makes is written down where you can check it.</p>
           </header>
           <ol>
             {ITEMS.map(([title, text], i) => (
