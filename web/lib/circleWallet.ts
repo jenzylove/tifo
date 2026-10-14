@@ -47,6 +47,28 @@ function transports() {
 
 const STORE = "tifo.circle.credential";
 
+// What the device's passkey actually returned the last time it signed. When Circle refuses a signature, this goes in
+// the failure report, so the cause can be checked offline (which passkey signed, its flags, the exact signed bytes)
+// without asking the person to sign a second time.
+let lastAssertion: Record<string, string> | null = null;
+const toHex = (b: ArrayBuffer) => "0x" + [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+const watchedGet = async (options?: CredentialRequestOptions) => {
+  const c = (await navigator.credentials.get(options)) as PublicKeyCredential | null;
+  if (c) {
+    const r = c.response as AuthenticatorAssertionResponse;
+    lastAssertion = {
+      id: c.id,
+      authenticatorData: toHex(r.authenticatorData),
+      clientDataJSON: new TextDecoder().decode(r.clientDataJSON),
+      signature: toHex(r.signature),
+      userHandle: r.userHandle ? toHex(r.userHandle) : "",
+      attachment: (c as PublicKeyCredential & { authenticatorAttachment?: string }).authenticatorAttachment ?? "",
+    };
+  }
+  return c;
+};
+const ownerOf = (credential: P256Credential) => toWebAuthnAccount({ credential, getFn: watchedGet as never }) as WebAuthnAccount;
+
 export function savedCredential(): P256Credential | null {
   if (typeof localStorage === "undefined") return null;
   try {
@@ -117,7 +139,7 @@ export async function connectCircle(mode: "register" | "login"): Promise<SmartAc
     // storage unavailable: the wallet still works for this visit
   }
   const { client } = transports();
-  return toCircleSmartAccount({ client, owner: toWebAuthnAccount({ credential }) as WebAuthnAccount });
+  return toCircleSmartAccount({ client, owner: ownerOf(credential) });
 }
 
 /** What this device calls its passkey prompt. */
@@ -157,7 +179,7 @@ export async function restoreCircle(): Promise<SmartAccount | null> {
   const credential = savedCredential();
   if (!credential) return null;
   const { client } = transports();
-  return toCircleSmartAccount({ client, owner: toWebAuthnAccount({ credential }) as WebAuthnAccount });
+  return toCircleSmartAccount({ client, owner: ownerOf(credential) });
 }
 
 export async function usdcBalance(address: Address): Promise<bigint> {
@@ -226,8 +248,11 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
   const { account: _a, ...rest } = prepared as typeof prepared & { account?: unknown };
   const op = rest as unknown as UserOperation;
   if (typeof (op as { paymaster?: unknown }).paymaster !== "string") delete (op as { paymaster?: unknown }).paymaster;
+  let signed: Hex | null = null;
   const submit = async () => {
+    lastAssertion = null;
     const signature = await account.signUserOperation(op);
+    signed = signature;
     const hash = (await bundler.request({
       method: "eth_sendUserOperation",
       params: [formatUserOperationRequest({ ...op, signature }), account.entryPoint.address],
@@ -255,6 +280,11 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
       const o = op as unknown as Record<string, unknown>;
       report("submit", account, {
         error: errorText(e).slice(0, 1200),
+        assertion: lastAssertion,
+        savedCredentialId: savedCredential()?.id ?? null,
+        userOpSignature: signed ? String(signed).slice(0, 3000) : null,
+        entryPoint: account.entryPoint.address,
+        chainId: chain.id,
         op: { sender: o.sender, nonce: o.nonce, factory: o.factory, factoryData: String(o.factoryData ?? "").slice(0, 600), paymaster: o.paymaster, callGasLimit: o.callGasLimit, verificationGasLimit: o.verificationGasLimit },
       });
       throw await diagnoseSignature(account, e);
