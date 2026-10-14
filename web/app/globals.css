@@ -531,3 +531,8 @@ html, body { overflow-x: clip; }
 .agent-rule { display: grid; gap: 12px; margin: 22px 0 6px; padding-top: 20px; border-top: 1px solid var(--line); }
 .agent-rule h3 { margin: 0; }
 .proof-h { margin: 34px 0 0; }
+
+/* After paying: challenge a fan of the other team. And the line that fan sees when they open the link. */
+.challenge { display: grid; gap: 8px; justify-items: start; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.challenge p { margin: 0; }
+.rival-note { margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); font-size: .92rem; }

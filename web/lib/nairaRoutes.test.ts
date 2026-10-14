@@ -20,6 +20,7 @@ const ip = () => `10.1.${Math.floor(++n / 250)}.${n % 250}`; // a fresh caller e
 
 beforeEach(() => {
   vi.stubEnv("BACHS_SECRET_KEY", "sk_sandbox_abc");
+  vi.stubEnv("NEXT_PUBLIC_NETWORK", "testnet");
   vi.stubEnv("NAIRA_PER_USD", "1550");
   vi.stubEnv("NAIRA_FLOAT", `0x${"f1".repeat(20)}`);
   vi.stubEnv("BACHS_WEBHOOK_SECRET", SECRET);

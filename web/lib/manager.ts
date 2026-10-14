@@ -53,6 +53,7 @@ export interface Books {
   alone: number; // actions the agent took by itself: drops opened inside the rule, results settled, payouts sent
   asked: number; // times it went over the rule and asked first
   agreed: number; // of those, how many the seller approved
+  pairs: number; // buyers who came from another buyer's challenge link
   settled: number; // drops whose result was settled and paid with nobody clicking
   due: number; // drops whose match has ended
 }
@@ -75,7 +76,7 @@ export async function managerData(seller: Address): Promise<ManagerData> {
   const feed: FeedItem[] = [];
   const lines: BookLine[] = [];
   const buyers = new Set<string>();
-  let settledCount = 0, dueCount = 0;
+  let settledCount = 0, dueCount = 0, pairCount = 0;
   const drops = await Promise.all(
     mine.map(async (p): Promise<DropRow> => {
       const st = await promoState(p.address);
@@ -97,6 +98,15 @@ export async function managerData(seller: Address): Promise<ManagerData> {
         });
       }
       for (const j of journal) {
+        if (j.kind === "pair") {
+          // "0x… (Arsenal) brought 0x… (Lille)": one buyer's challenge link brought the next.
+          const m = /\((.+?)\) brought 0x[0-9a-f]{40} \((.+?)\)/i.exec(j.text);
+          const said = m ? `A ${m[1]} fan challenged a ${m[2]} fan, who bought too` : "One buyer brought another with the challenge link";
+          pairCount++;
+          feed.push({ at: j.at, drop: p.address, match, kind: "pair", text: said });
+          lines.push({ at: j.at, kind: "decision", amount: null, drop: p.address, link, title: said, why: "That second sale came from your buyer's challenge link, not from your own post." });
+          continue;
+        }
         feed.push({ at: j.at, drop: p.address, match, kind: j.kind, text: j.text });
         if (j.kind === "rates") lines.push({ at: j.at, kind: "decision", amount: null, drop: p.address, link, title: `Moved the offers on ${match}`, why: j.text });
       }
@@ -175,6 +185,7 @@ export async function managerData(seller: Address): Promise<ManagerData> {
     alone: (account?.deals.filter((d) => d.byAgent).length ?? 0) + settledCount + (account?.payouts.length ?? 0),
     asked: account?.proposals.length ?? 0,
     agreed: account?.proposals.filter((p) => p.status === "approved").length ?? 0,
+    pairs: pairCount,
     settled: settledCount,
     due: dueCount,
   };

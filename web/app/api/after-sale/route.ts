@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
-import { maybeRebalance, payoutsTick } from "@/lib/agent";
+import { maybeRebalance, payoutsTick, recordPair } from "@/lib/agent";
 import { listPromos } from "@/lib/promos";
 
 export const maxDuration = 60;
@@ -20,5 +20,7 @@ export async function POST(req: Request) {
     console.error(e);
   }
   const paid = await payoutsTick(promo.seller).catch((e) => (console.error(e), []));
+  // The buyer came from a rival's challenge link: note the pair on chain if both orders are really there.
+  if (isAddress(body.buyer) && isAddress(body.from)) await recordPair(promo, body.from, body.buyer).catch((e) => console.error(e));
   return NextResponse.json({ ...result, paidOut: paid.length > 0 });
 }

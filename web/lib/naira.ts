@@ -32,6 +32,10 @@ export function nairaConfig(env: Record<string, string | undefined> = process.en
   const rate = Number(clean(env.NAIRA_PER_USD));
   const float = clean(env.NAIRA_FLOAT);
   if (!key || !Number.isFinite(rate) || rate < 0.01 || !isAddress(float)) return null;
+  // Real money for real money, test money for test money. A sandbox key on the real network would hand out real USDC
+  // for pretend naira, and a live key on the practice network would take real naira for test USDC.
+  const realNetwork = clean(env.NEXT_PUBLIC_NETWORK) !== "testnet";
+  if (realNetwork !== key.startsWith("sk_live_")) return null;
   const max = Number(clean(env.NAIRA_MAX_USD) || 50);
   return {
     key,

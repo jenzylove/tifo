@@ -372,7 +372,7 @@ describe("isPaid", () => {
 // ---------------------------------------------------------------------------------------------- settings
 
 describe("settings", () => {
-  const all = { BACHS_SECRET_KEY: "sk_sandbox_abc", NAIRA_PER_USD: "1550", NAIRA_FLOAT: FLOAT };
+  const all = { BACHS_SECRET_KEY: "sk_sandbox_abc", NAIRA_PER_USD: "1550", NAIRA_FLOAT: FLOAT, NEXT_PUBLIC_NETWORK: "testnet" };
 
   it("is on only when the key, the rate and the float address are all set", () => {
     expect(nairaConfig(all)).not.toBeNull();
@@ -389,7 +389,11 @@ describe("settings", () => {
 
   it("picks the sandbox or the live API from the key", () => {
     expect(nairaConfig(all)?.base).toBe("https://sandbox-api.bachs.io");
-    expect(nairaConfig({ ...all, BACHS_SECRET_KEY: "sk_live_abc" })?.base).toBe("https://api.bachs.io");
+    expect(nairaConfig({ ...all, NEXT_PUBLIC_NETWORK: "mainnet", BACHS_SECRET_KEY: "sk_live_abc" })?.base).toBe("https://api.bachs.io");
+    // A sandbox key never runs against real USDC, and a live key never against test USDC.
+    expect(nairaConfig({ ...all, NEXT_PUBLIC_NETWORK: "mainnet" })).toBeNull();
+    expect(nairaConfig({ ...all, NEXT_PUBLIC_NETWORK: undefined })).toBeNull();
+    expect(nairaConfig({ ...all, BACHS_SECRET_KEY: "sk_live_abc" })).toBeNull();
     expect(nairaConfig({ ...all, BACHS_SECRET_KEY: "sk_other_abc" })?.base).toBe("https://sandbox-api.bachs.io");
   });
 
@@ -398,7 +402,7 @@ describe("settings", () => {
     expect(nairaConfig({ ...all, NAIRA_MAX_USD: "120" })?.maxUsd).toBe(120);
     expect(nairaConfig({ ...all, NAIRA_MAX_USD: "nope" })?.maxUsd).toBe(50);
     expect(nairaConfig({ ...all, NAIRA_MAX_USD: "0" })?.maxUsd).toBe(50);
-    const c = nairaConfig({ BACHS_SECRET_KEY: ' "sk_sandbox_abc" ', NAIRA_PER_USD: " 1550.5 ", NAIRA_FLOAT: ` '${FLOAT}' `, BACHS_WEBHOOK_SECRET: " whsec_1 " });
+    const c = nairaConfig({ NEXT_PUBLIC_NETWORK: "testnet", BACHS_SECRET_KEY: ' "sk_sandbox_abc" ', NAIRA_PER_USD: " 1550.5 ", NAIRA_FLOAT: ` '${FLOAT}' `, BACHS_WEBHOOK_SECRET: " whsec_1 " });
     expect(c).toMatchObject({ key: "sk_sandbox_abc", rate: 1550.5, float: FLOAT_ADDR, webhookSecret: "whsec_1" });
   });
 
@@ -406,6 +410,7 @@ describe("settings", () => {
     vi.stubEnv("BACHS_SECRET_KEY", "");
     expect(nairaEnabled()).toBe(false);
     vi.stubEnv("BACHS_SECRET_KEY", "sk_sandbox_abc");
+    vi.stubEnv("NEXT_PUBLIC_NETWORK", "testnet");
     vi.stubEnv("NAIRA_PER_USD", "1550");
     expect(nairaEnabled()).toBe(false); // no float yet
     vi.stubEnv("NAIRA_FLOAT", FLOAT);
@@ -435,6 +440,7 @@ describe("starting and releasing", () => {
 
   beforeEach(() => {
     vi.stubEnv("BACHS_SECRET_KEY", "sk_sandbox_secret_key_value");
+    vi.stubEnv("NEXT_PUBLIC_NETWORK", "testnet");
     vi.stubEnv("NAIRA_PER_USD", "1550");
     vi.stubEnv("NAIRA_FLOAT", FLOAT);
     vi.stubEnv("AGENT_PRIVATE_KEY", `0x${"11".repeat(32)}`);

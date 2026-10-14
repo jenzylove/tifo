@@ -10,7 +10,7 @@ import { accountOf } from "./tifoAccount";
 import { FACTORY, USDC, chain, publicClient, transport, usd } from "./chain";
 import { matchBySlug, shortTeam } from "./matches";
 import { checkResult } from "./results";
-import { listPromos, promoOrders, promoState, type PromoSummary } from "./promos";
+import { listPromos, promoJournal, promoOrders, promoState, type PromoSummary } from "./promos";
 import { dueAction, readDeliveries } from "./shipments";
 
 function wallet() {
@@ -123,6 +123,24 @@ export async function tick(): Promise<TickResult[]> {
   }
   out.push(...(await payoutsTick().catch((e) => [{ promo: FACTORY, action: `payout error: ${(e as Error).message.slice(0, 200)}` }])));
   return out;
+}
+
+/**
+ * A buyer came from another buyer's challenge link. The agent checks it on chain (both wallets bought this drop, on
+ * opposite sides, the challenger first) and writes the pair in the drop's journal, once per new buyer. No money
+ * depends on it: it is a record of a sale the seller's own post did not bring.
+ */
+export async function recordPair(p: PromoSummary, from: Address, buyer: Address): Promise<TickResult | null> {
+  if (from.toLowerCase() === buyer.toLowerCase()) return null;
+  const st = await promoState(p.address);
+  const [orders, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
+  const first = orders.find((o) => o.buyer.toLowerCase() === from.toLowerCase());
+  const second = orders.find((o) => o.buyer.toLowerCase() === buyer.toLowerCase());
+  if (!first || !second || first.side === second.side || second.at < first.at) return null;
+  if (journal.some((j) => j.kind === "pair" && j.text.toLowerCase().includes(`brought ${buyer.toLowerCase()}`))) return null;
+  const team = [shortTeam(p.meta.teamA), shortTeam(p.meta.teamB)];
+  const text = `${from.toLowerCase()} (${team[first.side]}) brought ${buyer.toLowerCase()} (${team[second.side]})`;
+  return { promo: p.address, action: `pair: ${text}`, hash: await send(p.address, "note", ["pair", text]) };
 }
 
 const MIN_PAYOUT = 100_000n; // $0.10: below this the transfer is not worth a transaction

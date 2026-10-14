@@ -245,7 +245,7 @@ function Overview({ data, seller, onMove }: { data: ManagerData; seller: Address
                     <time>
                       {new Date(f.at * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {f.match}
                     </time>
-                    {f.kind === "sale" ? f.text : `Manager: ${f.kind === "rates" ? "moved the offers. " : f.kind === "final" ? "result final, refunds sent. " : ""}${f.kind === "final" ? "" : f.text}`}
+                    {f.kind === "sale" || f.kind === "pair" ? f.text : `Manager: ${f.kind === "rates" ? "moved the offers. " : f.kind === "final" ? "result final, refunds sent. " : ""}${f.kind === "final" ? "" : f.text}`}
                   </a>
                 </li>
               ))}

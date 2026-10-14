@@ -49,6 +49,12 @@ export default function Books({ books, heading = "Books" }: { books: BooksData; 
         ) : (
           " and has not needed to ask you anything yet."
         )}
+        {books.pairs > 0 && (
+          <>
+            {" "}
+            Your buyers brought <b>{books.pairs}</b> more {books.pairs === 1 ? "buyer" : "buyers"} with the challenge link.
+          </>
+        )}
         {books.due > 0 && (
           <>
             {" "}
