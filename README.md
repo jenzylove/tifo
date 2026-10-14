@@ -15,11 +15,14 @@ Someone who sells online gives Tifo one product, how many they have, and how muc
 - On a draw every buyer gets a small thank you.
 - The stock caps the cost: 10 t-shirts at $20 with 25% back can cost at most $50. Because fans split and only one side wins, it usually costs about what a 10% off sale does. A contract enforces the cap, not a prompt.
 - A digital product opens on the page the moment the buyer pays.
+- For a product that ships, the payment waits inside the drop until the buyer confirms it arrived.
 - After each match the seller sees what the drop brought in against what it cost.
 
 ## What the agent decides
 
-It sizes the budget, picks the match, and chooses the offer. It checks the result against three sources and pays the winners. Every decision is written on chain with its reason. It can open drops by itself only inside a weekly rule the seller sets on their account contract. Anything bigger is a proposal the seller approves. It has no way to take money out.
+It sizes the budget, picks the match, and chooses the offer. It checks the result against three sources and pays the winners. Every decision is written on chain with its reason. It can open drops by itself only inside a weekly rule the seller sets on their account contract. Anything bigger is a proposal the seller approves.
+
+It also runs the money. After each sale it sends the seller their share, and after full time whatever was held and not owed back. The only place it can send money is the payout wallet the seller chose. The seller's Books page lists every dollar in and out and every decision, each with its reason and the contract where it can be checked.
 
 ## What you trust
 
@@ -34,7 +37,7 @@ The hackathon's required reading, [Agents and Ledgers in 2026](https://thecantee
 | The reading asks for | In Tifo |
 |---|---|
 | Every entry points at a document | Every refund is computed from one stored order: buyer, amount and the offer locked at purchase. There is no free form "pay X" call. |
-| No wrong payee | A refund can only go to the wallet that placed the order. The agent never supplies an address. |
+| No wrong payee | A refund can only go to the wallet that placed the order, and a payout only to the wallet the seller set on their account. The agent never supplies an address. |
 | No duplicate on retry | An order reference is charged once (`DuplicateOrder`). Refunds move a cursor, so a repeated payout call pays nobody twice. |
 | A witness in front of every write | A result is proposed only when two of three outside sources agree, then waits 15 minutes for a correction. If they disagree the agent proposes nothing and escalates. |
 | The model's output is an input, never the release | The model picks the match and the terms. A contract checks the budget and the weekly rule, and plain math sets every amount. No model output releases money. |
