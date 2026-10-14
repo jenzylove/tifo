@@ -22,6 +22,6 @@ jobs:
         run: |
           set -e
           RPC=https://rpc.testnet.arc.io
-          UNITS=$(cast to-unit "${AMOUNT}ether" mwei | cut -d. -f1)
+          UNITS=$(cast to-wei "$AMOUNT" mwei)
           cast send 0x3600000000000000000000000000000000000000 "transfer(address,uint256)" "$TO" "$UNITS" --private-key "$FUNDER_PK" --rpc-url $RPC > /dev/null
           echo "::notice::sent $AMOUNT test USDC to $TO, which now holds $(cast call 0x3600000000000000000000000000000000000000 'balanceOf(address)(uint256)' "$TO" --rpc-url $RPC)"
