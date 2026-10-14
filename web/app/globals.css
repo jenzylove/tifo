@@ -563,3 +563,12 @@ html, body { overflow-x: clip; }
 .tp-day button:disabled { opacity: .4; cursor: default; text-decoration: line-through; background: var(--surface-2); color: var(--ink); }
 @media (max-width: 560px) { .tp-day { grid-template-columns: 1fr; gap: 6px; } }
 
+/* The pay sheet: the USDC ways fold under one choice; the naira price is one big number. */
+.pay-ways > button.on { box-shadow: inset 0 0 0 2px var(--ink); background: var(--surface); }
+.pay-sub { display: grid; gap: 6px; padding-left: 14px; border-left: 2px solid var(--line); margin-left: 6px; }
+.pay-sub > button, .pay-sub > a { display: grid; gap: 2px; text-align: left; border: 0; border-radius: 12px; padding: 11px 14px; background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; }
+.pay-sub > button:hover, .pay-sub > a:hover { box-shadow: inset 0 0 0 1.5px var(--ink); background: var(--surface); }
+.pay-sub span { color: var(--muted); font-size: .84rem; }
+.pay-sheet .switch { margin-top: 10px; justify-self: start; }
+.naira-amount { margin: 4px 0 0; font-size: 2.4rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+

@@ -116,22 +116,18 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
 
         {(state === "ready" || state === "starting") && quote && (
           <>
-            <p style={{ margin: 0, fontSize: "1.4rem" }}>
-              <b>{naira(quote.ngn)}</b> for {money(amount)}
-            </p>
-            <p className="fine">
-              Today&apos;s rate is {naira(String(quote.rate))} to $1, rounded up to the next ₦10. The USDC goes straight to your Tifo wallet.
-            </p>
+            <p className="naira-amount">{naira(quote.ngn)}</p>
+            <p className="fine">Bank transfer or card. Charges included.</p>
             <button className="btn block" disabled={state === "starting"} onClick={start}>
-              {state === "starting" ? "Opening Bachs…" : `Continue to pay ${naira(quote.ngn)}`}
+              {state === "starting" ? "Opening…" : `Continue to pay ${naira(quote.ngn)}`}
             </button>
-            <p className="fine">The payment page opens in a new tab. Come back here when it is done.</p>
+            <p className="fine">Opens a secure Bachs page in a new tab.</p>
           </>
         )}
 
         {state === "waiting" && paying && (
           <>
-            {note === "" && <p className="status">Waiting for your payment. Pay on the Bachs page, then come back here.</p>}
+            {note === "" && <p className="status">Waiting for your payment. Finish it on the Bachs page, and this page carries on by itself.</p>}
             {note === "unpaid" && <p className="status err">That payment has not gone through yet. You can open the payment page and try again, or pay another way.</p>}
             {note === "short" && <p className="status">Naira payments are paused right now. If you already paid, keep this page open and your money is sent as soon as they are back. Or pay another way.</p>}
             {note === "stopped" && <p className="status">We stopped checking after 30 minutes. If you paid, your balance updates once the payment is confirmed.</p>}
@@ -141,7 +137,7 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
           </>
         )}
 
-        {done && <p className="status ok">Payment received. Your money is on its way to your Tifo wallet, and this page buys as soon as it lands.</p>}
+        {done && <p className="status ok">Payment received. Your order goes through in a moment.</p>}
 
         {state === "paused" && <p className="status err">Naira payments are paused right now. Pay another way.</p>}
 
@@ -156,7 +152,6 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
           </>
         )}
 
-        <p className="fine">Naira payments are run by Bachs. Tifo never sees your card or bank details.</p>
       </div>
     </div>,
     document.body,

@@ -32,6 +32,7 @@ import {
   paymentState,
   quote,
   quoteKobo,
+  priceKobo,
   releaseFor,
   startCheckout,
   usdToUnits,
@@ -63,6 +64,21 @@ describe("quote", () => {
     expect(quote(3_333_333n, 1500)).toBe("5000.00");
     // a hair over a multiple of 10 steps to the next one
     expect(quoteKobo(1_000_001n, 1500)).toBe(151_000n);
+  });
+
+  it("builds the payment charge into the price, grossed up and capped", () => {
+    // After Bachs takes 1.5% of what the buyer paid, at least the naira for the USDC is left.
+    for (const usd of [1n, 2n, 4n, 10n, 25n, 50n]) {
+      const base = quoteKobo(usd * 1_000_000n, 1500);
+      const price = priceKobo(usd * 1_000_000n, 1500, 150, 200_000n);
+      expect(price - (price * 150n) / 10_000n, String(usd)).toBeGreaterThanOrEqual(base);
+      expect(price % 1000n).toBe(0n); // a round 10 naira
+    }
+    expect(formatKobo(priceKobo(2_000_000n, 1500, 150, 200_000n))).toBe("3050.00"); // 3000 naira plus 45.69, up to 3050
+    expect(formatKobo(priceKobo(4_000_000n, 1500, 150, 200_000n))).toBe("6100.00"); // 6000 plus 91.37
+    // The charge never goes past the cap (2,000 naira): 1,000 dollars at 1,500 is 1.5m naira.
+    expect(priceKobo(1_000_000_000n, 1500, 150, 200_000n)).toBe(150_000_000n + 200_000n);
+    expect(priceKobo(10_000_000n, 1500, 0, 200_000n)).toBe(quoteKobo(10_000_000n, 1500)); // no charge, no change
   });
 
   it("works from whole numbers, so a big amount is exact", () => {
@@ -585,31 +601,32 @@ describe("starting and releasing", () => {
   const origin = "https://tifo.example";
   const go = (usd = 10n) => startCheckout({ wallet: WALLET, usdUnits: usd * 1_000_000n, promo: PROMO, origin });
 
-  it("opens a Bachs checkout for the naira price, with our reference", async () => {
+  it("opens a Bachs checkout for the naira price with the charge in it, with our reference", async () => {
     answer(201, { checkout_id: ID, checkout_url: "https://checkout.bachs.io/c/abc", status: "open" });
     const r = await go(10n);
-    expect(r).toEqual({ ok: true, checkoutUrl: "https://checkout.bachs.io/c/abc", checkoutId: ID, ngn: "15500.00", rate: 1550 });
+    // 15500 naira for the USDC, plus the 1.5% charge grossed up (15736.04), up to the next 10 naira
+    expect(r).toEqual({ ok: true, checkoutUrl: "https://checkout.bachs.io/c/abc", checkoutId: ID, ngn: "15740.00", rate: 1550 });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://sandbox-api.bachs.io/v1/checkout-sessions");
     expect(init.method).toBe("POST");
     const body = JSON.parse(init.body);
-    expect(body.pricing).toEqual({ currency: "NGN", amount: "15500.00" });
+    expect(body.pricing).toEqual({ currency: "NGN", amount: "15740.00" });
     expect(body.payment_method_types).toEqual(["NGN_BANK_TRANSFER", "NGN_CARD"]);
     expect(body.expires_in_minutes).toBe(30);
     expect(body.success_url).toBe(`${origin}/p/${PROMO}`);
     expect(body.cancel_url).toBe(`${origin}/p/${PROMO}`);
     expect(body).not.toHaveProperty("customer"); // a guest checkout
     const ref = parseReference(body.reference)!;
-    expect(ref).toMatchObject({ wallet: WALLET, usdcUnits: 10_000_000n, ngn: 1_550_000n });
+    expect(ref).toMatchObject({ wallet: WALLET, usdcUnits: 10_000_000n, ngn: 1_574_000n });
     expect(body.metadata).toMatchObject({ wallet: WALLET, usdc_units: "10000000" });
   });
 
   it("charges the rounded up price and the reference carries the same price", async () => {
     answer(201, { checkout_id: ID, checkout_url: "https://checkout.bachs.io/c/abc" });
     const r = await startCheckout({ wallet: WALLET, usdUnits: 3_333_333n, promo: PROMO, origin });
-    expect(r).toMatchObject({ ok: true, ngn: "5170.00" }); // 5166.67 naira up to 5170
+    expect(r).toMatchObject({ ok: true, ngn: "5250.00" }); // 5166.67 naira up to 5170, plus the charge (5248.73), up to 5250
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.pricing.amount).toBe(quote(3_333_333n, 1550));
+    expect(body.pricing.amount).toBe(formatKobo(priceKobo(3_333_333n, 1550, 150, 200_000n)));
     expect(parseReference(body.reference)!.ngn).toBe(parseKobo(body.pricing.amount));
   });
 

@@ -23,6 +23,8 @@ export interface NairaConfig {
   float: Address; // the TifoFloat contract
   maxUsd: number; // the most one naira payment may buy
   base: string; // sandbox or live API, decided by the key
+  feeBps: number; // the payment charge built into the naira price, so the buyer sees one final amount
+  feeCapKobo: bigint; // the most that charge can be
 }
 
 /** Reads the settings from the environment on each call, so a test (or a redeploy) can change them. */
@@ -44,6 +46,9 @@ export function nairaConfig(env: Record<string, string | undefined> = process.en
     float: getAddress(float),
     maxUsd: Number.isFinite(max) && max >= 1 ? max : 50,
     base: key.startsWith("sk_live_") ? LIVE : SANDBOX,
+    // Bachs charges 1.5% on a naira payment, at most N2,000. It is built into the price shown to the buyer.
+    feeBps: Math.max(0, Math.min(1000, Math.round(Number(clean(env.NAIRA_FEE_BPS) || 150)) || 0)),
+    feeCapKobo: BigInt(Math.max(0, Math.round(Number(clean(env.NAIRA_FEE_CAP_NGN) || 2000)) || 0)) * 100n,
   };
 }
 
@@ -93,6 +98,18 @@ export function quoteKobo(usdUnits: bigint, rate: number): bigint {
   if (!Number.isFinite(rate) || perUsd <= 0n) throw new Error("The rate must be more than zero.");
   const kobo = (usdUnits * perUsd + 999_999n) / 1_000_000n; // up to the next kobo
   return ((kobo + 999n) / 1000n) * 1000n; // up to the next 10 naira
+}
+
+/**
+ * What the buyer pays in kobo: the naira for the USDC plus the payment charge, rounded up to the next 10 naira.
+ * The charge is taken from the whole amount paid, so it is grossed up: after the charge, at least the base is left.
+ */
+export function priceKobo(usdUnits: bigint, rate: number, feeBps: number, feeCapKobo: bigint): bigint {
+  const base = quoteKobo(usdUnits, rate);
+  const bps = BigInt(Math.max(0, Math.min(1000, Math.round(feeBps))));
+  let fee = (base * bps + (10_000n - bps) - 1n) / (10_000n - bps);
+  if (fee > feeCapKobo) fee = feeCapKobo;
+  return ((base + fee + 999n) / 1000n) * 1000n;
 }
 
 /** The naira price of `usdUnits` of USDC as a decimal string, rounded UP to the next 10 naira. */
@@ -275,6 +292,15 @@ function revertName(e: unknown): string | undefined {
   return /AlreadyReleased|OverLimit/.exec(e instanceof Error ? e.message : "")?.[0];
 }
 
+/** How much the float can pay out right now: its balance, inside the per release and per day limits. */
+export async function floatRoom(): Promise<bigint> {
+  const cfg = nairaConfig();
+  if (!cfg) return 0n;
+  const [balance, perRelease, perDay, today] = await Promise.all([usdcBalance(cfg.float), floatRead(cfg, "perRelease"), floatRead(cfg, "perDay"), floatRead(cfg, "releasedToday")]);
+  const left = perDay > today ? perDay - today : 0n;
+  return [balance, perRelease, left].reduce((a, b) => (b < a ? b : a));
+}
+
 // ------------------------------------------------------------------------------------------------ start
 
 export type Started =
@@ -294,7 +320,7 @@ export async function startCheckout({ wallet, usdUnits, promo, origin }: { walle
   if (usdUnits > perRelease) return { ok: false, error: "too_large" };
   if (balance < usdUnits || today + usdUnits > perDay) return { ok: false, error: "float_short" };
 
-  const ngn = quoteKobo(usdUnits, cfg.rate);
+  const ngn = priceKobo(usdUnits, cfg.rate, cfg.feeBps, cfg.feeCapKobo);
   const back = `${origin.replace(/\/$/, "")}${promo ? `/p/${promo}` : "/"}`; // Bachs adds ?checkout_id= to the success address
   const r = await bachs(cfg, "/v1/checkout-sessions", {
     pricing: { currency: "NGN", amount: formatKobo(ngn) },

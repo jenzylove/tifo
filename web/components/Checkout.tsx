@@ -67,6 +67,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [bridge, setBridge] = useState(false);
   const [nairaOn, setNairaOn] = useState(false); // paying in naira (through Bachs) is set up on this deployment
   const [naira, setNaira] = useState(false);
+  const [nairaPrice, setNairaPrice] = useState(""); // the naira for what is left to pay, charges included
+  const [usdcOpen, setUsdcOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
   const [linkCopied, setLinkCopied] = useState(false);
@@ -122,6 +124,18 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   const total = priceUsd * qty;
   const amount = BigInt(Math.round(total * 1e6));
+  const shortfall = Math.max(total - Number(balance ?? 0n) / 1e6, 1);
+  useEffect(() => {
+    if (!sheet || !nairaOn || !acct) return;
+    let live = true;
+    fetch(`/api/naira/start?usd=${Math.ceil(Math.round(shortfall * 1e6) / 1e4) / 100}`)
+      .then((r) => r.json())
+      .then((j) => live && setNairaPrice(j.ngn ? `₦${Number(j.ngn).toLocaleString("en-US")}` : ""))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [sheet, nairaOn, acct, shortfall]);
   // What this order would get right now, after spots already taken. The contract makes the same step down.
   const rates = [0, 1].map((s) => stepDown(amount, listed[s], BigInt(liability[s]), BigInt(cap), floorBps)) as [number, number];
   const back = (s: 0 | 1) => (total * rates[s]) / 10_000;
@@ -358,9 +372,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           {side === null ? "Pick a side to continue" : booking && slot === null ? "Pick a time to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
         </button>
       )}
-      {acct && !sheet && (
+      {acct && !sheet && balance !== null && (
         <p className="fine" style={{ textAlign: "center" }}>
-          Tifo wallet <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code> · balance {balance === null ? "…" : money(Number(balance) / 1e6)}
+          Your Tifo wallet has {money(Number(balance) / 1e6)}
         </p>
       )}
       {sheet && side !== null && typeof document !== "undefined" &&
@@ -401,8 +415,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 </section>
               ) : !acct ? (
                 <section>
-                  <h5>1. Your Tifo wallet</h5>
-                  <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Refunds land here after full time.</p>
+                  <h5>Your Tifo wallet</h5>
+                  <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Any money back lands here.</p>
                   <button className="btn block" disabled={busy} onClick={() => wallet(hasSaved ? "login" : "register")}>
                     {hasSaved ? `Sign in with ${bio}` : `Create a wallet with ${bio}`}
                   </button>
@@ -412,66 +426,68 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 </section>
               ) : enough || tap ? (
                 <section>
-                  <h5>Ready</h5>
-                  <p className="fine">
-                    Paying from your Tifo wallet <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code>, balance {money(Number(balance ?? 0n) / 1e6)}.
-                  </p>
+                  <h5>Ready to pay</h5>
+                  <p className="fine">From your Tifo wallet, which has {money(Number(balance ?? 0n) / 1e6)}.</p>
                   <button className="btn block" disabled={busy} onClick={tap ? confirmTap : pay}>
                     Confirm {money(total)} with {bio}
                   </button>
                 </section>
               ) : (
                 <section>
-                  <h5>2. Add {money(Math.max(total - Number(balance ?? 0n) / 1e6, 0))} to your Tifo wallet</h5>
-                  <p className="fine">
-                    Balance {balance === null ? "…" : money(Number(balance) / 1e6)} in <code>{acct.address.slice(0, 6)}…{acct.address.slice(-4)}</code>. Pick how you want to add
-                    money. This page pays as soon as it lands.{" "}
-                    <button className="link" disabled={busy} onClick={() => wallet("login")}>
-                      Money in another Tifo wallet? Switch
-                    </button>
-                  </p>
+                  <h5>How do you want to pay?</h5>
+                  {balance !== null && balance > 0n && (
+                    <p className="fine">Your Tifo wallet already has {money(Number(balance) / 1e6)} towards this, so you only pay the rest.</p>
+                  )}
                   <div className="pay-ways">
                     {nairaOn && (
                       <button onClick={() => setNaira(true)}>
-                        <b>Pay in naira</b>
-                        <span>Bank transfer or card, through Bachs</span>
+                        <b>{nairaPrice ? `Pay ${nairaPrice}` : "Pay in naira"}</b>
+                        <span>Bank transfer or card in naira</span>
                       </button>
                     )}
                     {cardOn && (
                       <button onClick={() => setCard(true)}>
-                        <b>Card or bank transfer</b>
+                        <b>Pay by card</b>
                         <span>In your own currency, through Circle</span>
                       </button>
                     )}
-                    <button onClick={() => setBridge(true)}>
-                      <b>USDC on another chain</b>
-                      <span>Base, Ethereum, Arbitrum, Optimism or Polygon</span>
+                    <button className={usdcOpen ? "on" : ""} aria-expanded={usdcOpen} onClick={() => setUsdcOpen((o) => !o)}>
+                      <b>Pay with USDC</b>
+                      <span>From another chain, an exchange, or MetaMask</span>
                     </button>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard?.writeText(acct.address);
-                        setCopied(true);
-                      }}
-                    >
-                      <b>{copied ? "Address copied" : "Send from an exchange"}</b>
-                      <span>{copied ? "Withdraw USDC to it and choose the Arc network" : "Copy your address, withdraw USDC on Arc"}</span>
-                    </button>
-                    {NETWORK === "testnet" && (
-                      <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
-                        <b>Free test USDC</b>
-                        <span>faucet.circle.com, pick Arc Testnet</span>
-                      </a>
+                    {usdcOpen && (
+                      <div className="pay-sub">
+                        <button onClick={() => setBridge(true)}>
+                          <b>From another chain</b>
+                          <span>Base, Ethereum, Arbitrum, Optimism or Polygon</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText(acct.address);
+                            setCopied(true);
+                          }}
+                        >
+                          <b>{copied ? "Address copied" : "From an exchange"}</b>
+                          <span>{copied ? "Withdraw USDC to it and pick the Arc network" : "Copy your address, withdraw USDC on Arc"}</span>
+                        </button>
+                        <button disabled={busy} onClick={payOtherWallet}>
+                          <b>MetaMask or Rabby</b>
+                          <span>Pay with USDC you already hold on Arc</span>
+                        </button>
+                        {NETWORK === "testnet" && (
+                          <a href="https://faucet.circle.com" target="_blank" rel="noreferrer">
+                            <b>Free test USDC</b>
+                            <span>faucet.circle.com, pick Arc Testnet</span>
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
+                  <button className="link fine switch" disabled={busy} onClick={() => wallet("login")}>
+                    Money in another Tifo wallet? Switch
+                  </button>
                 </section>
               )}
-
-              <section className="pay-alt">
-                <p className="fine">Already hold USDC on Arc in MetaMask or Rabby?</p>
-                <button className="btn sm ghost" disabled={busy} onClick={payOtherWallet}>
-                  Pay with MetaMask / Rabby
-                </button>
-              </section>
 
               {status.kind === "working" && <p className="status">{status.text}</p>}
               {status.kind === "error" && <p className="status err">{status.text}</p>}

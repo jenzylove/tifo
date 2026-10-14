@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAddress, getAddress } from "viem";
 import { z } from "zod";
 import { limit, tooMany } from "@/lib/ratelimit";
-import { nairaConfig, nairaMissing, quote, startCheckout, usdToUnits, why } from "@/lib/naira";
+import { floatRoom, formatKobo, nairaConfig, nairaMissing, priceKobo, startCheckout, usdToUnits, why } from "@/lib/naira";
 
 export const maxDuration = 60;
 
@@ -11,13 +11,16 @@ export const maxDuration = 60;
 // POST opens the Bachs checkout. The price is worked out here from the dollar amount, never taken from the browser.
 const no = { "cache-control": "no-store" };
 
-export function GET(req: Request) {
+export async function GET(req: Request) {
   const cfg = nairaConfig();
   if (!cfg) return NextResponse.json({ enabled: false, missing: nairaMissing() }, { headers: no });
-  const out: { enabled: true; rate: number; maxUsd: number; ngn?: string } = { enabled: true, rate: cfg.rate, maxUsd: cfg.maxUsd };
   const usd = new URL(req.url).searchParams.get("usd");
   const units = usd === null ? null : usdToUnits(Number(usd));
-  if (units !== null) out.ngn = quote(units, cfg.rate);
+  // Offer naira only when the float can pay this amount out today (at least one dollar when no amount is asked).
+  const room = await floatRoom().catch(() => 0n);
+  if (room < (units ?? 1_000_000n)) return NextResponse.json({ enabled: false, missing: [] }, { headers: no });
+  const out: { enabled: true; rate: number; maxUsd: number; ngn?: string } = { enabled: true, rate: cfg.rate, maxUsd: cfg.maxUsd };
+  if (units !== null) out.ngn = formatKobo(priceKobo(units, cfg.rate, cfg.feeBps, cfg.feeCapKobo));
   return NextResponse.json(out, { headers: no });
 }
 

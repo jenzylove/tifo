@@ -2,9 +2,9 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The three naira routes with the money movers stubbed: what matters here is which answer Bachs gets and when nothing is released.
-const h = vi.hoisted(() => ({ releaseFor: vi.fn(), startCheckout: vi.fn() }));
+const h = vi.hoisted(() => ({ releaseFor: vi.fn(), startCheckout: vi.fn(), floatRoom: vi.fn() }));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/naira", async (orig) => ({ ...(await orig<typeof import("@/lib/naira")>()), releaseFor: h.releaseFor, startCheckout: h.startCheckout }));
+vi.mock("@/lib/naira", async (orig) => ({ ...(await orig<typeof import("@/lib/naira")>()), releaseFor: h.releaseFor, startCheckout: h.startCheckout, floatRoom: h.floatRoom }));
 
 import { POST as webhook } from "@/app/api/naira/webhook/route";
 import { POST as check } from "@/app/api/naira/check/route";
@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "");
   h.releaseFor.mockReset();
   h.startCheckout.mockReset();
+  h.floatRoom.mockReset().mockResolvedValue(25_000_000n);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -196,12 +197,23 @@ describe("start", () => {
     expect(await off.json()).toMatchObject({ enabled: false });
   });
 
-  it("GET with ?usd= also gives the naira price, rounded up to 10 naira", async () => {
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=10"))).json()).toEqual({ enabled: true, rate: 1550, maxUsd: 50, ngn: "15500.00" });
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=12.341"))).json()).toMatchObject({ ngn: "19150.00" }); // 12.35 dollars is 19142.50 naira, up to 19150
+  it("GET with ?usd= also gives the naira price with the charge in it, rounded up to 10 naira", async () => {
+    // 10 dollars is 15500 naira; with the 1.5% charge grossed up that is 15736.04, up to 15740
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=10"))).json()).toEqual({ enabled: true, rate: 1550, maxUsd: 50, ngn: "15740.00" });
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=12.341"))).json()).toMatchObject({ ngn: "19450.00" }); // 12.35 dollars is 19150 naira, plus the charge (19441.63), up to 19450
     for (const bad of ["abc", "-4", "0", ""]) {
       expect(await (await startInfo(new Request(`https://tifo.example/api/naira/start?usd=${bad}`))).json(), bad).not.toHaveProperty("ngn");
     }
+  });
+
+  it("GET turns naira off when the float cannot pay that amount out, so nobody meets a dead end", async () => {
+    h.floatRoom.mockResolvedValue(0n);
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start"))).json()).toMatchObject({ enabled: false });
+    h.floatRoom.mockResolvedValue(5_000_000n);
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5"))).json()).toMatchObject({ enabled: true });
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5.01"))).json()).toMatchObject({ enabled: false });
+    h.floatRoom.mockRejectedValue(new Error("rpc down"));
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=2"))).json()).toMatchObject({ enabled: false });
   });
 
   it("rejects a request that is not valid, without starting anything", async () => {

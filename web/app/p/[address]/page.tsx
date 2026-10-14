@@ -14,7 +14,6 @@ import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos"
 import { coverLeft, lastFew, tierLabel } from "@/lib/offer";
 import { offerLabel } from "@/lib/precheck";
 import { bookedSlots } from "@/lib/booking";
-import SlotTime from "@/components/SlotTime";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 
@@ -200,24 +199,6 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           )}
         </div>
       </div>
-
-      {p.meta.slots && p.meta.slots.length > 0 && (
-        <section className="times panel">
-          <h2 className="h">
-            Times <small>each one can be booked once</small>
-          </h2>
-          <ul>
-            {p.meta.slots.map((t, i) => (
-              <li key={t} className={booked[i] ? "taken" : ""}>
-                <b>
-                  <SlotTime iso={t} />
-                </b>
-                <span>{booked[i] ? "Booked" : "Free"}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {orders.length > 0 && (
       <section className="terrace">
