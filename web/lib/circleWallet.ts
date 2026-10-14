@@ -1,7 +1,7 @@
 "use client";
 // Circle Modular Wallets: a passkey (Face ID / fingerprint) owns a Circle smart account on Arc.
 // Circle's paymaster sponsors gas, so a fan only ever needs USDC.
-import { createPublicClient, encodeFunctionData, erc20Abi, keccak256, toBytes, type Address, type Hex } from "viem";
+import { concat, createPublicClient, decodeAbiParameters, encodeAbiParameters, encodeFunctionData, erc20Abi, keccak256, slice, toBytes, type Address, type Hex } from "viem";
 import { createBundlerClient, formatUserOperationRequest, toWebAuthnAccount, type P256Credential, type SmartAccount, type UserOperation, type WebAuthnAccount } from "viem/account-abstraction";
 import {
   createRpClient,
@@ -68,6 +68,37 @@ const watchedGet = async (options?: CredentialRequestOptions) => {
   return c;
 };
 const ownerOf = (credential: P256Credential) => toWebAuthnAccount({ credential, getFn: watchedGet as never }) as WebAuthnAccount;
+
+// Some passkey managers sign after a PIN but do not set the "user verified" flag in what they return. Circle's SDK
+// always marks the signature as needing that flag, so the wallet refused every signature from them ("Invalid account
+// signature"). The flag that proves a person approved it ("user present") is still required. When only the verified
+// flag is missing, the signature says so, and the wallet accepts it. Tested on Arc testnet: refused before, accepted after.
+const SIG_PART = [
+  {
+    type: "tuple",
+    components: [
+      {
+        name: "webAuthnData",
+        type: "tuple",
+        components: [
+          { name: "authenticatorData", type: "bytes" },
+          { name: "clientDataJSON", type: "bytes" },
+          { name: "challengeIndex", type: "uint256" },
+          { name: "typeIndex", type: "uint256" },
+          { name: "requireUserVerification", type: "bool" },
+        ],
+      },
+      { name: "r", type: "uint256" },
+      { name: "s", type: "uint256" },
+    ],
+  },
+] as const;
+const WRAP_HEAD = 97; // signer id (32), 65 (32), signature type (1), length (32)
+const assertionFlags = () => (lastAssertion ? parseInt(lastAssertion.authenticatorData.slice(66, 68), 16) : NaN);
+function withoutVerifiedFlag(wrapped: Hex): Hex {
+  const [d] = decodeAbiParameters(SIG_PART, slice(wrapped, WRAP_HEAD));
+  return concat([slice(wrapped, 0, WRAP_HEAD), encodeAbiParameters(SIG_PART, [{ ...d, webAuthnData: { ...d.webAuthnData, requireUserVerification: false } }])]);
+}
 
 export function savedCredential(): P256Credential | null {
   if (typeof localStorage === "undefined") return null;
@@ -251,7 +282,9 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
   let signed: Hex | null = null;
   const submit = async () => {
     lastAssertion = null;
-    const signature = await account.signUserOperation(op);
+    let signature = await account.signUserOperation(op);
+    const flags = assertionFlags();
+    if (Number.isFinite(flags) && flags & 0x01 && !(flags & 0x04)) signature = withoutVerifiedFlag(signature);
     signed = signature;
     const hash = (await bundler.request({
       method: "eth_sendUserOperation",
