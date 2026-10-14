@@ -1,4 +1,4 @@
-import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
+import { isCheckDrop, listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { explorerAddr, NETWORK, usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
 import { agentRecord } from "@/lib/record";
@@ -6,7 +6,10 @@ import { agentRecord } from "@/lib/record";
 export const dynamic = "force-dynamic";
 
 export default async function Proof() {
-  const promos = await listPromos();
+  const everything = await listPromos();
+  // Our own system checks are listed at the bottom and left out of every number on this page.
+  const promos = everything.filter((p) => !isCheckDrop(p.meta));
+  const checks = everything.filter((p) => isCheckDrop(p.meta));
   const rows = await Promise.all(
     promos.map(async (p) => {
       const st = await promoState(p.address);
@@ -71,6 +74,21 @@ export default async function Proof() {
           </ol>
         </div>
       ))}
+      {checks.length > 0 && (
+        <details className="ask" style={{ marginTop: 24 }}>
+          <summary>
+            {checks.length} system {checks.length === 1 ? "check" : "checks"} we ran ourselves, not counted above
+          </summary>
+          <ol>
+            {checks.map((p) => (
+              <li key={p.address}>
+                {shortTeam(p.meta.teamA)} v {shortTeam(p.meta.teamB)} · {p.meta.product} ·{" "}
+                <a href={explorerAddr(p.address)} target="_blank" rel="noreferrer">contract on Arc</a>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
     </section>
   );
 }

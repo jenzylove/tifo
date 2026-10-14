@@ -42,6 +42,15 @@ export interface PromoSummary {
   meta: PromoMeta;
 }
 
+/**
+ * Drops we opened ourselves only to check the system (labelled "check" or "not for sale", or from our own test shop).
+ * They stay on chain and are listed apart on /proof, but they are not shown to shoppers and never counted as usage.
+ */
+export function isCheckDrop(meta: Pick<PromoMeta, "product" | "shop">): boolean {
+  const mark = (name: string) => /not for sale|\bcheck\b|testnet run|^(practice shop|ada studio)$/i.test(name);
+  return mark(meta.product ?? "") || mark(meta.shop ?? "");
+}
+
 export async function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
   const all = await Promise.all(
     [src.factory, ...(src.older ?? [])].filter((f) => !/^0x0+$/.test(f)).map((f) => fromFactory(f, src.client).catch(() => [] as PromoSummary[])),
