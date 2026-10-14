@@ -80,6 +80,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [slug, setSlug] = useState(prefill?.slug ?? "");
   const [stock, setStock] = useState("10"); // how many the seller has to sell; this caps the most the drop can cost
   const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
+  const [balance, setBalance] = useState(true); // the agent may move each side's offer between half and the full offer
   const [minBuyers, setMinBuyers] = useState(0); // the offer only pays out once this many people bought; 0 is from the first sale
   const [wantCap, setWantCap] = useState<number | null>(prefill?.capUsd ?? null);
   const [browse, setBrowse] = useState(false);
@@ -110,6 +111,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   // A bookable service has exactly as many units as times on offer.
   const units = kind === "booking" ? slotTimes.length : Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
   const reach = units > 0 && minBuyers > units ? 0 : minBuyers; // cannot ask for more buyers than there is to sell
+  const low = balance ? Math.floor(tier / 2 / 500) * 500 : tier; // the lowest the agent may take a side's offer
+  const pct = (b: number) => (b >= FULL ? "free" : `${b / 100}% back`);
   useEffect(() => {
     if (wantCap && priceUsd > 0 && units > 0) {
       const fits = [...TIERS].reverse().find((t) => (units * priceUsd * t) / FULL <= wantCap + 1e-9);
@@ -176,12 +179,12 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
         slots: kind === "booking" ? slotTimes.map((x) => new Date(x).toISOString()).sort() : undefined,
-        shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: tier, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
+        shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: low, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
         minBuyers: reach || undefined,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), low, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, meta,
       ];
       // Every drop opens through the seller's account, so the agent can pay winners and send the seller their money.
       // A first drop creates that account in the same confirmation.
@@ -372,6 +375,23 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             </button>
           ))}
         </div>
+        <div className="tiers two" role="radiogroup" aria-label="Who sets the offer" style={{ marginTop: 8 }}>
+          <button role="radio" aria-checked={balance} className={balance ? "on" : ""} onClick={() => setBalance(true)}>
+            Your agent balances it
+            <small>
+              between {pct(Math.floor(tier / 2 / 500) * 500)} and {pct(tier)}
+            </small>
+          </button>
+          <button role="radio" aria-checked={!balance} className={!balance ? "on" : ""} onClick={() => setBalance(false)}>
+            Fixed
+            <small>{pct(tier)} for everyone</small>
+          </button>
+        </div>
+        <p className="fine">
+          {balance
+            ? `When more fans pick one team, your agent lowers that team's offer for new buyers, down to ${pct(low)}, so your cost stays about the same whoever wins. Each buyer keeps the offer they paid for, and every move is written on chain with the reason.`
+            : "Every buyer gets the same offer, whichever team they pick."}
+        </p>
         <label className="field" style={{ marginTop: 18 }} hidden={kind === "booking"}>
           How many do you have to sell?
           <input className="input" type="number" min={1} max={MAX_STOCK} step={1} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
@@ -393,7 +413,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             : `If fewer than ${reach} people buy before kickoff, nobody gets money back and you keep every sale. Buyers see how many more are needed, so they share your link.`}
         </p>
         <p className="fine">
-          Every buyer gets {tier >= FULL ? "the full price" : `${tier / 100}%`} back if their team wins. Nobody is left out. Your stock is what caps the cost: even if all {units || "of them"}{" "}
+          Every buyer gets {balance ? "up to " : ""}{tier >= FULL ? "the full price" : `${tier / 100}%`} back if their team wins. Nobody is left out. Your stock is what caps the cost: even if all {units || "of them"}{" "}
           sell to fans of the team that wins, it cannot cost more than the figure below. Buyers see how many are left once only {LOW} remain.
         </p>
         {priceUsd >= 1 && (

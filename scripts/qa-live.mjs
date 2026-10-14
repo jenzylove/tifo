@@ -149,6 +149,20 @@ try {
     await buyer.shot("23b-drop-after-one-buyer", true);
     log("after one buyer the drop shows", left, "more needed");
   }
+  // The agent balances by default: after a sale on one side, that side's offer for new buyers comes down a little.
+  const promoAddr = dropUrl.split("/p/")[1];
+  let moved = null;
+  for (let i = 0; i < 20 && moved === null; i++) {
+    const a = Number(execFileSync("cast", ["call", promoAddr, "rateBps(uint256)(uint16)", "0", "--rpc-url", "https://rpc.testnet.arc.io"]).toString().trim());
+    const b = Number(execFileSync("cast", ["call", promoAddr, "rateBps(uint256)(uint16)", "1", "--rpc-url", "https://rpc.testnet.arc.io"]).toString().trim());
+    if (a !== b) moved = [a, b];
+    else await buyer.page.waitForTimeout(3000);
+  }
+  if (!moved) throw new Error("the agent did not move the offers after the sale");
+  log("agent moved the offers to", moved.join(" / "), "bps");
+  await buyer.page.goto(dropUrl, { waitUntil: "load" });
+  await buyer.page.waitForTimeout(1200);
+  await buyer.shot("23c-drop-after-agent-moved", true);
 
   // ---------- the seller's books after the sale: the money in, and the agent sending the seller's share on
   await seller.page.getByRole("button", { name: "Books" }).click();

@@ -60,13 +60,15 @@ export async function maybeRebalance(p: PromoSummary): Promise<{ changed: boolea
   const st = await promoState(p.address);
   if (Date.now() / 1000 >= st.closesAt) return { changed: false, reason: "closed" };
   const base: [bigint, bigint] = [BigInt(p.meta.baseRates[0]), BigInt(p.meta.baseRates[1])];
-  const [na, nb] = rebalance(st.liability, base, p.meta.minBps, p.meta.maxBps).map(Number) as [number, number];
+  const [na, nb] = rebalance(st.liability, base, p.meta.minBps, p.meta.maxBps, 0.5, st.cap).map(Number) as [number, number];
   const moved = Math.abs(na - st.rates[0]) + Math.abs(nb - st.rates[1]);
   if (moved < 100) return { changed: false, reason: "within 1 point of current offers" };
   const [la, lb] = st.liability.map((x) => Number(x) / 1e6);
   const heavy = la > lb ? p.meta.teamA : p.meta.teamB;
   const light = la > lb ? p.meta.teamB : p.meta.teamA;
-  const reason = `${heavy} side owes $${Math.max(la, lb).toFixed(2)} if they win vs $${Math.min(la, lb).toFixed(2)} for ${light}. Raising the ${light} offer and trimming ${heavy} to pull the book back toward balance.`;
+  const pct = (b: number) => (b >= 10_000 ? "free" : `${b / 100}% back`);
+  const [ha, hb] = la > lb ? [na, nb] : [nb, na];
+  const reason = `More ${heavy} fans have bought: $${Math.max(la, lb).toFixed(2)} would go back if ${heavy} win, $${Math.min(la, lb).toFixed(2)} if ${light} win. New ${heavy} buyers now get ${pct(ha)} and ${light} buyers ${pct(hb)}, so the shop's cost stays close whoever wins.`;
   const hash = await send(p.address, "setRates", [na, nb, reason]);
   return { changed: true, hash, reason };
 }

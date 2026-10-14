@@ -581,3 +581,7 @@ html, body { overflow-x: clip; }
 .reach-pick { grid-template-columns: repeat(4, 1fr); }
 .reach-pick button:disabled { opacity: .35; cursor: default; }
 
+/* Who sets the offer: two wide choices. */
+.tiers.two { grid-template-columns: 1fr 1fr; }
+.tiers.two button { font-size: 1rem; padding: 14px 12px; }
+

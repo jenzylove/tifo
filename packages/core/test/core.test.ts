@@ -64,6 +64,19 @@ describe("rebalance", () => {
     expect(xa).toBe(2000n);
     expect(xb).toBe(6000n);
   });
+
+  it("measured against the budget, one early sale barely moves the offer and a lopsided book moves it to the floor", () => {
+    // Free if your team wins, the agent may go down to 50%, a $10 budget.
+    const [a1, b1] = rebalance([usd(1), 0n], [10_000n, 10_000n], 5000, 10_000, 0.5, usd(10));
+    expect(a1).toBe(9500n); // one $1 sale: 95% back for the next fan of that team
+    expect(b1).toBe(10_000n); // the other side stays free
+    const [a2] = rebalance([usd(10), 0n], [10_000n, 10_000n], 5000, 10_000, 0.5, usd(10));
+    expect(a2).toBe(5000n); // that side alone would use the whole budget: down to the floor
+    const [a3, b3] = rebalance([usd(5), usd(5)], [10_000n, 10_000n], 5000, 10_000, 0.5, usd(10));
+    expect([a3, b3]).toEqual([10_000n, 10_000n]); // balanced: nothing moves
+    // Without a budget, the same single sale is measured against itself and drops straight to the floor.
+    expect(rebalance([usd(1), 0n], [10_000n, 10_000n], 5000, 10_000)[0]).toBe(5000n);
+  });
 });
 
 describe("settle", () => {

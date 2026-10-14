@@ -137,6 +137,8 @@ export function applyOrder(book: Book, buyer: string, side: Side, amount: bigint
 /**
  * Live rebalancing. When one side's refund bill runs ahead, raise the lighter side's
  * offer and lower the heavier side's, in proportion to the gap. Never leaves [min, max].
+ * With `budget`, the gap is measured against the drop's budget, so the offers only move as one side
+ * actually eats into it (one early sale barely moves anything); without it, against the bigger bill.
  */
 export function rebalance(
   liability: [bigint, bigint],
@@ -144,9 +146,10 @@ export function rebalance(
   minBps: number,
   maxBps: number,
   strength = 0.5,
+  budget?: bigint,
 ): [bigint, bigint] {
   const [la, lb] = liability.map(Number);
-  const top = Math.max(la, lb);
+  const top = Math.max(la, lb, Number(budget ?? 0n));
   if (top === 0) return base;
   const gap = (la - lb) / top; // +ve: A heavy, -ve: B heavy
   const heavy: Side = gap > 0 ? 0 : 1;

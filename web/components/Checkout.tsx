@@ -1,6 +1,7 @@
 "use client";
 // The buy box on a drop page: the product at full price, plus a promo that pays back a % if the chosen team wins.
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { keccak256, parseSignature, toHex, type Address, type Hex } from "viem";
 import { erc20Abi } from "@/lib/abi";
@@ -36,6 +37,7 @@ interface Props {
   contact?: string; // for a physical product: where the buyer sends delivery details
   slots?: { i: number; at: string; taken: boolean }[]; // a bookable service: the times on offer
   reach?: { need: number; have: number } | null; // the offer switches on once `need` different people bought
+  moving?: boolean; // the agent moves the offers as fans pick sides
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
@@ -48,7 +50,14 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving }: Props) {
+  const router = useRouter();
+  // The agent moved the offer between page load and payment: show the new one and let the buyer decide again.
+  const fail = (e: unknown) => {
+    const m = (e as Error)?.message ?? String(e);
+    if (/OfferGone/i.test(m)) router.refresh();
+    setStatus({ kind: "error", text: friendly(m) });
+  };
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
   // Opened from another buyer's challenge link: which side they backed, and (if the link says) their wallet.
@@ -166,7 +175,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       setStatus({ kind: "working", text: "Checking the promo…" });
       const pre = await precheck(promo, acct.address, side, amount, teams);
       if ("error" in pre) return setStatus({ kind: "error", text: pre.error });
-      if (pre.rateBps < rates[side]) return setStatus({ kind: "error", text: GONE });
+      if (pre.rateBps < rates[side]) {
+        router.refresh();
+        return setStatus({ kind: "error", text: `The ${teams[side]} offer just moved to ${pre.rateBps >= 10_000 ? "free" : pre.rateBps > 0 ? `${pre.rateBps / 100}% back` : "no money back"} as other fans bought. Check it and pay again.` });
+      }
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
       const { secret, orderRef } = order();
       try {
@@ -177,7 +189,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         return setStatus({ kind: "idle" });
       }
     } catch (e) {
-      setStatus({ kind: "error", text: friendly((e as Error).message) });
+      fail(e);
     }
   }
 
@@ -197,7 +209,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       done(await tap.go(), tap.secret);
     } catch (e) {
       setTap(null);
-      setStatus({ kind: "error", text: friendly((e as Error).message) });
+      fail(e);
     }
   }
 
@@ -254,7 +266,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       saveOrder(promo, { hash: j.hash, secret });
       setStatus({ kind: "done", hash: j.hash, secret, side, qty });
     } catch (e) {
-      setStatus({ kind: "error", text: friendly((e as Error).message) });
+      fail(e);
     }
   }
 
@@ -355,7 +367,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         <p className="fine">
           {locked !== null
             ? `This wallet already took the ${teams[locked]} offer, so more orders ride on ${teams[locked]} too.`
-            : "Pick the team you think will win. You keep what you bought either way."}
+            : moving
+              ? "Pick the team you think will win. Offers move as fans pick sides; yours is locked when you pay."
+              : "Pick the team you think will win. You keep what you bought either way."}
         </p>
       </div>
 
@@ -522,7 +536,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   );
 }
 
-const GONE = "That offer just ran out. Refresh the page to see what is left.";
+const GONE = "That offer just moved as other fans bought. Check the new offer and pay again.";
 
 function friendly(msg: string) {
   if (/OfferGone/i.test(msg)) return GONE;
