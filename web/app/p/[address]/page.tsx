@@ -166,6 +166,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               slots={p.meta.slots?.map((t, i) => ({ i, at: t, taken: booked[i] ?? false }))}
               reach={st.minBuyers > 1 ? { need: st.minBuyers, have: st.buyers } : null}
               moving={p.meta.minBps < p.meta.maxBps}
+              lastMove={[...journal].reverse().find((j) => j.kind === "rates")?.text}
             />
           ) : (
             <div className="buybox">

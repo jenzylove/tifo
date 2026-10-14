@@ -585,3 +585,10 @@ html, body { overflow-x: clip; }
 .tiers.two { grid-template-columns: 1fr 1fr; }
 .tiers.two button { font-size: 1rem; padding: 14px 12px; }
 
+/* The agent's latest move, shown where the buyer picks a side. */
+.agent-move { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start; margin: 0 0 12px; padding: 12px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); font-size: .86rem; line-height: 1.45; }
+.agent-move i { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--accent-deep); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); animation: agent-pulse 2.4s ease-in-out infinite; }
+.agent-move b { font-weight: 700; }
+@keyframes agent-pulse { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .agent-move i { animation: none; } }
+

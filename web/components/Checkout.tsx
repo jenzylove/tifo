@@ -38,6 +38,7 @@ interface Props {
   slots?: { i: number; at: string; taken: boolean }[]; // a bookable service: the times on offer
   reach?: { need: number; have: number } | null; // the offer switches on once `need` different people bought
   moving?: boolean; // the agent moves the offers as fans pick sides
+  lastMove?: string; // the agent's latest reason for moving them, from the drop's own log
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
@@ -50,7 +51,7 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving, lastMove }: Props) {
   const router = useRouter();
   // The agent moved the offer between page load and payment: show the new one and let the buyer decide again.
   const fail = (e: unknown) => {
@@ -348,6 +349,14 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           </div>
         )}
         {reach && reach.have >= reach.need && <p className="fine reach-on">Offer on: {reach.have} people bought.</p>}
+        {lastMove && !closed && (
+          <p className="agent-move">
+            <i aria-hidden />
+            <span>
+              <b>{shop}&apos;s agent moved the offers.</b> {lastMove}
+            </span>
+          </p>
+        )}
         <div className="offers-list">
           {[0, 1].map((i) => {
             const s = i as 0 | 1;

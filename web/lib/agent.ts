@@ -64,11 +64,11 @@ export async function maybeRebalance(p: PromoSummary): Promise<{ changed: boolea
   const moved = Math.abs(na - st.rates[0]) + Math.abs(nb - st.rates[1]);
   if (moved < 100) return { changed: false, reason: "within 1 point of current offers" };
   const [la, lb] = st.liability.map((x) => Number(x) / 1e6);
-  const heavy = la > lb ? p.meta.teamA : p.meta.teamB;
-  const light = la > lb ? p.meta.teamB : p.meta.teamA;
+  const heavy = shortTeam(la > lb ? p.meta.teamA : p.meta.teamB);
+  const light = shortTeam(la > lb ? p.meta.teamB : p.meta.teamA);
   const pct = (b: number) => (b >= 10_000 ? "free" : `${b / 100}% back`);
   const [ha, hb] = la > lb ? [na, nb] : [nb, na];
-  const reason = `More ${heavy} fans have bought: $${Math.max(la, lb).toFixed(2)} would go back if ${heavy} win, $${Math.min(la, lb).toFixed(2)} if ${light} win. New ${heavy} buyers now get ${pct(ha)} and ${light} buyers ${pct(hb)}, so the shop's cost stays close whoever wins.`;
+  const reason = `More ${heavy} fans have bought ($${Math.max(la, lb).toFixed(2)} would go back if ${heavy} win, $${Math.min(la, lb).toFixed(2)} if ${light} win). New ${heavy} buyers now get ${pct(ha)} and ${light} buyers ${pct(hb)}, so the shop's cost stays about the same whoever wins.`;
   const hash = await send(p.address, "setRates", [na, nb, reason]);
   return { changed: true, hash, reason };
 }
