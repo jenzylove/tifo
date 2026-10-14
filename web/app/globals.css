@@ -578,5 +578,6 @@ html, body { overflow-x: clip; }
 .reach-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .6s var(--ease); }
 .reach .fine { margin: 0; }
 .reach-on { margin: 2px 0 12px; color: var(--accent-deep); font-weight: 600; }
+.reach-pick { grid-template-columns: repeat(4, 1fr); }
 .reach-pick button:disabled { opacity: .35; cursor: default; }
 

@@ -73,6 +73,12 @@ try {
   await seller.page.getByPlaceholder(/Paste the download link/).fill("https://example.com/budget-planner-kit.zip");
   await seller.page.locator(".pick").first().waitFor({ timeout: 60_000 });
   await seller.page.waitForTimeout(700);
+  // QA_REACH: the offer only switches on once this many people buy (0 leaves it on from the first sale).
+  const REACH = Number(process.env.QA_REACH ?? 3);
+  if (REACH > 0) {
+    await seller.page.locator(".reach-pick button").filter({ hasText: new RegExp(`^${REACH}`) }).click();
+    await seller.page.getByText(`If fewer than ${REACH} people buy before kickoff`).waitFor({ timeout: 10_000 });
+  }
   await seller.shot("11-seller-form", true);
   await seller.page.getByRole("button", { name: /Get my link/ }).click();
   // Either the drop goes live, or the form says why not. Record whichever happens.
@@ -104,15 +110,21 @@ try {
   await buyer.page.goto(dropUrl, { waitUntil: "load" });
   await buyer.page.waitForTimeout(900);
   await buyer.shot("20-drop-phone", true);
+  if (REACH > 1) {
+    await buyer.page.getByText(`${REACH} more buyers switch the offer on.`).waitFor({ timeout: 10_000 });
+    log("drop shows", REACH, "buyers needed");
+  }
   await buyer.page.locator(".offer").first().click();
   await buyer.page.getByRole("button", { name: /^Pay / }).click();
   await buyer.page.waitForTimeout(500);
   await buyer.shot("21-pay-sheet", true);
   await buyer.page.getByRole("button", { name: /Create a wallet/ }).click();
-  await buyer.page.getByRole("button", { name: /Send from an exchange/ }).waitFor({ timeout: 90_000 });
+  const usdc = buyer.page.locator(".pay-ways > button").filter({ hasText: /^Pay with USDC/ });
+  await usdc.waitFor({ timeout: 90_000 });
   await buyer.page.waitForTimeout(800);
   await buyer.shot("22-pay-sheet-add-money", true);
-  await buyer.page.getByRole("button", { name: /Send from an exchange/ }).click();
+  await usdc.click();
+  await buyer.page.getByRole("button", { name: /From an exchange/ }).click();
   const address = (await buyer.page.evaluate(() => navigator.clipboard.readText())).trim();
   log("buyer wallet", address);
   execFileSync("cast", ["send", "0x3600000000000000000000000000000000000000", "transfer(address,uint256)", address, String(Math.round((Number(process.env.QA_PRICE ?? 5) + 0.04) * 1e6)), "--private-key", process.env.BACKUP_SELLER_PK, "--rpc-url", "https://rpc.testnet.arc.io"], { stdio: "ignore" });
@@ -129,6 +141,14 @@ try {
   await buyer.page.waitForTimeout(800);
   await buyer.shot("23-drop-phone-paid", true);
   log("buyer paid and opened the purchase");
+  if (REACH > 1) {
+    await buyer.page.goto(dropUrl, { waitUntil: "load" });
+    const left = REACH - 1;
+    await buyer.page.getByText(`${left} more ${left === 1 ? "buyer switches" : "buyers switch"} the offer on.`).waitFor({ timeout: 20_000 });
+    await buyer.page.getByText(`1 of ${REACH} so far`).waitFor({ timeout: 5_000 });
+    await buyer.shot("23b-drop-after-one-buyer", true);
+    log("after one buyer the drop shows", left, "more needed");
+  }
 
   // ---------- the seller's books after the sale: the money in, and the agent sending the seller's share on
   await seller.page.getByRole("button", { name: "Books" }).click();
