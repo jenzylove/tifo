@@ -4,6 +4,7 @@ import { erc20Abi, type Address } from "viem";
 import { USDC, explorerAddr, publicClient, usd } from "./chain";
 import { shortTeam } from "./matches";
 import { listPromos, promoJournal, promoOrders, promoState, type PromoMeta } from "./promos";
+import { readDeliveries } from "./shipments";
 import { accountOf, accountState, type AccountState } from "./tifoAccount";
 
 export interface DropRow {
@@ -80,23 +81,31 @@ export async function managerData(seller: Address): Promise<ManagerData> {
   const drops = await Promise.all(
     mine.map(async (p): Promise<DropRow> => {
       const st = await promoState(p.address);
-      const [orders, journal, held] = await Promise.all([
+      const [orders, journal, held, deliveries] = await Promise.all([
         promoOrders(p.address, st.ordersCount),
         promoJournal(p.address, st.journalCount),
         publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [p.address] }),
+        st.ordersCount ? readDeliveries(p.address, st.ordersCount).catch(() => null) : Promise.resolve(null),
       ]);
       const match = `${shortTeam(p.meta.teamA)} v ${shortTeam(p.meta.teamB)}`;
       const team = [shortTeam(p.meta.teamA), shortTeam(p.meta.teamB)];
       const link = explorerAddr(p.address);
-      for (const o of orders) {
+      orders.forEach((o, i) => {
         buyers.add(o.buyer.toLowerCase());
         feed.push({ at: o.at, drop: p.address, match, kind: "sale", text: `${team[o.side]} fan bought for $${(Number(o.amount) / 1e6).toFixed(2)} at ${o.rateBps / 100}% back` });
+        // A product that ships: the seller's share waits in the drop until the buyer has it.
+        const ship = deliveries?.list[i]?.state;
+        const rest =
+          ship === "Held" ? "The rest waits in the drop until you mark it sent and the buyer confirms it arrived."
+          : ship === "Sent" || ship === "Disputed" ? "The rest waits in the drop until the buyer confirms it arrived."
+          : ship === "Refunded" ? "The rest went back to the buyer because the order was not delivered."
+          : "The rest is yours now.";
         lines.push({
           at: o.at, kind: "in", amount: o.amount.toString(), drop: p.address, link,
           title: `${p.meta.product}, bought by a ${team[o.side]} fan`,
-          why: o.refund > 0n ? `${usd(o.refund)} of it is kept inside the drop until full time, in case ${team[o.side]} win. The rest is yours now.` : "Nothing is owed back on this order, so all of it is yours now.",
+          why: o.refund > 0n ? `${usd(o.refund)} of it is kept inside the drop until full time, in case ${team[o.side]} win. ${rest}` : `Nothing is owed back on this order if their team wins. ${rest}`,
         });
-      }
+      });
       for (const j of journal) {
         if (j.kind === "pair") {
           // "0x… (Arsenal) brought 0x… (Lille)": one buyer's challenge link brought the next.

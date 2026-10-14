@@ -536,3 +536,6 @@ html, body { overflow-x: clip; }
 .challenge { display: grid; gap: 8px; justify-items: start; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .challenge p { margin: 0; }
 .rival-note { margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); font-size: .92rem; }
+
+/* A field marked hidden stays hidden (the grid display on .field would otherwise show it). */
+.field[hidden] { display: none; }

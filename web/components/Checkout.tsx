@@ -14,6 +14,7 @@ import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
 import NairaTopUp from "./NairaTopUp";
+import SlotTime from "./SlotTime";
 import Purchase, { saveOrder } from "./Purchase";
 import { inAppBrowser, openOutside, type InApp } from "@/lib/inapp";
 
@@ -332,7 +333,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           <div className="chips">
             {slots!.map((x) => (
               <button key={x.i} className={slot === x.i ? "on" : ""} disabled={x.taken || closed} onClick={() => setSlot(x.i)} title={x.taken ? "Already booked" : ""}>
-                {slotLabel(x.at)}
+                <SlotTime iso={x.at} />
                 {x.taken ? " · booked" : ""}
               </button>
             ))}

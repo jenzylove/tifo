@@ -13,7 +13,8 @@ import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { coverLeft, lastFew, tierLabel } from "@/lib/offer";
 import { offerLabel } from "@/lib/precheck";
-import { bookedSlots, slotLabel } from "@/lib/booking";
+import { bookedSlots } from "@/lib/booking";
+import SlotTime from "@/components/SlotTime";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 
@@ -208,7 +209,9 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <ul>
             {p.meta.slots.map((t, i) => (
               <li key={t} className={booked[i] ? "taken" : ""}>
-                <b>{slotLabel(t)}</b>
+                <b>
+                  <SlotTime iso={t} />
+                </b>
                 <span>{booked[i] ? "Booked" : "Free"}</span>
               </li>
             ))}
