@@ -5,7 +5,10 @@ on:
     inputs:
       count:
         description: How many drops to open
-        default: "20"
+        default: "10"
+      after:
+        description: Only matches kicking off after this unix time (so new drops list above older ones). 0 for any
+        default: "0"
 jobs:
   seed:
     runs-on: ubuntu-latest
@@ -17,6 +20,7 @@ jobs:
       - run: npx tsx scripts/seed-practice.mts
         env:
           COUNT: ${{ inputs.count }}
+          AFTER: ${{ inputs.after }}
           FUNDER_PK: ${{ secrets.PRACTICE_FUNDER_PK }}
           FACTORY: ${{ secrets.PRACTICE_FACTORY }}
           PRACTICE_SEED: ${{ secrets.PRACTICE_SEED }}
