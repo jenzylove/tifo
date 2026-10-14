@@ -100,7 +100,7 @@ export default function Manager() {
             <Launch
               account={acct}
               sellerName={data.name}
-              tifoAccount={data.account?.address}
+              tifoAccount={data.account?.current ? data.account.address : undefined}
               prefill={prefill}
               onLaunched={() => {
                 // Stay on this tab: a first drop would otherwise flip the view to Overview and hide the new link.

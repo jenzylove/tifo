@@ -5,7 +5,7 @@ import { USDC, explorerAddr, publicClient, usd } from "./chain";
 import { shortTeam } from "./matches";
 import { listPromos, promoJournal, promoOrders, promoState, type PromoMeta } from "./promos";
 import { readDeliveries } from "./shipments";
-import { accountOf, accountState, type AccountState } from "./tifoAccount";
+import { accountOf, accountState, olderAccountsOf, type AccountState } from "./tifoAccount";
 
 export interface DropRow {
   address: Address;
@@ -69,10 +69,22 @@ export interface ManagerData {
 }
 
 export async function managerData(seller: Address): Promise<ManagerData> {
-  const [all, accountAddress] = await Promise.all([listPromos(), accountOf(seller).catch(() => null)]);
-  const owners = [seller.toLowerCase(), accountAddress?.toLowerCase()];
+  const [all, accountAddress, older] = await Promise.all([listPromos(), accountOf(seller).catch(() => null), olderAccountsOf(seller).catch(() => [] as Address[])]);
+  const owners = [seller.toLowerCase(), accountAddress?.toLowerCase(), ...older.map((a) => a.toLowerCase())];
   const mine = all.filter((p) => owners.includes(p.seller.toLowerCase()));
-  const account = accountAddress ? await accountState(accountAddress) : null;
+  // The account on the current factory runs new drops. Accounts from earlier factories keep their history in the books.
+  const states = await Promise.all([accountAddress, ...older].filter((a): a is Address => !!a).map((a) => accountState(a).catch(() => null)));
+  const [head, ...rest] = states.filter((x): x is AccountState => !!x);
+  const account: AccountState | null = head
+    ? {
+        ...head,
+        current: !!accountAddress,
+        balance: [head, ...rest].reduce((t, a) => t + BigInt(a.balance), 0n).toString(),
+        paidOut: [head, ...rest].reduce((t, a) => t + BigInt(a.paidOut), 0n).toString(),
+        deals: [head, ...rest].flatMap((a) => a.deals).sort((x, y) => y.at - x.at),
+        payouts: [head, ...rest].flatMap((a) => a.payouts).sort((x, y) => y.at - x.at),
+      }
+    : null;
   const now = Date.now() / 1000;
   const feed: FeedItem[] = [];
   const lines: BookLine[] = [];

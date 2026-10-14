@@ -1,7 +1,7 @@
 // A seller's TifoAccount: the standing rule they give their sales manager, read from Arc.
 import type { Address } from "viem";
 import { erc20Abi, tifoAccountAbi, tifoFactoryAbi } from "./abi";
-import { FACTORY, USDC, publicClient } from "./chain";
+import { FACTORY, USDC, publicClient, OLD_FACTORIES } from "./chain";
 import type { PromoMeta } from "./promos";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -46,12 +46,24 @@ export interface AccountState {
   deals: AccountDeal[]; // newest first
   payouts: AccountPayout[]; // newest first
   proposals: AccountProposal[];
+  current?: boolean; // false for an account on an earlier factory: its history shows, new drops need a current account
 }
 
 export async function accountOf(owner: Address): Promise<Address | null> {
   if (/^0x0+$/.test(FACTORY)) return null;
   const a = await publicClient.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "accountOf", args: [owner] });
   return a === ZERO ? null : a;
+}
+
+/** Accounts this seller opened on earlier factories. Their drops and payouts stay in the seller's books; new drops
+ * open through an account on the current factory. */
+export async function olderAccountsOf(owner: Address): Promise<Address[]> {
+  if (!OLD_FACTORIES.length) return [];
+  const r = await publicClient.multicall({
+    allowFailure: true,
+    contracts: OLD_FACTORIES.map((f) => ({ address: f, abi: tifoFactoryAbi, functionName: "accountOf", args: [owner] }) as const),
+  });
+  return r.flatMap((x) => (x.status === "success" && x.result !== ZERO ? [x.result as Address] : []));
 }
 
 const STATUS = ["waiting", "approved", "declined"] as const;
@@ -81,7 +93,7 @@ export async function accountState(address: Address): Promise<AccountState> {
     Number(payoutsCount) ? publicClient.readContract({ ...c, functionName: "getPayouts", args: last(payoutsCount, 100) }) : [],
   ]);
   const n = Number(count);
-  const raw = n ? await publicClient.readContract({ ...c, functionName: "getProposals", args: [BigInt(Math.max(0, n - 20)), 20n] }) : [];
+  const raw = n ? await publicClient.readContract({ ...c, functionName: "getProposals", args: [BigInt(Math.max(0, n - 20)), 20n] }).catch(() => []) : [];
   const first = Math.max(0, n - 20);
   const proposals = raw
     .map((p, i): AccountProposal => {
