@@ -134,8 +134,71 @@ export function preparePasskey(): Promise<Prepared> {
 /** True once options are ready, so a tap can open Face ID / fingerprint immediately. */
 export const passkeyReady = () => !!prepared && Date.now() - prepared.at < FRESH_MS;
 
+const b64u = (b: ArrayBuffer | null | undefined) =>
+  b ? btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : undefined;
+
+/**
+ * A passkey credential as WebAuthn JSON, the shape Circle's passkey service reads. Circle's SDK sends the browser's
+ * credential object as it is and relies on its toJSON(). Safari before 18.4 has no toJSON on passkey credentials,
+ * so the credential went out as an empty object and Circle answered "API parameter invalid" to every iPhone on an
+ * older iOS, both when creating a wallet and when signing in.
+ */
+function credentialJson(c: PublicKeyCredential): unknown {
+  const own = (c as unknown as { toJSON?: () => unknown }).toJSON;
+  if (typeof own === "function") return own.call(c);
+  const r = c.response as AuthenticatorAttestationResponse & AuthenticatorAssertionResponse;
+  const response: Record<string, unknown> = { clientDataJSON: b64u(r.clientDataJSON) };
+  if ("attestationObject" in r && r.attestationObject) {
+    response.attestationObject = b64u(r.attestationObject);
+    response.transports = r.getTransports?.() ?? [];
+    const pk = r.getPublicKey?.();
+    if (pk) response.publicKey = b64u(pk);
+    const alg = r.getPublicKeyAlgorithm?.();
+    if (alg !== undefined) response.publicKeyAlgorithm = alg;
+    const ad = r.getAuthenticatorData?.();
+    if (ad) response.authenticatorData = b64u(ad);
+  } else {
+    response.authenticatorData = b64u(r.authenticatorData);
+    response.signature = b64u(r.signature);
+    if (r.userHandle) response.userHandle = b64u(r.userHandle);
+  }
+  return {
+    id: c.id,
+    rawId: b64u(c.rawId),
+    type: c.type,
+    response,
+    authenticatorAttachment: (c as PublicKeyCredential & { authenticatorAttachment?: string | null }).authenticatorAttachment ?? undefined,
+    clientExtensionResults: c.getClientExtensionResults?.() ?? {},
+  };
+}
+
 /** Create a new passkey wallet, or sign in with an existing passkey on this device. */
 export async function connectCircle(mode: "register" | "login"): Promise<SmartAccount> {
+  try {
+    return await connectOnce(mode);
+  } catch (e) {
+    // Fresh options for the next tap, so an iPhone opens Face ID straight away when the person tries again.
+    prepared = null;
+    preparePasskey().catch(() => {});
+    // Tell our own log what failed and on which browser, so a sign up problem can be fixed without a screenshot.
+    try {
+      const body = JSON.stringify({
+        stage: `connect-${mode}`,
+        network: NETWORK,
+        host: location.hostname,
+        ua: navigator.userAgent,
+        nativeToJSON: typeof (globalThis.PublicKeyCredential?.prototype as unknown as { toJSON?: unknown })?.toJSON,
+        error: errorText(e).slice(0, 1200),
+      });
+      fetch("/api/diag", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
+    } catch {
+      // reporting must never get in the way of the next try
+    }
+    throw e;
+  }
+}
+
+async function connectOnce(mode: "register" | "login"): Promise<SmartAccount> {
   const ready = passkeyReady() ? prepared! : await preparePasskey();
   prepared = null; // options are single use
   const rp = createRpClient({ transport: toPasskeyTransport(CLIENT_URL, CLIENT_KEY) });
@@ -146,7 +209,7 @@ export async function connectCircle(mode: "register" | "login"): Promise<SmartAc
       publicKey: { ...o, challenge: base64UrlToBytes(o.challenge), user: { ...o.user, id: base64UrlToBytes(o.user.id) } } as PublicKeyCredentialCreationOptions,
     })) as PublicKeyCredential | null;
     if (!cred) throw new Error("No passkey was created.");
-    await getRegistrationVerification(rp, { credential: cred as never });
+    await getRegistrationVerification(rp, { credential: credentialJson(cred) as never });
     const pub = await parseCredentialPublicKey((cred.response as AuthenticatorAttestationResponse).getPublicKey()!);
     credential = { id: cred.id, publicKey: serializePublicKey(pub, { compressed: true }), raw: cred as never };
   } else {
@@ -159,7 +222,7 @@ export async function connectCircle(mode: "register" | "login"): Promise<SmartAc
       } as PublicKeyCredentialRequestOptions,
     })) as PublicKeyCredential | null;
     if (!cred) throw new Error("No passkey was chosen.");
-    const { publicKey } = await getLoginVerification(rp, { credential: cred as never });
+    const { publicKey } = await getLoginVerification(rp, { credential: credentialJson(cred) as never });
     const pub = parsePublicKey(await cryptoKeyToBytes(await bytesToCryptoKey(base64UrlToBytes(publicKey))));
     credential = { id: cred.id, publicKey: serializePublicKey(pub, { compressed: true }), raw: cred as never };
   }
