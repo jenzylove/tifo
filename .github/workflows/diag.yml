@@ -1,0 +1,13 @@
+name: wallet diagnostics
+# Read-only: prints the latest refused-wallet reports the site collected at /api/diag (addresses, public keys,
+# browser names and error text; nothing secret).
+on: workflow_dispatch
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TICK_SECRET: ${{ secrets.TICK_SECRET }}
+          TIFO_URL: ${{ secrets.TIFO_URL }}
+        run: |
+          curl -sS -m 60 -H "Authorization: Bearer $TICK_SECRET" "${TIFO_URL:-https://tifo.vercel.app}/api/diag" | jq '.reports[] | {at, stage, wallet, network, host, ua, error, localVerify, userVerified, op}' | head -c 60000
