@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://tifo.vercel.app"><img src="https://img.shields.io/badge/live-tifo.vercel.app-111114" alt="Live site"></a>
   <a href="https://youtu.be/KK74r_sll74"><img src="https://img.shields.io/badge/demo-2%20min%20video-f3f25c?logo=youtube&logoColor=111114" alt="Demo video"></a>
-  <a href="https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac"><img src="https://img.shields.io/badge/Arc-mainnet-a78bfa" alt="Tifo on Arc mainnet"></a>
+  <a href="https://explorer.arc.io/address/0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E"><img src="https://img.shields.io/badge/Arc-mainnet-a78bfa" alt="Tifo on Arc mainnet"></a>
   <a href="https://github.com/jenzylove/tifo/actions/workflows/test.yml"><img src="https://github.com/jenzylove/tifo/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="https://tameion.thecanteenapp.com"><img src="https://img.shields.io/badge/built%20for-Tameion%20Agents%20Hackathon-111114" alt="Built for the Tameion Agents Hackathon"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6d4bf5" alt="MIT licence"></a>
@@ -42,7 +42,7 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 | The agent's record, read from the chain | https://tifo.vercel.app/proof |
 | First payout on mainnet | [`0xf0a800df…e0d8b1`](https://explorer.arc.io/tx/0xf0a800df76bb0d45f03ef5f81c5f30faff67f07e45712dfa20b3d7339ce0d8b1) |
 | Try it with free test money | https://tifo-test.vercel.app |
-| Contracts on Arc mainnet | [`TifoFactory 0x52619A7F…0745Ac`](https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac) |
+| Contracts on Arc mainnet | [`TifoFactory 0x0d61355A…EAEd9E`](https://explorer.arc.io/address/0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E) |
 | What works, with transactions | [docs/BUILD_LOG.md](docs/BUILD_LOG.md) |
 | Plan and acceptance tests | [docs/PRD.md](docs/PRD.md) |
 
@@ -108,12 +108,12 @@ The hackathon's required reading, [Agents and Ledgers in 2026](https://thecantee
 
 | Contract | What it holds | Address on Arc mainnet |
 |---|---|---|
-| [`TifoFactory`](contracts/src/TifoFactory.sol) | Every drop and account, readable in one call | [`0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac`](https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac) |
+| [`TifoFactory`](contracts/src/TifoFactory.sol) | Every drop and account, readable in one call | [`0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E`](https://explorer.arc.io/address/0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E) |
 | [`TifoPromo`](contracts/src/TifoPromo.sol) | One drop: its orders, refund reserve, delivery holds and the agent's journal | one per drop |
 | [`TifoAccount`](contracts/src/TifoAccount.sol) | A seller's weekly rule, proposals, payout wallet and payouts | one per seller |
 | [`TifoFloat`](contracts/src/TifoFloat.sol) | USDC for naira payments, with ceilings per release and per day | [`0x19D149bA7A767A28502908Fa117AE84f4f9B35ee`](https://explorer.arc.io/address/0x19D149bA7A767A28502908Fa117AE84f4f9B35ee) |
 
-The first mainnet factory, [`0x9cda0b64…876CEE`](https://explorer.arc.io/address/0x9cda0b646353dAc380156dAedc30892323876CEE), stays listed and keeps settling its drops. The practice version runs the same contracts on Arc testnet.
+Earlier mainnet factories, [`0x9cda0b64…876CEE`](https://explorer.arc.io/address/0x9cda0b646353dAc380156dAedc30892323876CEE) and [`0x52619A7F…0745Ac`](https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac), stay listed and keep settling their drops. The practice version runs the same contracts on Arc testnet.
 
 ## Run it
 
