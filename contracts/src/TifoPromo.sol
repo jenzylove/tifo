@@ -21,6 +21,8 @@ interface IERC20 {
 /// It has no path to move funds anywhere except buyers' refunds and the seller's remainder.
 /// For physical products (`holdSecs` > 0) the seller's share of each sale is held until the buyer confirms delivery,
 /// or `holdSecs` after the seller marks it sent; if the seller never marks it sent, the buyer can take it back.
+/// A seller can make the offer depend on reach (`minBuyers`): unless that many different wallets buy before kickoff,
+/// nobody is paid back and the seller keeps every sale.
 contract TifoPromo {
     enum Outcome {
         None,
@@ -82,6 +84,7 @@ contract TifoPromo {
     uint16 public immutable floorBps; // offer once a side's budget is used up at the current rate
     uint16 public immutable drawBps; // thank you paid to every buyer on a draw
     uint32 public immutable holdSecs; // 0: pay the seller at sale. Otherwise hold until delivery (see Shipment)
+    uint32 public immutable minBuyers; // the offer only pays out once this many different wallets bought (0 or 1: from the first sale)
 
     uint16[2] public rateBps;
     uint256[2] public liability;
@@ -89,6 +92,7 @@ contract TifoPromo {
     mapping(bytes32 => bool) public usedRef; // an order reference pays once, so a retried checkout cannot charge twice
     uint256 public salesTotal;
     uint256 public reserve;
+    uint32 public buyers; // different wallets that bought
 
     Order[] public orders;
     Entry[] internal journal;
@@ -150,7 +154,8 @@ contract TifoPromo {
         uint16 rateB_,
         uint16 floorBps_,
         uint16 drawBps_,
-        uint32 holdSecs_
+        uint32 holdSecs_,
+        uint32 minBuyers_
     ) {
         require(holdSecs_ <= MAX_HOLD, "hold");
         require(minBps_ <= maxBps_ && maxBps_ <= BPS, "bounds");
@@ -171,6 +176,12 @@ contract TifoPromo {
         floorBps = floorBps_;
         drawBps = drawBps_;
         holdSecs = holdSecs_;
+        minBuyers = minBuyers_;
+    }
+
+    /// @notice True once enough different wallets bought for the offer to pay out.
+    function offerOn() public view returns (bool) {
+        return buyers >= minBuyers;
     }
 
     // ---------------------------------------------------------------- buying
@@ -237,6 +248,7 @@ contract TifoPromo {
         drawLiability = dl;
         reserve = newReserve;
         salesTotal += amount;
+        if (s == 0) buyers++;
         sideOf[buyer] = side + 1;
         orders.push(Order(buyer, side, amount, rate, dRate, uint64(block.timestamp)));
 
@@ -326,6 +338,11 @@ contract TifoPromo {
         Outcome o = finalOutcome;
         if (o == Outcome.None) revert NotFinal();
         uint256 n = orders.length;
+        if (!offerOn()) {
+            // Too few buyers for the offer to switch on: nobody is paid back, the seller keeps every sale.
+            refundCursor = n;
+            return 0;
+        }
         uint256 i = refundCursor;
         uint256 end = i + maxCount > n ? n : i + maxCount;
         if (o == Outcome.A || o == Outcome.B) {
@@ -360,7 +377,7 @@ contract TifoPromo {
 
     function releaseRemainder() external {
         if (finalOutcome == Outcome.None) revert NotFinal();
-        if (refundCursor < orders.length && finalOutcome != Outcome.Void) revert RefundsPending();
+        if (refundCursor < orders.length && finalOutcome != Outcome.Void && offerOn()) revert RefundsPending();
         require(!remainderReleased, "released");
         remainderReleased = true;
         uint256 amt = reserve;

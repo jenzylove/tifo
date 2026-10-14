@@ -35,6 +35,7 @@ interface Props {
   digital: boolean; // the product opens on this page after payment
   contact?: string; // for a physical product: where the buyer sends delivery details
   slots?: { i: number; at: string; taken: boolean }[]; // a bookable service: the times on offer
+  reach?: { need: number; have: number } | null; // the offer switches on once `need` different people bought
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
@@ -47,7 +48,7 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach }: Props) {
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
   // Opened from another buyer's challenge link: which side they backed, and (if the link says) their wallet.
@@ -299,7 +300,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         {!closed && (
           <div className="challenge">
             <b>Know a {teams[other]} fan?</b>
-            <p className="fine">Send them this drop, already set to {teams[other]}. The one whose team wins gets money back.</p>
+            <p className="fine">
+              Send them this drop, already set to {teams[other]}. The one whose team wins gets money back.
+              {reach && reach.have < reach.need ? ` The offer switches on once ${reach.need} people buy, so every share counts.` : ""}
+            </p>
             <button className="btn sm ac" onClick={challenge}>
               {shared ? "Sent. Challenge another" : `Challenge a ${teams[other]} fan`}
             </button>
@@ -318,6 +322,20 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           </p>
         )}
         <h4>Pick your side</h4>
+        {reach && reach.have < reach.need && (
+          <div className="reach">
+            <div className="reach-bar" aria-hidden>
+              <i style={{ width: `${Math.max(6, Math.min(100, (reach.have / reach.need) * 100))}%` }} />
+            </div>
+            <p className="fine">
+              <b>
+                {reach.need - reach.have} more {reach.need - reach.have === 1 ? "buyer switches" : "buyers switch"} the offer on.
+              </b>{" "}
+              {reach.have} of {reach.need} so far. If fewer buy before kickoff, everyone keeps what they bought at full price.
+            </p>
+          </div>
+        )}
+        {reach && reach.have >= reach.need && <p className="fine reach-on">Offer on: {reach.have} people bought.</p>}
         <div className="offers-list">
           {[0, 1].map((i) => {
             const s = i as 0 | 1;

@@ -28,7 +28,7 @@ contract TifoPayoutTest is Test {
 
     /// 50% back for every buyer, $40 at most.
     function _terms(uint256 cap) internal view returns (TifoAccount.Terms memory) {
-        return TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, cap, 5000, 5000, 5000, 5000, 0, 500, 0);
+        return TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, cap, 5000, 5000, 5000, 5000, 0, 500, 0, 0);
     }
 
     function _fan(uint256 i, TifoPromo promo, uint8 side, uint256 amt) internal returns (address u) {

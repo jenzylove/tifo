@@ -405,11 +405,11 @@ export async function createAccountAndOpenWithCircle(
   payout: Address,
   args: NonNullable<CreatePromoArgs>,
 ): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, meta] = args;
   const data = encodeFunctionData({
     abi: tifoFactoryAbi,
     functionName: "createAccountAndOpen",
-    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
+    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers }, meta],
   });
   return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     // The factory logs the new drop (PromoCreated, drop address first) and the new account (AccountCreated).
@@ -443,11 +443,11 @@ export async function withdrawFromAccountWithCircle(account: SmartAccount, tifoA
 
 /** Open a drop through the seller's account, so its sales land there and it counts toward the week. */
 export async function openViaAccountWithCircle(account: SmartAccount, tifoAccount: Address, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, meta] = args;
   const data = encodeFunctionData({
     abi: tifoAccountAbi,
     functionName: "open",
-    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
+    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers }, meta],
   });
   return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());

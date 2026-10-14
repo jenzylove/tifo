@@ -28,7 +28,7 @@ contract TifoDeliveryTest is Test {
     function _drop(uint32 hold) internal returns (TifoPromo p) {
         vm.prank(seller);
         // $10 budget, 50% back: the seller's share of a $10 sale is $5 once the first buyer's $5 reserve is held.
-        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, hold, "{}"));
+        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, hold, 0, "{}"));
     }
 
     function _buy(TifoPromo p, uint256 i, uint8 side, uint256 amt) internal returns (address u) {
@@ -158,7 +158,7 @@ contract TifoDeliveryTest is Test {
         TifoAccount acct = TifoAccount(factory.createAccount(0, 100e6, 50e6, address(0)));
         vm.prank(seller);
         TifoPromo p = TifoPromo(
-            acct.open(TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, HOLD), "{}")
+            acct.open(TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, HOLD, 0), "{}")
         );
         address buyer = _buy(p, 1, 0, 10e6);
         vm.prank(seller); // the person behind the account, not the account contract
@@ -171,6 +171,6 @@ contract TifoDeliveryTest is Test {
     function test_holdIsCapped() public {
         vm.prank(seller);
         vm.expectRevert(bytes("hold"));
-        factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, 31 days, "{}");
+        factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, 31 days, 0, "{}");
     }
 }

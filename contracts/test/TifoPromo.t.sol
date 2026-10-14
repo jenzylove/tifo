@@ -52,7 +52,7 @@ contract TifoPromoTest is Test {
         factory = new TifoFactory(address(usdc), agent, operator);
         kickoff = uint64(block.timestamp + 1 days);
         vm.prank(seller);
-        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, "{}"));
+        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, "{}"));
         for (uint256 i; i < 3; i++) {
             address u = [a1, a2, b1][i];
             usdc.mint(u, 1_000e6);
@@ -217,7 +217,7 @@ contract TifoPromoInvariant is Test {
         vm.warp(1_000_000);
         usdc = new MockUSDC();
         address agent = makeAddr("agent");
-        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000, 300, 500, 0);
+        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000, 300, 500, 0, 0);
         handler = new Handler(promo, usdc, agent, seller);
         targetContract(address(handler));
     }
@@ -256,7 +256,7 @@ contract TifoPermitTest is Test {
         vm.warp(1_000_000);
         PermitUSDC usdc = new PermitUSDC();
         address seller = makeAddr("seller");
-        TifoPromo promo = new TifoPromo(address(usdc), seller, makeAddr("agent"), makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 100e6, 500, 6000, 3000, 4000, 0, 0, 0);
+        TifoPromo promo = new TifoPromo(address(usdc), seller, makeAddr("agent"), makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0);
         (address fan, uint256 pk) = makeAddrAndKey("fan");
         usdc.mint(fan, 20e6);
         uint256 deadline = block.timestamp + 1 hours;

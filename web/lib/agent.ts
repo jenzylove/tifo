@@ -83,7 +83,12 @@ async function step(p: PromoSummary, now: number): Promise<TickResult | null> {
   if (st.finalOutcome !== "None") {
     // A win pays the winning side; a draw pays every buyer the thank you. Only a voided match pays nobody.
     const owed = st.finalOutcome !== "Void";
-    if (owed && st.refundCursor < st.ordersCount) return { promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) };
+    if (owed && st.refundCursor < st.ordersCount) {
+      // Too few buyers for the offer to switch on: say so in the drop's own log before closing the books on it.
+      if (st.buyers < st.minBuyers)
+        await send(p.address, "note", ["offer off", `${st.buyers} of the ${st.minBuyers} buyers needed bought, so the offer stayed off. Every sale goes to the seller.`]).catch(() => {});
+      return { promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) };
+    }
     if (!st.remainderReleased) return { promo: p.address, action: "release remainder", hash: await send(p.address, "releaseRemainder", []) };
     return null;
   }

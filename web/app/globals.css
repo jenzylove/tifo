@@ -572,3 +572,11 @@ html, body { overflow-x: clip; }
 .pay-sheet .switch { margin-top: 10px; justify-self: start; }
 .naira-amount { margin: 4px 0 0; font-size: 2.4rem; font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 
+/* The offer switches on with enough buyers: a thin bar and one line. */
+.reach { display: grid; gap: 8px; margin: 2px 0 12px; }
+.reach-bar { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.reach-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width .6s var(--ease); }
+.reach .fine { margin: 0; }
+.reach-on { margin: 2px 0 12px; color: var(--accent-deep); font-weight: 600; }
+.reach-pick button:disabled { opacity: .35; cursor: default; }
+

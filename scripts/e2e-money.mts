@@ -35,7 +35,7 @@ const meta = {
 };
 const createHash = await seller.writeContract({
   address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo",
-  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 2n * PRICE, 10_000, 10_000, 10_000, 10_000, 0, 500, 0, JSON.stringify(meta)],
+  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 2n * PRICE, 10_000, 10_000, 10_000, 10_000, 0, 500, 0, 0, JSON.stringify(meta)],
 });
 const rc = await pub.waitForTransactionReceipt({ hash: createHash });
 const promo = `0x${rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase())!.topics[1]!.slice(26)}` as Hex;

@@ -27,6 +27,7 @@ export interface PromoMeta {
   backBps?: number; // the tier the seller chose: 2500, 5000 or 10000
   slots?: string[]; // a bookable service: the times on offer (ISO). Stock is the number of slots
   stock?: number; // how many the seller has; with backBps it sets the cap (stock x price x share back)
+  minBuyers?: number; // the offer only pays out once this many people bought (the contract holds the real value)
   baseRates: [number, number];
   minBps: number;
   maxBps: number;
@@ -101,6 +102,8 @@ export interface PromoState {
   floorBps: number;
   drawBps: number;
   drawLiability: bigint;
+  minBuyers: number; // 0 or 1: the offer works from the first sale
+  buyers: number; // different wallets that bought
 }
 
 export async function promoState(address: Address, src: Source = mainSource): Promise<PromoState> {
@@ -124,6 +127,8 @@ export async function promoState(address: Address, src: Source = mainSource): Pr
     ],
   });
   const [rateA, rateB, la, lb, reserve, cap, count] = r[0] as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
+  // Drops made before the threshold existed do not have these two; they work from the first sale.
+  const [mb, nb] = await src.client.multicall({ allowFailure: true, contracts: [{ ...c, functionName: "minBuyers" }, { ...c, functionName: "buyers" }] });
   return {
     rates: [rateA, rateB],
     liability: [la, lb],
@@ -142,6 +147,8 @@ export async function promoState(address: Address, src: Source = mainSource): Pr
     floorBps: Number(r[10]),
     drawBps: Number(r[11]),
     drawLiability: r[12] as bigint,
+    minBuyers: mb.status === "success" ? Number(mb.result) : 0,
+    buyers: nb.status === "success" ? Number(nb.result) : 0,
   };
 }
 

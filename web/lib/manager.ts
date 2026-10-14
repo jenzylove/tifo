@@ -136,7 +136,10 @@ export async function managerData(seller: Address): Promise<ManagerData> {
         else
           lines.push({
             at, kind: "decision", amount: null, drop: p.address, link,
-            title: `${match}: ${winner ? `${winner} won` : st.finalOutcome === "Draw" ? "a draw" : "match voided"}, nothing owed back`,
+            title:
+              st.buyers < st.minBuyers && st.finalOutcome !== "Void"
+                ? `${match}: ${st.buyers} of ${st.minBuyers} buyers, so the offer stayed off and you kept every sale`
+                : `${match}: ${winner ? `${winner} won` : st.finalOutcome === "Draw" ? "a draw" : "match voided"}, nothing owed back`,
             why: sources,
           });
       }
