@@ -10,4 +10,5 @@ jobs:
           TICK_SECRET: ${{ secrets.TICK_SECRET }}
           TIFO_URL: ${{ secrets.TIFO_URL }}
         run: |
-          curl -sS -m 60 -H "Authorization: Bearer $TICK_SECRET" "${TIFO_URL:-https://tifo.vercel.app}/api/diag" | jq '.reports[] | {at, stage, wallet, network, host, ua, error, localVerify, userVerified, op}' | head -c 60000
+          curl -sS -m 60 -H "Authorization: Bearer $TICK_SECRET" "${TIFO_URL:-https://tifo.vercel.app}/api/diag" > r.json
+          jq -c '.reports[:9][] | {at, stage, wallet, network, host, ua: (.ua // "" | .[0:90]), error: (.error // "" | .[0:700]), localVerify, userVerified, deployed: (.op.factory == null)}' r.json | while read -r l; do echo "::notice::$l"; done
