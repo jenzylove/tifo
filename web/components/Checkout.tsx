@@ -13,6 +13,7 @@ import { slotLabel, slotRef } from "@/lib/booking";
 import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
+import NairaTopUp from "./NairaTopUp";
 import Purchase, { saveOrder } from "./Purchase";
 import { inAppBrowser, openOutside, type InApp } from "@/lib/inapp";
 
@@ -60,6 +61,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [cardOn, setCardOn] = useState(false); // card payments are set up on this deployment
   const [card, setCard] = useState(false);
   const [bridge, setBridge] = useState(false);
+  const [nairaOn, setNairaOn] = useState(false); // paying in naira (through Bachs) is set up on this deployment
+  const [naira, setNaira] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
   const [linkCopied, setLinkCopied] = useState(false);
@@ -68,10 +71,20 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   useEffect(() => {
     fetch("/api/onramp/sessions").then((r) => r.json()).then((j) => setCardOn(!!j.enabled)).catch(() => {});
+    fetch("/api/naira/start").then((r) => r.json()).then((j) => setNairaOn(!!j.enabled)).catch(() => {});
     setHasSaved(!!savedCredential());
     setBio(biometric());
     if (circleEnabled() && !closed) preparePasskey().catch(() => {});
   }, [closed]);
+  useEffect(() => {
+    // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
+    const id = new URLSearchParams(location.search).get("checkout_id");
+    if (!id || !/^chk_[A-Za-z0-9]+$/.test(id)) return;
+    fetch("/api/naira/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ checkoutId: id }) }).catch(() => {});
+    const url = new URL(location.href);
+    url.searchParams.delete("checkout_id");
+    history.replaceState(history.state, "", url);
+  }, []);
   useEffect(() => {
     if (!acct) return;
     walletSide(promo, acct.address)
@@ -383,6 +396,12 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                     </button>
                   </p>
                   <div className="pay-ways">
+                    {nairaOn && (
+                      <button onClick={() => setNaira(true)}>
+                        <b>Pay in naira</b>
+                        <span>Bank transfer or card, through Bachs</span>
+                      </button>
+                    )}
                     {cardOn && (
                       <button onClick={() => setCard(true)}>
                         <b>Card or bank transfer</b>
@@ -426,6 +445,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           document.body,
         )}
       {bridge && acct && <BridgeTopUp recipient={acct.address} neededUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setBridge(false)} />}
+      {naira && acct && <NairaTopUp address={acct.address} promo={promo} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setNaira(false)} />}
       {card && acct && <CardTopUp address={acct.address} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setCard(false)} />}
       {status.kind === "working" && <p className="status">{status.text}</p>}
       {status.kind === "error" && <p className="status err">{status.text}</p>}
