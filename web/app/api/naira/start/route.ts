@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAddress, getAddress } from "viem";
 import { z } from "zod";
 import { limit, tooMany } from "@/lib/ratelimit";
-import { nairaConfig, quote, startCheckout, usdToUnits, why } from "@/lib/naira";
+import { nairaConfig, nairaMissing, quote, startCheckout, usdToUnits, why } from "@/lib/naira";
 
 export const maxDuration = 60;
 
@@ -13,7 +13,7 @@ const no = { "cache-control": "no-store" };
 
 export function GET(req: Request) {
   const cfg = nairaConfig();
-  if (!cfg) return NextResponse.json({ enabled: false }, { headers: no });
+  if (!cfg) return NextResponse.json({ enabled: false, missing: nairaMissing() }, { headers: no });
   const out: { enabled: true; rate: number; maxUsd: number; ngn?: string } = { enabled: true, rate: cfg.rate, maxUsd: cfg.maxUsd };
   const usd = new URL(req.url).searchParams.get("usd");
   const units = usd === null ? null : usdToUnits(Number(usd));

@@ -47,6 +47,23 @@ export function nairaConfig(env: Record<string, string | undefined> = process.en
   };
 }
 
+/**
+ * What still has to be set before naira payments can run, as plain names. Never a value: it only says which setting is
+ * absent, or that the key is for the other network (a test key on the real site, or a live key on the practice site).
+ */
+export function nairaMissing(env: Record<string, string | undefined> = process.env): string[] {
+  const clean = (v?: string) => (v ?? "").trim().replace(/^["']|["']$/g, "");
+  const key = clean(env.BACHS_SECRET_KEY);
+  const rate = Number(clean(env.NAIRA_PER_USD));
+  const out: string[] = [];
+  if (!key) out.push("key");
+  else if ((clean(env.NEXT_PUBLIC_NETWORK) !== "testnet") !== key.startsWith("sk_live_")) out.push(key.startsWith("sk_live_") ? "live key on the practice site" : "test key on the real site");
+  if (!Number.isFinite(rate) || rate < 0.01) out.push("rate");
+  if (!isAddress(clean(env.NAIRA_FLOAT))) out.push("float");
+  if (!clean(env.BACHS_WEBHOOK_SECRET)) out.push("webhook secret");
+  return out;
+}
+
 /** True only when the key, the rate and the float address are all set. */
 export function nairaEnabled(): boolean {
   return nairaConfig() !== null;

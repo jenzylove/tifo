@@ -193,7 +193,7 @@ describe("start", () => {
     expect(await (await startInfo(new Request("https://tifo.example/api/naira/start"))).json()).toMatchObject({ maxUsd: 20 });
     vi.stubEnv("BACHS_SECRET_KEY", "");
     const off = await startInfo(new Request("https://tifo.example/api/naira/start"));
-    expect(await off.json()).toEqual({ enabled: false });
+    expect(await off.json()).toMatchObject({ enabled: false });
   });
 
   it("GET with ?usd= also gives the naira price, rounded up to 10 naira", async () => {
