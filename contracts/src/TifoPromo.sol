@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+interface ISellerOwner {
+    function owner() external view returns (address);
+}
+
 interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
@@ -15,6 +19,8 @@ interface IERC20 {
 /// forwards everything else to the seller the moment a sale lands. That bill can never exceed `cap`.
 /// The agent can only change offers for future orders, propose a result, and push refunds.
 /// It has no path to move funds anywhere except buyers' refunds and the seller's remainder.
+/// For physical products (`holdSecs` > 0) the seller's share of each sale is held until the buyer confirms delivery,
+/// or `holdSecs` after the seller marks it sent; if the seller never marks it sent, the buyer can take it back.
 contract TifoPromo {
     enum Outcome {
         None,
@@ -41,7 +47,25 @@ contract TifoPromo {
         string text;
     }
 
+    /// Delivery of one order, for drops that hold payment until the product arrives.
+    enum Delivery {
+        None, // digital, or the drop does not hold payment
+        Held, // paid; waiting for the seller to send
+        Sent, // the seller marked it sent; the buyer can confirm or dispute
+        Disputed, // the buyer says it did not arrive; the operator decides
+        Released, // paid to the seller
+        Refunded // returned to the buyer
+    }
+
+    struct Shipment {
+        Delivery state;
+        uint64 sentAt;
+        uint256 held; // the seller's share of this order, kept here until delivery
+        string tracking; // courier and tracking link or number, as the seller gave it
+    }
+
     uint256 public constant BPS = 10_000;
+    uint256 public constant MAX_HOLD = 30 days;
     uint256 public constant CHALLENGE_WINDOW = 15 minutes;
     uint256 public constant ABANDON_AFTER = 3 days;
 
@@ -57,6 +81,7 @@ contract TifoPromo {
     uint16 public immutable maxBps;
     uint16 public immutable floorBps; // offer once a side's budget is used up at the current rate
     uint16 public immutable drawBps; // thank you paid to every buyer on a draw
+    uint32 public immutable holdSecs; // 0: pay the seller at sale. Otherwise hold until delivery (see Shipment)
 
     uint16[2] public rateBps;
     uint256[2] public liability;
@@ -69,6 +94,8 @@ contract TifoPromo {
     Entry[] internal journal;
     uint256 public refundedTotal;
     mapping(address => uint8) public sideOf; // 0 = none, 1 = A, 2 = B
+    Shipment[] internal shipments; // one per order, same index
+    uint256 public escrowed; // held for deliveries, separate from the refund reserve
 
     Outcome public proposed;
     uint64 public proposedAt;
@@ -85,6 +112,9 @@ contract TifoPromo {
     event Finalized(Outcome outcome);
     event Refunded(address indexed buyer, uint256 amount);
     event RemainderReleased(uint256 amount);
+    event DeliverySent(uint256 indexed order, string tracking);
+    event DeliveryDisputed(uint256 indexed order);
+    event DeliveryReleased(uint256 indexed order, address to, uint256 amount, bool toBuyer);
 
     error NotAgent();
     error NotOperator();
@@ -101,6 +131,9 @@ contract TifoPromo {
     error BadOutcome();
     error RefundsPending();
     error TransferFailed();
+    error NotSeller();
+    error NotBuyer();
+    error BadState();
 
     constructor(
         address usdc_,
@@ -116,8 +149,10 @@ contract TifoPromo {
         uint16 rateA_,
         uint16 rateB_,
         uint16 floorBps_,
-        uint16 drawBps_
+        uint16 drawBps_,
+        uint32 holdSecs_
     ) {
+        require(holdSecs_ <= MAX_HOLD, "hold");
         require(minBps_ <= maxBps_ && maxBps_ <= BPS, "bounds");
         require(floorBps_ <= minBps_ && drawBps_ <= BPS, "floor");
         require(settleNotBefore_ >= closesAt_, "times");
@@ -135,6 +170,7 @@ contract TifoPromo {
         rateBps = [rateA_, rateB_];
         floorBps = floorBps_;
         drawBps = drawBps_;
+        holdSecs = holdSecs_;
     }
 
     // ---------------------------------------------------------------- buying
@@ -205,7 +241,14 @@ contract TifoPromo {
         orders.push(Order(buyer, side, amount, rate, dRate, uint64(block.timestamp)));
 
         _pull(payer, amount);
-        if (toSeller > 0) _send(seller, toSeller);
+        if (holdSecs > 0) {
+            // Physical product: the seller's share waits here until the buyer has it.
+            escrowed += toSeller;
+            shipments.push(Shipment(Delivery.Held, 0, toSeller, ""));
+        } else {
+            shipments.push(Shipment(Delivery.None, 0, 0, ""));
+            if (toSeller > 0) _send(seller, toSeller);
+        }
         emit Sale(buyer, side, amount, rate, held, toSeller, orderRef);
     }
 
@@ -327,7 +370,84 @@ contract TifoPromo {
         emit RemainderReleased(amt);
     }
 
+    // ---------------------------------------------------------------- delivery
+
+    /// @notice The seller (or the owner of the seller's Tifo account) marks an order sent, with the courier and tracking.
+    function markSent(uint256 i, string calldata tracking) external {
+        if (!_isSeller(msg.sender)) revert NotSeller();
+        Shipment storage sh = shipments[i];
+        if (sh.state != Delivery.Held) revert BadState();
+        sh.state = Delivery.Sent;
+        sh.sentAt = uint64(block.timestamp);
+        sh.tracking = tracking;
+        emit DeliverySent(i, tracking);
+    }
+
+    /// @notice The buyer has the product: the seller is paid now.
+    function confirmReceived(uint256 i) external {
+        if (msg.sender != orders[i].buyer) revert NotBuyer();
+        Delivery st = shipments[i].state;
+        if (st != Delivery.Held && st != Delivery.Sent && st != Delivery.Disputed) revert BadState();
+        _settleShipment(i, false);
+    }
+
+    /// @notice The buyer says it never arrived, within the window after it was marked sent. The operator then decides.
+    function dispute(uint256 i) external {
+        if (msg.sender != orders[i].buyer) revert NotBuyer();
+        Shipment storage sh = shipments[i];
+        if (sh.state != Delivery.Sent || block.timestamp >= uint256(sh.sentAt) + holdSecs) revert BadState();
+        sh.state = Delivery.Disputed;
+        emit DeliveryDisputed(i);
+    }
+
+    /// @notice Anyone: pays the seller once the window after "sent" has passed with no dispute.
+    function release(uint256 i) external {
+        Shipment storage sh = shipments[i];
+        if (sh.state != Delivery.Sent || block.timestamp < uint256(sh.sentAt) + holdSecs) revert TooEarly();
+        _settleShipment(i, false);
+    }
+
+    /// @notice Anyone: returns the money to the buyer if the seller never marked the order sent in time.
+    function refundUnsent(uint256 i) external {
+        if (shipments[i].state != Delivery.Held || block.timestamp < uint256(orders[i].at) + holdSecs) revert TooEarly();
+        _settleShipment(i, true);
+    }
+
+    /// @notice The operator settles a disputed delivery, the same single point of trust as a result correction.
+    function resolveDispute(uint256 i, bool toBuyer) external {
+        if (msg.sender != operator) revert NotOperator();
+        if (shipments[i].state != Delivery.Disputed) revert BadState();
+        _settleShipment(i, toBuyer);
+    }
+
+    function _settleShipment(uint256 i, bool toBuyer) internal {
+        Shipment storage sh = shipments[i];
+        uint256 amt = sh.held;
+        sh.state = toBuyer ? Delivery.Refunded : Delivery.Released;
+        sh.held = 0;
+        escrowed -= amt;
+        address to = toBuyer ? orders[i].buyer : seller;
+        if (amt > 0) _send(to, amt);
+        emit DeliveryReleased(i, to, amt, toBuyer);
+    }
+
+    function _isSeller(address who) internal view returns (bool) {
+        if (who == seller) return true;
+        if (seller.code.length == 0) return false;
+        try ISellerOwner(seller).owner() returns (address o) {
+            return o == who;
+        } catch {
+            return false;
+        }
+    }
+
     // ---------------------------------------------------------------- views
+
+    function getShipments(uint256 start, uint256 n) external view returns (Shipment[] memory out) {
+        uint256 end = start + n > shipments.length ? shipments.length : start + n;
+        out = new Shipment[](end > start ? end - start : 0);
+        for (uint256 i = start; i < end; i++) out[i - start] = shipments[i];
+    }
 
     function ordersCount() external view returns (uint256) {
         return orders.length;

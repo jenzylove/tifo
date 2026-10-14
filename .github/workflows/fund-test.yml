@@ -1,0 +1,27 @@
+name: fund a test wallet
+# Sends test USDC on Arc testnet from the practice funder to one address, for live checks. Testnet only. Run by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: Address on Arc testnet
+        required: true
+      usdc:
+        description: Test USDC to send, for example 2.5
+        default: "1"
+jobs:
+  fund:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Send
+        env:
+          TO: ${{ inputs.to }}
+          AMOUNT: ${{ inputs.usdc }}
+          FUNDER_PK: ${{ secrets.PRACTICE_FUNDER_PK }}
+        run: |
+          set -e
+          RPC=https://rpc.testnet.arc.io
+          UNITS=$(cast to-unit "${AMOUNT}ether" mwei | cut -d. -f1)
+          cast send 0x3600000000000000000000000000000000000000 "transfer(address,uint256)" "$TO" "$UNITS" --private-key "$FUNDER_PK" --rpc-url $RPC > /dev/null
+          echo "::notice::sent $AMOUNT test USDC to $TO, which now holds $(cast call 0x3600000000000000000000000000000000000000 'balanceOf(address)(uint256)' "$TO" --rpc-url $RPC)"

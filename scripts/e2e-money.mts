@@ -35,7 +35,7 @@ const meta = {
 };
 const createHash = await seller.writeContract({
   address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo",
-  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 2n * PRICE, 10_000, 10_000, 10_000, 10_000, 0, 500, JSON.stringify(meta)],
+  args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), 2n * PRICE, 10_000, 10_000, 10_000, 10_000, 0, 500, 0, JSON.stringify(meta)],
 });
 const rc = await pub.waitForTransactionReceipt({ hash: createHash });
 const promo = `0x${rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase())!.topics[1]!.slice(26)}` as Hex;
@@ -71,7 +71,7 @@ check("page explains the draw thank you", /On a draw every buyer gets 5% back/.t
 
 let account = await pub.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "accountOf", args: [seller.account.address] });
 if (account === ZERO) {
-  await sent(await seller.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createAccount", args: [1000, 5_000_000n, 3_000_000n] }));
+  await sent(await seller.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createAccount", args: [1000, 5_000_000n, 3_000_000n, "0x0000000000000000000000000000000000000000"] }));
   account = await pub.readContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "accountOf", args: [seller.account.address] });
 }
 const [owner, allowance, perDeal] = await Promise.all(

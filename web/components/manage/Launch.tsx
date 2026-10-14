@@ -3,10 +3,10 @@
 // offer (25%, 50% or 100% back if your team wins); the seller only confirms. Everything that moves money is checked by the contract.
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import { keccak256, toBytes, type Address } from "viem";
+import { isAddress, keccak256, toBytes, type Address } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
 import type { Odds } from "@tifo/core";
-import { biometric, createPromoWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
+import { biometric, createAccountAndOpenWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 import { isBigMatch, shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
@@ -36,6 +36,8 @@ const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to
 const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
 const MAX_STOCK = 500;
+const EARNED_SHARE_BPS = 1_000; // the weekly limit also grows by 10% of what the seller's drops sold the week before
+const HOLD_SECS = 7 * 86_400; // physical products: payment waits for delivery (see TifoPromo.markSent)
 
 // How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
 const LEAGUE_WEIGHT: Record<string, number> = {
@@ -82,6 +84,10 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "err"; text?: string; promo?: string }>({ kind: "idle" });
   const [retry, setRetry] = useState<Retry>(null);
+  // A first drop also gives the agent its rule: how much its drops may cost in a week, and where the money goes.
+  const [weekly, setWeekly] = useState("");
+  const [payoutMode, setPayoutMode] = useState<"this" | "other">("this");
+  const [payoutTo, setPayoutTo] = useState("");
 
   useEffect(() => {
     fetch("/api/matches").then((r) => r.json()).then(setMatches).catch(() => setMatches([]));
@@ -125,6 +131,10 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const usual = odds && priceUsd > 0 ? (units * priceUsd * (tier / FULL) * (odds.pA + odds.pB)) / 2 : null;
   const likePct = usual !== null && units > 0 ? Math.round((usual / (units * priceUsd)) * 100) : null;
   const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
+  // Room for this drop and one more like it, unless the seller says otherwise.
+  const weeklyDefault = Math.max(10, Math.ceil(cap * 2));
+  const weeklyUsd = Math.max(0, Number(weekly) || weeklyDefault);
+  const payout = (payoutMode === "this" ? account.address : payoutTo.trim()) as Address;
   const missing = !name.trim()
     ? "Add your shop name"
     : !product.trim()
@@ -141,7 +151,9 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
           ? "Add what the buyer receives"
           : !m
             ? "Pick a match"
-            : null;
+            : !tifoAccount && payoutMode === "other" && !isAddress(payout)
+              ? "Add the wallet your money goes to"
+              : null;
 
   async function launch() {
     if (!m || missing) return;
@@ -165,10 +177,14 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), tier, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, meta,
       ];
-      // With autopilot on, the drop opens through the seller's account so its sales land there and count toward the week.
-      const { promo } = tifoAccount ? await openViaAccountWithCircle(account, tifoAccount, args) : await createPromoWithCircle(account, args);
+      // Every drop opens through the seller's account, so the agent can pay winners and send the seller their money.
+      // A first drop creates that account in the same confirmation.
+      const limit = BigInt(Math.round(Math.max(weeklyUsd, cap) * 1e6));
+      const { promo } = tifoAccount
+        ? await openViaAccountWithCircle(account, tifoAccount, args)
+        : await createAccountAndOpenWithCircle(account, EARNED_SHARE_BPS, limit, limit, payout, args);
       setStatus({ kind: "done", promo });
       onLaunched();
     } catch (e) {
@@ -280,7 +296,13 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
           ) : kind === "digital" ? (
             <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link. Only buyers see it." />
           ) : (
+            <>
             <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number for delivery details" />
+            <small>
+              Buyers&apos; payments wait in the drop until they have the product. You are paid when they confirm, or 7 days after you mark the order sent.
+              Mark each order sent within 7 days, or that buyer gets their money back.
+            </small>
+            </>
           )}
         </div>
       </section>
@@ -381,6 +403,42 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                 </b>
               </div>
             )}
+          </div>
+        )}
+        {!tifoAccount && (
+          <div className="agent-rule">
+            <h3>Your agent</h3>
+            <p className="fine">
+              It runs this drop for you: it takes the payments, pays winning fans back at full time and sends you your money. After that it can run your next
+              drops by itself, inside the limit you set here.
+            </p>
+            <div className="grid2">
+              <label className="field">
+                Weekly limit <small>the most its drops may cost you in a week</small>
+                <span className="money-in">
+                  <i>$</i>
+                  <input className="input" type="number" min={1} step="1" value={weekly} onChange={(e) => setWeekly(e.target.value)} placeholder={String(weeklyDefault)} />
+                </span>
+              </label>
+              <div className="field">
+                Send my money to
+                <div className="seg">
+                  <button className={payoutMode === "this" ? "on" : ""} onClick={() => setPayoutMode("this")}>
+                    This Tifo wallet
+                  </button>
+                  <button className={payoutMode === "other" ? "on" : ""} onClick={() => setPayoutMode("other")}>
+                    Another wallet
+                  </button>
+                </div>
+                {payoutMode === "other" && (
+                  <input className="input" value={payoutTo} onChange={(e) => setPayoutTo(e.target.value.trim())} placeholder="0x… an address that accepts USDC on Arc" />
+                )}
+              </div>
+            </div>
+            <p className="fine">
+              Anything over the limit comes to you as a question first. The limit also grows by 10% of what your drops sold the week before. You can change
+              both later under Autopilot.
+            </p>
           </div>
         )}
         {retry && (

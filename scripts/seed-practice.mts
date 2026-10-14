@@ -119,7 +119,7 @@ for (let i = 0; i < COUNT; i++) {
   const wallet = createWalletClient({ account: seller, chain: arcTestnet, transport: http() });
   const hash = await wallet.writeContract({
     address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo",
-    args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + m.league.durationMin * 60), cap, FULL, FULL, FULL, FULL, 0, DRAW, meta],
+    args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + m.league.durationMin * 60), cap, FULL, FULL, FULL, FULL, 0, DRAW, s.digital ? 0 : 7 * 86_400, meta],
   });
   const rc = await pub.waitForTransactionReceipt({ hash });
   const log = rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());

@@ -6,6 +6,8 @@ import AutoRefresh from "@/components/AutoRefresh";
 import Checkout from "@/components/Checkout";
 import Countdown from "@/components/Countdown";
 import Purchase from "@/components/Purchase";
+import DeliveryPanel from "@/components/DeliveryPanel";
+import { readDeliveries } from "@/lib/shipments";
 import { settleNow } from "@/lib/agent";
 import { explorerAddr, usd } from "@/lib/chain";
 import { listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
@@ -23,12 +25,13 @@ async function load(address: string) {
   const p = (await listPromos()).find((x) => x.address.toLowerCase() === address.toLowerCase());
   if (!p) return null;
   const st = await promoState(p.address as Address);
-  const [orders, journal, booked] = await Promise.all([
+  const [orders, journal, booked, deliveries] = await Promise.all([
     promoOrders(p.address, st.ordersCount),
     promoJournal(p.address, st.journalCount),
     p.meta.slots?.length ? bookedSlots(p.address as Address, p.meta.slots.length).catch(() => p.meta.slots!.map(() => false)) : Promise.resolve([] as boolean[]),
+    p.meta.delivery || p.meta.slots?.length ? Promise.resolve(null) : readDeliveries(p.address as Address, st.ordersCount),
   ]);
-  return { p, st, orders, journal, booked };
+  return { p, st, orders, journal, booked, deliveries };
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ address: string }> }): Promise<Metadata> {
@@ -48,7 +51,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
   const { address } = await params;
   const d = await load(address);
   if (!d) notFound();
-  const { p, st, orders, journal, booked } = d;
+  const { p, st, orders, journal, booked, deliveries } = d;
   const A = shortTeam(p.meta.teamA), B = shortTeam(p.meta.teamB);
   const team: [string, string] = [A, B];
   const colors = teamColors(p.meta.teamA, p.meta.teamB) as [string, string];
@@ -177,6 +180,23 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
             </div>
           )}
           {digital && <Purchase promo={p.address} product={p.meta.product} />}
+          {deliveries && (
+            <DeliveryPanel
+              promo={p.address}
+              seller={p.seller}
+              holdSecs={deliveries.holdSecs}
+              shop={shopName}
+              rows={orders.map((o, i) => ({
+                i,
+                buyer: o.buyer,
+                amount: usd(o.amount),
+                at: o.at,
+                state: deliveries.list[i]?.state ?? "None",
+                sentAt: deliveries.list[i]?.sentAt ?? 0,
+                tracking: deliveries.list[i]?.tracking ?? "",
+              }))}
+            />
+          )}
         </div>
       </div>
 
@@ -235,7 +255,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <summary>How this works</summary>
           <p>
             You pay the normal price and pick the team you think will win. {free ? "If your team wins, the whole price comes back to your wallet." : `If your team wins, ${share / 100}% of the price comes back to your wallet.`} The offer runs while the shop's budget lasts, and you see exactly what you get before you pay.{" "}
-            {digital ? "Your purchase opens on this page as soon as you pay." : p.meta.slots?.length ? `You pick a time when you pay, then message ${shopName} on WhatsApp with anything they need before it.` : `${shopName} delivers as usual.`} You keep what you bought whatever happens.
+            {digital ? "Your purchase opens on this page as soon as you pay." : p.meta.slots?.length ? `You pick a time when you pay, then message ${shopName} on WhatsApp with anything they need before it.` : deliveries ? `${shopName} delivers it, and your payment waits in this drop until you confirm you have it.` : `${shopName} delivers as usual.`} You keep what you bought whatever happens.
           </p>
         </details>
         <details>

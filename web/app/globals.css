@@ -503,3 +503,36 @@ html, body { overflow-x: clip; }
 /* The longer sticker reaches past the edge on 1280px laptops; pull it in there. */
 @media (min-width: 561px) and (max-width: 1360px) { .mega .sticker { left: 91%; font-size: .15em; } }
 @media (min-width: 561px) and (max-width: 1180px) { .mega .sticker { left: 86%; font-size: .125em; } }
+
+/* Delivery panel on physical drops: the buyer's orders, or the seller's orders to send. */
+.delivery { display: grid; gap: 12px; margin-top: 18px; }
+.delivery h3 { margin: 0; }
+.dl-row { display: grid; gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.dl-row small { display: block; color: var(--muted); margin-top: 4px; }
+.dl-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dl-actions .input { flex: 1 1 220px; }
+.delivery-note { margin-top: 14px; }
+
+/* Books: one line per dollar in or out and per decision, with the reason under it. */
+.books-note { color: var(--muted); max-width: 62ch; margin: 0 0 8px; }
+.books-note b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.ledger { list-style: none; margin: 14px 0 0; padding: 0; }
+.ledger li { display: grid; grid-template-columns: 104px 1fr auto; gap: 16px; align-items: start; padding: 16px 0; border-top: 1px solid var(--line); }
+.ledger time { font-size: .8rem; color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.ledger b { display: block; letter-spacing: -.01em; }
+.ledger p { margin: 4px 0 6px; color: var(--muted); font-size: .92rem; max-width: 60ch; }
+.ledger a { font-size: .78rem; color: var(--accent-deep); }
+.ledger .amt { font-family: var(--mono, ui-monospace, monospace); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger li.back .amt { color: var(--muted); }
+.ledger li.out .amt { color: var(--accent-deep); }
+.ledger li.decision b::before, .ledger li.asked b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; translate: 0 -1px; }
+.ledger li.asked b::before { background: var(--sun); }
+@media (max-width: 560px) { .ledger li { grid-template-columns: 1fr auto; } .ledger time { grid-column: 1 / -1; } }
+.agent-rule { display: grid; gap: 12px; margin: 22px 0 6px; padding-top: 20px; border-top: 1px solid var(--line); }
+.agent-rule h3 { margin: 0; }
+.proof-h { margin: 34px 0 0; }
+
+/* After paying: challenge a fan of the other team. And the line that fan sees when they open the link. */
+.challenge { display: grid; gap: 8px; justify-items: start; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.challenge p { margin: 0; }
+.rival-note { margin: 0 0 12px; padding: 10px 14px; border-radius: 14px; background: var(--accent-soft); color: var(--ink); font-size: .92rem; }

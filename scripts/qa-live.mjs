@@ -50,18 +50,18 @@ try {
   // ---------- public pages
   const visitor = await person(browser, { width: 1440, height: 900 }, "visitor");
   for (const [path, file] of [["/", "01-home"], ["/drops", "02-drops"], ["/proof", "03-proof"]]) {
-    await visitor.page.goto(URL + path, { waitUntil: "networkidle" });
+    await visitor.page.goto(URL + path, { waitUntil: "domcontentloaded" });
     await visitor.page.waitForTimeout(path === "/" ? 5200 : 900);
     await visitor.shot(file);
   }
-  await visitor.page.goto(URL + "/", { waitUntil: "networkidle" });
+  await visitor.page.goto(URL + "/", { waitUntil: "load" });
   await visitor.page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 180)); } });
   await visitor.page.waitForTimeout(600);
   await visitor.shot("01-home-full", true);
 
   // ---------- seller: sign in, make a drop, turn on autopilot
   const seller = await person(browser, { width: 1440, height: 900 }, "seller");
-  await seller.page.goto(URL + "/manage", { waitUntil: "networkidle" });
+  await seller.page.goto(URL + "/manage", { waitUntil: "load" });
   await seller.shot("10-seller-signin");
   await seller.page.getByRole("button", { name: /Create my wallet/ }).click();
   await seller.page.getByText("What are you selling?").waitFor({ timeout: 90_000 });
@@ -92,24 +92,16 @@ try {
   const dropUrl = (await seller.page.locator(".done code").first().innerText()).trim();
   log("drop", dropUrl);
   if (process.env.QA_STOP_AFTER_DROP) throw new Error("STOP: drop made, stopping as asked");
-  await seller.page.getByRole("button", { name: "Overview" }).click();
-  await seller.page.waitForTimeout(6000);
-  await seller.shot("13-seller-overview", true);
+  // The first drop also opened the seller's account with its rule, so autopilot is already on.
   await seller.page.getByRole("button", { name: "Autopilot" }).click();
-  await seller.page.waitForTimeout(600);
-  await seller.shot("14-autopilot-off");
-  await seller.page.getByRole("button", { name: "Turn on autopilot" }).click();
-  await seller.page.getByText("Left this week").waitFor({ timeout: 120_000 });
-  await seller.page.waitForTimeout(9000);
-  await seller.shot("15-autopilot-on", true);
-  log("autopilot on");
-  await seller.page.getByRole("button", { name: "Money" }).click();
-  await seller.page.waitForTimeout(1200);
-  await seller.shot("16-seller-money");
+  await seller.page.getByText("Left this week").waitFor({ timeout: 60_000 });
+  await seller.page.waitForTimeout(6000);
+  await seller.shot("14-autopilot-on", true);
+  log("autopilot on from the first drop");
 
   // ---------- buyer on a phone: open the link, make a wallet, get funded, buy, open the purchase
   const buyer = await person(browser, { width: 390, height: 844 }, "buyer");
-  await buyer.page.goto(dropUrl, { waitUntil: "networkidle" });
+  await buyer.page.goto(dropUrl, { waitUntil: "load" });
   await buyer.page.waitForTimeout(900);
   await buyer.shot("20-drop-phone", true);
   await buyer.page.locator(".offer").first().click();
@@ -123,7 +115,7 @@ try {
   await buyer.page.getByRole("button", { name: /Send from an exchange/ }).click();
   const address = (await buyer.page.evaluate(() => navigator.clipboard.readText())).trim();
   log("buyer wallet", address);
-  execFileSync("cast", ["send", "0x3600000000000000000000000000000000000000", "transfer(address,uint256)", address, String(Math.round((Number(process.env.QA_PRICE ?? 5) + 0.5) * 1e6)), "--private-key", process.env.BACKUP_SELLER_PK, "--rpc-url", "https://rpc.testnet.arc.io"], { stdio: "ignore" });
+  execFileSync("cast", ["send", "0x3600000000000000000000000000000000000000", "transfer(address,uint256)", address, String(Math.round((Number(process.env.QA_PRICE ?? 5) + 0.04) * 1e6)), "--private-key", process.env.BACKUP_SELLER_PK, "--rpc-url", "https://rpc.testnet.arc.io"], { stdio: "ignore" });
   // The page pays by itself once the money lands; if it asks for a tap first, give it.
   const paid = buyer.page.getByText("Order paid.");
   const confirm = buyer.page.getByRole("button", { name: /^Confirm / });
@@ -138,8 +130,23 @@ try {
   await buyer.shot("23-drop-phone-paid", true);
   log("buyer paid and opened the purchase");
 
+  // ---------- the seller's books after the sale: the money in, and the agent sending the seller's share on
+  await seller.page.getByRole("button", { name: "Books" }).click();
+  let sent = false;
+  for (let i = 0; i < 12 && !sent; i++) {
+    await seller.page.reload({ waitUntil: "load" });
+    await seller.page.getByRole("button", { name: "Books" }).click();
+    await seller.page.getByText("Money in").waitFor({ timeout: 60_000 });
+    sent = (await seller.page.getByText(/Sent to your wallet/).count()) > 0;
+    if (!sent) await seller.page.waitForTimeout(8000);
+  }
+  await seller.page.waitForTimeout(800);
+  await seller.shot("17-seller-books", true);
+  if (!sent) throw new Error("the books never showed the agent sending the seller their money");
+  log("books show the sale and the payout");
+
   // ---------- the same drop on a desktop after an order
-  await visitor.page.goto(dropUrl, { waitUntil: "networkidle" });
+  await visitor.page.goto(dropUrl, { waitUntil: "load" });
   await visitor.page.waitForTimeout(900);
   await visitor.shot("24-drop-desktop", true);
 } catch (e) {

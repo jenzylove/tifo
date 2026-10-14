@@ -15,6 +15,23 @@ export interface AccountProposal {
   meta: PromoMeta | null;
 }
 
+/** A drop opened through the account: by the agent alone, or by the seller (directly or by approving a proposal). */
+export interface AccountDeal {
+  promo: Address;
+  at: number;
+  cap: string;
+  byAgent: boolean;
+  reason: string;
+}
+
+/** One transfer of the account's balance to the seller's payout wallet. */
+export interface AccountPayout {
+  at: number;
+  to: Address;
+  amount: string;
+  reason: string;
+}
+
 export interface AccountState {
   address: Address;
   weeklyBps: number; // share of the last 7 days of sales the agent may put at risk each week
@@ -23,7 +40,11 @@ export interface AccountState {
   allowance: string; // what the rule allows this week
   committed: string; // budgets of drops opened in the last 7 days
   recentSales: string;
-  balance: string; // USDC sitting in the account
+  balance: string; // USDC sitting in the account, on its way to the payout wallet
+  payout: Address; // where the account's money is sent; only the owner can change it
+  paidOut: string; // everything sent there so far
+  deals: AccountDeal[]; // newest first
+  payouts: AccountPayout[]; // newest first
   proposals: AccountProposal[];
 }
 
@@ -37,7 +58,7 @@ const STATUS = ["waiting", "approved", "declined"] as const;
 
 export async function accountState(address: Address): Promise<AccountState> {
   const c = { address, abi: tifoAccountAbi } as const;
-  const [weeklyBps, baseWeekly, perDealCap, allowance, committed, recentSales, count, balance] = await publicClient.multicall({
+  const [weeklyBps, baseWeekly, perDealCap, allowance, committed, recentSales, count, balance, payout, paidOut, dealsCount, payoutsCount] = await publicClient.multicall({
     allowFailure: false,
     contracts: [
       { ...c, functionName: "weeklyBps" },
@@ -48,8 +69,17 @@ export async function accountState(address: Address): Promise<AccountState> {
       { ...c, functionName: "recentSales" },
       { ...c, functionName: "proposalsCount" },
       { address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] },
+      { ...c, functionName: "payout" },
+      { ...c, functionName: "paidOutTotal" },
+      { ...c, functionName: "dealsCount" },
+      { ...c, functionName: "payoutsCount" },
     ],
   });
+  const last = (total: bigint, n: number) => [BigInt(Math.max(0, Number(total) - n)), BigInt(n)] as const;
+  const [deals, payouts] = await Promise.all([
+    Number(dealsCount) ? publicClient.readContract({ ...c, functionName: "getDeals", args: last(dealsCount, 60) }) : [],
+    Number(payoutsCount) ? publicClient.readContract({ ...c, functionName: "getPayouts", args: last(payoutsCount, 100) }) : [],
+  ]);
   const n = Number(count);
   const raw = n ? await publicClient.readContract({ ...c, functionName: "getProposals", args: [BigInt(Math.max(0, n - 20)), 20n] }) : [];
   const first = Math.max(0, n - 20);
@@ -73,6 +103,10 @@ export async function accountState(address: Address): Promise<AccountState> {
     committed: committed.toString(),
     recentSales: recentSales.toString(),
     balance: (balance as bigint).toString(),
+    payout,
+    paidOut: paidOut.toString(),
+    deals: deals.map((d): AccountDeal => ({ promo: d.promo, at: Number(d.createdAt), cap: d.cap.toString(), byAgent: d.byAgent, reason: d.reason })).reverse(),
+    payouts: payouts.map((p): AccountPayout => ({ at: Number(p.at), to: p.to, amount: p.amount.toString(), reason: p.reason })).reverse(),
     proposals,
   };
 }

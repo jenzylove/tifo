@@ -13,6 +13,7 @@ import { slotLabel, slotRef } from "@/lib/booking";
 import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
+import NairaTopUp from "./NairaTopUp";
 import Purchase, { saveOrder } from "./Purchase";
 import { inAppBrowser, openOutside, type InApp } from "@/lib/inapp";
 
@@ -48,6 +49,9 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
 export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots }: Props) {
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
+  // Opened from another buyer's challenge link: which side they backed, and (if the link says) their wallet.
+  const [rival, setRival] = useState<{ side: 0 | 1; from: string | null } | null>(null);
+  const [shared, setShared] = useState(false);
   const [qty, setQty] = useState(1);
   const [slot, setSlot] = useState<number | null>(null); // the time picked, for a bookable service
   const booking = !!slots?.length;
@@ -60,6 +64,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [cardOn, setCardOn] = useState(false); // card payments are set up on this deployment
   const [card, setCard] = useState(false);
   const [bridge, setBridge] = useState(false);
+  const [nairaOn, setNairaOn] = useState(false); // paying in naira (through Bachs) is set up on this deployment
+  const [naira, setNaira] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
   const [linkCopied, setLinkCopied] = useState(false);
@@ -68,10 +74,30 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   useEffect(() => {
     fetch("/api/onramp/sessions").then((r) => r.json()).then((j) => setCardOn(!!j.enabled)).catch(() => {});
+    fetch("/api/naira/start").then((r) => r.json()).then((j) => setNairaOn(!!j.enabled)).catch(() => {});
     setHasSaved(!!savedCredential());
     setBio(biometric());
     if (circleEnabled() && !closed) preparePasskey().catch(() => {});
   }, [closed]);
+  useEffect(() => {
+    // A challenge link carries ?vs=<the side the sender backed>. Start this buyer on the other side.
+    const q = new URLSearchParams(location.search);
+    const vs = q.get("vs");
+    if (vs !== "0" && vs !== "1") return;
+    const from = q.get("from");
+    const theirs = Number(vs) as 0 | 1;
+    setRival({ side: theirs, from: from && /^0x[0-9a-fA-F]{40}$/.test(from) ? from : null });
+    setSide((s) => s ?? ((1 - theirs) as 0 | 1));
+  }, []);
+  useEffect(() => {
+    // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
+    const id = new URLSearchParams(location.search).get("checkout_id");
+    if (!id || !/^chk_[A-Za-z0-9]+$/.test(id)) return;
+    fetch("/api/naira/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ checkoutId: id }) }).catch(() => {});
+    const url = new URL(location.href);
+    url.searchParams.delete("checkout_id");
+    history.replaceState(history.state, "", url);
+  }, []);
   useEffect(() => {
     if (!acct) return;
     walletSide(promo, acct.address)
@@ -143,7 +169,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     setTap(null);
     saveOrder(promo, { hash, secret });
     setStatus({ kind: "done", hash, secret, side: side!, qty });
-    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
+    // If this buyer came from a rival's challenge link, the agent notes the pair on chain after checking both orders.
+    const pair = rival?.from && acct && side !== rival.side ? { buyer: acct.address, from: rival.from } : {};
+    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo, ...pair }) }).catch(() => {});
   }
 
   async function confirmTap() {
@@ -221,6 +249,19 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       ? `Hi ${shop}, I booked ${product} for ${when} on Tifo. Receipt: ${explorerTx(status.hash)}`
       : `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
     const wa = contact ? (/^https?:/.test(contact) ? contact : `https://wa.me/${contact.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
+    // The challenge: send the same drop to a fan of the other team, opened on their side.
+    const other = (1 - status.side) as 0 | 1;
+    const challengeUrl = `${location.origin}/p/${promo}?vs=${status.side}${acct ? `&from=${acct.address}` : ""}`;
+    const challengeText = `I backed ${t} on ${product} from ${shop}. Your turn: ${offerLabel(rates[other], teams[other])}.`;
+    const challenge = async () => {
+      try {
+        if (navigator.share) await navigator.share({ text: challengeText, url: challengeUrl });
+        else await navigator.clipboard.writeText(`${challengeText} ${challengeUrl}`);
+        setShared(true);
+      } catch {
+        // the share sheet was closed: nothing to do
+      }
+    };
     return (
       <div className="done">
         <b>{when ? `Booked for ${when}.` : "Order paid."}</b>
@@ -240,6 +281,15 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
             Receipt
           </a>
         </div>
+        {!closed && (
+          <div className="challenge">
+            <b>Know a {teams[other]} fan?</b>
+            <p className="fine">Send them this drop, already set to {teams[other]}. The one whose team wins gets money back.</p>
+            <button className="btn sm ac" onClick={challenge}>
+              {shared ? "Sent. Challenge another" : `Challenge a ${teams[other]} fan`}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -247,6 +297,11 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   return (
     <div className="buybox">
       <div className="promo">
+        {rival && !closed && (
+          <p className="rival-note">
+            A <b>{teams[rival.side]}</b> fan sent you this. Take <b>{teams[1 - rival.side]}</b>.
+          </p>
+        )}
         <h4>Pick your side</h4>
         <div className="offers-list">
           {[0, 1].map((i) => {
@@ -383,6 +438,12 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                     </button>
                   </p>
                   <div className="pay-ways">
+                    {nairaOn && (
+                      <button onClick={() => setNaira(true)}>
+                        <b>Pay in naira</b>
+                        <span>Bank transfer or card, through Bachs</span>
+                      </button>
+                    )}
                     {cardOn && (
                       <button onClick={() => setCard(true)}>
                         <b>Card or bank transfer</b>
@@ -426,6 +487,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           document.body,
         )}
       {bridge && acct && <BridgeTopUp recipient={acct.address} neededUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setBridge(false)} />}
+      {naira && acct && <NairaTopUp address={acct.address} promo={promo} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setNaira(false)} />}
       {card && acct && <CardTopUp address={acct.address} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setCard(false)} />}
       {status.kind === "working" && <p className="status">{status.text}</p>}
       {status.kind === "error" && <p className="status err">{status.text}</p>}

@@ -190,6 +190,21 @@ async function sendAs<T>(account: SmartAccount, calls: Call[], failure: string, 
   }
 }
 
+/** Tell our own server what a refused signature looked like, so it can be fixed without a screenshot. Nothing here is
+ * secret: an address, a public key, a signature over a test value, the browser name. */
+function report(stage: string, account: SmartAccount, extra: Record<string, unknown>) {
+  try {
+    const owner = (account as unknown as { owner?: { id?: string; publicKey?: string } }).owner;
+    const body = JSON.stringify(
+      { stage, wallet: account.address, network: NETWORK, host: location.hostname, ua: navigator.userAgent, credentialId: owner?.id, publicKey: owner?.publicKey, ...extra },
+      (_, v) => (typeof v === "bigint" ? v.toString() : v),
+    ).slice(0, 7500);
+    fetch("/api/diag", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
+  } catch {
+    // reporting must never get in the way of the person's next try
+  }
+}
+
 /** Send calls as one user operation; Circle's paymaster pays the gas. Prepares first, then signs, so the
  * passkey prompt comes as late and as close to the tap as possible. */
 async function send(account: SmartAccount, calls: Call[], failure: string) {
@@ -199,6 +214,7 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
     prepared = await bundler.prepareUserOperation({ account, calls, paymaster: true });
   } catch (e) {
     console.error("[tifo] prepare failed", e);
+    report("prepare", account, { error: errorText(e).slice(0, 1200) });
     if (/invalid account signature/i.test(errorText(e)))
       throw new Error(
         `Circle refused wallet ${account.address.slice(0, 8)}… before your passkey was asked to sign (while pricing the gas). The wallet setup itself is not accepted, not your passkey. Nothing was charged.`,
@@ -235,7 +251,15 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
         return submit();
       });
     }
-    if (/invalid account signature/i.test(errorText(e))) throw await diagnoseSignature(account, e);
+    if (/invalid account signature/i.test(errorText(e))) {
+      const o = op as unknown as Record<string, unknown>;
+      report("submit", account, {
+        error: errorText(e).slice(0, 1200),
+        op: { sender: o.sender, nonce: o.nonce, factory: o.factory, factoryData: String(o.factoryData ?? "").slice(0, 600), paymaster: o.paymaster, callGasLimit: o.callGasLimit, verificationGasLimit: o.verificationGasLimit },
+      });
+      throw await diagnoseSignature(account, e);
+    }
+    if (!(e instanceof NeedsTap) && name !== "NotAllowedError") report("submit-other", account, { error: errorText(e).slice(0, 1200) });
     throw e;
   }
 }
@@ -257,6 +281,9 @@ async function diagnoseSignature(account: SmartAccount, original: unknown): Prom
     const { signature, webauthn } = await owner.sign({ hash });
     const ok = await verifyP256({ hash, publicKey: owner.publicKey, signature, webauthn: webauthn as never });
     console.error("[tifo] signature check", { wallet: account.address, publicKey: owner.publicKey, rpId: (webauthn as { authenticatorData?: string }).authenticatorData?.slice(0, 66), ok });
+    // Byte 33 of the authenticator data holds the flags: bit 0 is "person present", bit 2 is "person verified".
+    const flags = parseInt(String((webauthn as { authenticatorData?: string }).authenticatorData ?? "").slice(66, 68) || "0", 16);
+    report("check", account, { localVerify: ok, hash, signature, flags, userPresent: !!(flags & 1), userVerified: !!(flags & 4), webauthn });
     return new Error(
       ok
         ? `Your passkey signed correctly for wallet ${account.address.slice(0, 8)}…, but Circle still refused it. This points at Circle's side (wallet version or domain). Nothing was charged. Your money is safe in this wallet.`
@@ -300,10 +327,39 @@ export async function sendUsdcWithCircle(account: SmartAccount, to: Address, amo
 
 // ---------------------------------------------------------------- the seller's account
 
-/** Open the seller's account with their weekly rule for the agent. Returns the transaction hash. */
-export async function createAccountWithCircle(account: SmartAccount, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
-  const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createAccount", args: [weeklyBps, baseWeekly, perDealCap] });
+/** Open the seller's account with their weekly rule for the agent, and where their money is sent. */
+export async function createAccountWithCircle(account: SmartAccount, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint, payout: Address): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createAccount", args: [weeklyBps, baseWeekly, perDealCap, payout] });
   return sendAs(account, [{ to: FACTORY, data }], "Your account was not created. Nothing changed.", (r) => r.transactionHash);
+}
+
+/** A new seller's first step in one confirmation: the account with its rule and payout wallet, and the first drop. */
+export async function createAccountAndOpenWithCircle(
+  account: SmartAccount,
+  weeklyBps: number,
+  baseWeekly: bigint,
+  perDealCap: bigint,
+  payout: Address,
+  args: NonNullable<CreatePromoArgs>,
+): Promise<{ hash: Hex; promo: Address }> {
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
+  const data = encodeFunctionData({
+    abi: tifoFactoryAbi,
+    functionName: "createAccountAndOpen",
+    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
+  });
+  return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => {
+    // The factory logs the new drop (PromoCreated, drop address first) and the new account (AccountCreated).
+    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase() && l.topics.length === 4);
+    if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
+    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
+  });
+}
+
+/** Change where the account's money is sent. Only the owner's wallet can. */
+export async function setPayoutWithCircle(account: SmartAccount, tifoAccount: Address, to: Address): Promise<Hex> {
+  const data = encodeFunctionData({ abi: tifoAccountAbi, functionName: "setPayout", args: [to] });
+  return sendAs(account, [{ to: tifoAccount, data }], "Your payout wallet was not changed.", (r) => r.transactionHash);
 }
 
 export async function setLimitsWithCircle(account: SmartAccount, tifoAccount: Address, weeklyBps: number, baseWeekly: bigint, perDealCap: bigint): Promise<Hex> {
@@ -324,15 +380,30 @@ export async function withdrawFromAccountWithCircle(account: SmartAccount, tifoA
 
 /** Open a drop through the seller's account, so its sales land there and it counts toward the week. */
 export async function openViaAccountWithCircle(account: SmartAccount, tifoAccount: Address, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, meta] = args;
   const data = encodeFunctionData({
     abi: tifoAccountAbi,
     functionName: "open",
-    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps }, meta],
+    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs }, meta],
   });
   return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
     if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
     return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
   });
+}
+
+/** Delivery steps on a drop that holds payment: the seller marks sent, the buyer confirms or disputes. */
+export async function deliveryWithCircle(
+  account: SmartAccount,
+  promo: Address,
+  step: "markSent" | "confirmReceived" | "dispute",
+  order: number,
+  tracking = "",
+): Promise<Hex> {
+  const data =
+    step === "markSent"
+      ? encodeFunctionData({ abi: tifoPromoAbi, functionName: "markSent", args: [BigInt(order), tracking] })
+      : encodeFunctionData({ abi: tifoPromoAbi, functionName: step, args: [BigInt(order)] });
+  return sendAs(account, [{ to: promo, data }], "Nothing changed. Try again.", (r) => r.transactionHash);
 }

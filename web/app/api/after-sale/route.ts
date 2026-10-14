@@ -1,21 +1,26 @@
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
-import { maybeRebalance } from "@/lib/agent";
+import { maybeRebalance, payoutsTick, recordPair } from "@/lib/agent";
 import { listPromos } from "@/lib/promos";
 
 export const maxDuration = 60;
 
 // Called after a Circle-wallet purchase (the fan's smart account paid directly, so the relayer
-// never saw it). The agent re-reads the book from chain and only acts if the offers should move.
+// never saw it). The agent re-reads the book from chain, moves the offers only if they should move,
+// and sends the seller's share of the sale on to their payout wallet.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (!body || !isAddress(body.promo)) return NextResponse.json({ error: "bad request" }, { status: 400 });
   const promo = (await listPromos()).find((p) => p.address.toLowerCase() === String(body.promo).toLowerCase());
   if (!promo) return NextResponse.json({ error: "unknown promo" }, { status: 404 });
+  let result: { changed: boolean; reason: string } = { changed: false, reason: "rebalance skipped" };
   try {
-    return NextResponse.json(await maybeRebalance(promo));
+    result = await maybeRebalance(promo);
   } catch (e) {
     console.error(e);
-    return NextResponse.json({ changed: false, reason: "rebalance skipped" });
   }
+  const paid = await payoutsTick(promo.seller).catch((e) => (console.error(e), []));
+  // The buyer came from a rival's challenge link: note the pair on chain if both orders are really there.
+  if (isAddress(body.buyer) && isAddress(body.from)) await recordPair(promo, body.from, body.buyer).catch((e) => console.error(e));
+  return NextResponse.json({ ...result, paidOut: paid.length > 0 });
 }

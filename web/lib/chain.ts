@@ -24,6 +24,10 @@ export const chain = NETWORK === "testnet" ? arcTestnet : arcMainnet;
 export const USDC: Address = "0x3600000000000000000000000000000000000000";
 export const FACTORY = (process.env.NEXT_PUBLIC_FACTORY ?? "0x0000000000000000000000000000000000000000") as Address;
 export const FACTORY_BLOCK = BigInt(process.env.NEXT_PUBLIC_FACTORY_BLOCK ?? "0");
+// Earlier factories on the same network. Their drops stay listed and keep settling after a new factory ships.
+export const OLD_FACTORIES = ((process.env.NEXT_PUBLIC_OLD_FACTORIES ?? "").match(/0x[0-9a-fA-F]{40}/g) ?? []).filter(
+  (a) => a.toLowerCase() !== FACTORY.toLowerCase(),
+) as Address[];
 
 // Override with a dedicated provider (Alchemy, QuickNode, dRPC) if the public RPC throttles.
 export const RPC_URL = process.env.NEXT_PUBLIC_ARC_RPC_URL || chain.rpcUrls.default.http[0];
@@ -39,18 +43,21 @@ export const publicClient = createPublicClient({ chain, transport });
 export const PRACTICE_URL = (process.env.NEXT_PUBLIC_PRACTICE_URL ?? "").trim().replace(/^["']|["']$/g, "").replace(/\/$/, "");
 export const MAIN_URL = (process.env.NEXT_PUBLIC_MAIN_URL ?? "").trim().replace(/^["']|["']$/g, "").replace(/\/$/, "");
 // Values pasted on a phone can carry spaces, quotes or a line break; keep only the address.
-const PRACTICE_FACTORY = ((process.env.NEXT_PUBLIC_PRACTICE_FACTORY ?? "").match(/0x[0-9a-fA-F]{40}/)?.[0] ?? "") as Address;
+// One or more addresses: the current practice factory first, then older ones whose drops should still show.
+const PRACTICE_FACTORIES = ((process.env.NEXT_PUBLIC_PRACTICE_FACTORY ?? "").match(/0x[0-9a-fA-F]{40}/g) ?? []) as Address[];
+const PRACTICE_FACTORY = (PRACTICE_FACTORIES[0] ?? "") as Address;
 export const practice =
   NETWORK === "mainnet" && PRACTICE_URL && /^0x[0-9a-fA-F]{40}$/.test(PRACTICE_FACTORY)
-    ? { url: PRACTICE_URL, factory: PRACTICE_FACTORY, client: createPublicClient({ chain: arcTestnet, transport: http(arcTestnet.rpcUrls.default.http[0], { batch: true, retryCount: 3 }) }) as unknown as typeof publicClient }
+    ? { url: PRACTICE_URL, factory: PRACTICE_FACTORY, older: PRACTICE_FACTORIES.slice(1), client: createPublicClient({ chain: arcTestnet, transport: http(arcTestnet.rpcUrls.default.http[0], { batch: true, retryCount: 3 }) }) as unknown as typeof publicClient }
     : null;
 
 /** Where a set of drops lives: the factory to read and the client that reads it. */
 export interface Source {
   factory: Address;
+  older?: Address[];
   client: typeof publicClient;
 }
-export const mainSource: Source = { factory: FACTORY, client: publicClient };
+export const mainSource: Source = { factory: FACTORY, older: OLD_FACTORIES, client: publicClient };
 
 export const explorerTx =(h: string) => `${chain.blockExplorers.default.url}/tx/${h}`;
 export const explorerAddr = (a: string) => `${chain.blockExplorers.default.url}/address/${a}`;
