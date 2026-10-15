@@ -127,17 +127,17 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               </b>
               <br />
               <span style={{ opacity: 0.8 }}>
-                {p.meta.league} · {kick.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })} UTC
+                {p.meta.league} · {kick.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}
               </span>
             </span>
             {phase === "open" ? (
               <span style={{ textAlign: "right" }}>
-                Kicks off in
+                Sale ends in
                 <br />
                 <Countdown to={st.closesAt * 1000} />
               </span>
             ) : phase === "live" ? (
-              <span className="pill live">Match on</span>
+              <span className="pill live">Sale ended</span>
             ) : phase === "result" ? (
               <span>Result in, final check</span>
             ) : (
@@ -185,7 +185,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
                   </div>
                 ))}
               </div>
-              <p className="fine">Orders closed at kickoff. {phase === "result" ? "Refunds go out after a 15-minute check." : ""}</p>
+              <p className="fine">The sale has ended. {phase === "result" ? "Refunds go out after a 15-minute check." : ""}</p>
             </div>
           )}
           {digital && <Purchase promo={p.address} product={p.meta.product} />}

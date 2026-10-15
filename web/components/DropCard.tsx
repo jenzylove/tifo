@@ -22,9 +22,9 @@ export default function DropCard({ p, rates, phase, fans, note, base = "" }: Dro
       <div className="ph">
         {p.meta.image ? <img src={p.meta.image} alt={p.meta.product} /> : <span className="ph-name">{p.meta.product}</span>}
         {phase === "open" ? (
-          <span className="pill">Kicks off {kick.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
+          <span className="pill">Sale ends {kick.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
         ) : phase === "live" ? (
-          <span className="pill live">Match on</span>
+          <span className="pill live">Sale ended</span>
         ) : (
           <span className="pill">Full time</span>
         )}

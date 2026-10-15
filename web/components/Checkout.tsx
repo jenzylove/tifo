@@ -61,9 +61,6 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   };
   const acct = useAccount();
   const [side, setSide] = useState<0 | 1 | null>(null);
-  // Opened from another buyer's challenge link: which side they backed, and (if the link says) their wallet.
-  const [rival, setRival] = useState<{ side: 0 | 1; from: string | null } | null>(null);
-  const [shared, setShared] = useState(false);
   const [qty, setQty] = useState(1);
   const [slot, setSlot] = useState<number | null>(null); // the time picked, for a bookable service
   const booking = !!slots?.length;
@@ -93,16 +90,6 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     setBio(biometric());
     if (circleEnabled() && !closed) preparePasskey().catch(() => {});
   }, [closed]);
-  useEffect(() => {
-    // A challenge link carries ?vs=<the side the sender backed>. Start this buyer on the other side.
-    const q = new URLSearchParams(location.search);
-    const vs = q.get("vs");
-    if (vs !== "0" && vs !== "1") return;
-    const from = q.get("from");
-    const theirs = Number(vs) as 0 | 1;
-    setRival({ side: theirs, from: from && /^0x[0-9a-fA-F]{40}$/.test(from) ? from : null });
-    setSide((s) => s ?? ((1 - theirs) as 0 | 1));
-  }, []);
   useEffect(() => {
     // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
     const id = new URLSearchParams(location.search).get("checkout_id");
@@ -198,9 +185,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     setTap(null);
     saveOrder(promo, { hash, secret });
     setStatus({ kind: "done", hash, secret, side: side!, qty });
-    // If this buyer came from a rival's challenge link, the agent notes the pair on chain after checking both orders.
-    const pair = rival?.from && acct && side !== rival.side ? { buyer: acct.address, from: rival.from } : {};
-    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo, ...pair }) }).catch(() => {});
+    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
   }
 
   async function confirmTap() {
@@ -277,20 +262,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     const msg = when
       ? `Hi ${shop}, I booked ${product} for ${when} on Tifo. Receipt: ${explorerTx(status.hash)}`
       : `Hi ${shop}, I just bought ${status.qty} × ${product} on Tifo. Receipt: ${explorerTx(status.hash)}`;
-    const wa = contact ? (/^https?:/.test(contact) ? contact : `https://wa.me/${contact.replace(/[^\d]/g, "")}?text=${encodeURIComponent(msg)}`) : null;
-    // The challenge: send the same drop to a fan of the other team, opened on their side.
-    const other = (1 - status.side) as 0 | 1;
-    const challengeUrl = `${location.origin}/p/${promo}?vs=${status.side}${acct ? `&from=${acct.address}` : ""}`;
-    const challengeText = `I backed ${t} on ${product} from ${shop}. Your turn: ${offerLabel(rates[other], teams[other])}.`;
-    const challenge = async () => {
-      try {
-        if (navigator.share) await navigator.share({ text: challengeText, url: challengeUrl });
-        else await navigator.clipboard.writeText(`${challengeText} ${challengeUrl}`);
-        setShared(true);
-      } catch {
-        // the share sheet was closed: nothing to do
-      }
-    };
+    const reach_ = contactLink(contact, msg);
     return (
       <div className="done">
         <b>{when ? `Booked for ${when}.` : "Order paid."}</b>
@@ -301,27 +273,15 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         </p>
         {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {wa && (
-            <a className="btn sm" href={wa} target="_blank" rel="noreferrer">
-              {when ? `Message ${shop} on WhatsApp` : `Send delivery details to ${shop}`}
+          {reach_ && (
+            <a className="btn sm" href={reach_.href} target="_blank" rel="noreferrer">
+              Message {shop} on {reach_.via}
             </a>
           )}
           <a className="btn sm ghost" href={explorerTx(status.hash)} target="_blank" rel="noreferrer">
             Receipt
           </a>
         </div>
-        {!closed && (
-          <div className="challenge">
-            <b>Know a {teams[other]} fan?</b>
-            <p className="fine">
-              Send them this drop, already set to {teams[other]}. The one whose team wins gets money back.
-              {reach && reach.have < reach.need ? ` The offer switches on once ${reach.need} people buy, so every share counts.` : ""}
-            </p>
-            <button className="btn sm ac" onClick={challenge}>
-              {shared ? "Sent. Challenge another" : `Challenge a ${teams[other]} fan`}
-            </button>
-          </div>
-        )}
       </div>
     );
   }
@@ -329,11 +289,6 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   return (
     <div className="buybox">
       <div className="promo">
-        {rival && !closed && (
-          <p className="rival-note">
-            A <b>{teams[rival.side]}</b> fan sent you this. Take <b>{teams[1 - rival.side]}</b>.
-          </p>
-        )}
         <h4>Pick your side</h4>
         {reach && reach.have < reach.need && (
           <div className="reach">
@@ -344,7 +299,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
               <b>
                 {reach.need - reach.have} more {reach.need - reach.have === 1 ? "buyer switches" : "buyers switch"} the offer on.
               </b>{" "}
-              {reach.have} of {reach.need} so far. If fewer buy before kickoff, everyone keeps what they bought at full price.
+              {reach.have} of {reach.need} so far. If fewer buy before the sale ends, everyone keeps what they bought at full price.
             </p>
           </div>
         )}
@@ -552,7 +507,18 @@ function friendly(msg: string) {
   if (/DuplicateOrder/i.test(msg)) return "This order already went through, or that time was just booked by someone else. You were not charged twice. Refresh to see the free times.";
   if (/OverCap/i.test(msg)) return "The shop's budget for this offer is used up at this size. Try fewer items or the other offer.";
   if (/OneSidePerWallet/i.test(msg)) return "This wallet already took the other offer in this promo.";
-  if (/Closed/i.test(msg)) return "This promo closed at kickoff.";
+  if (/Closed/i.test(msg)) return "This sale has ended.";
   if (/reverted/i.test(msg)) return "The payment didn't go through and nothing was charged. Refresh the page and try again.";
   return walletError(new Error(msg));
+}
+
+/** Where a buyer messages the seller: a WhatsApp number, an Instagram handle (@name or a profile link), or any link. */
+export function contactLink(contact: string | undefined, text: string): { href: string; via: string } | null {
+  const c = (contact ?? "").trim();
+  if (!c) return null;
+  const ig = /^@([\w.]{1,30})$/.exec(c) ?? /instagram\.com\/([\w.]{1,30})/i.exec(c);
+  if (ig) return { href: `https://ig.me/m/${ig[1]}`, via: "Instagram" };
+  if (/^https?:/i.test(c)) return { href: c, via: /wa\.me|whatsapp/i.test(c) ? "WhatsApp" : "their page" };
+  const digits = c.replace(/[^\d]/g, "");
+  return digits.length >= 7 ? { href: `https://wa.me/${digits}?text=${encodeURIComponent(text)}`, via: "WhatsApp" } : null;
 }

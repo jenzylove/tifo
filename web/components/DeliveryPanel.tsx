@@ -81,6 +81,7 @@ export default function DeliveryPanel({ promo, seller, holdSecs, rows, shop }: {
   return (
     <section className="delivery panel">
       <h3>{isSeller ? "Orders to deliver" : "Your delivery"}</h3>
+      {isSeller && <p className="fine">You are the seller. Send each order, then paste the courier and tracking link (or the rider's phone) so the buyer can follow it.</p>}
 
       {!isSeller &&
         mine.map((r) => (
