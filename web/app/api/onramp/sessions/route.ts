@@ -7,7 +7,7 @@ import { ONRAMP_SANDBOX, ONRAMP_WIDGET } from "@/lib/onramp";
 // their Tifo wallet on Arc. This route trades our Circle API key (server only) for a short session the browser can use.
 // NEXT_PUBLIC_ONRAMP_SANDBOX=1 points both sides at Circle's sandbox (test card, any OTP, any face photo passes KYC).
 const key = process.env.CIRCLE_API_KEY?.trim();
-const host = new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://tifo.vercel.app").hostname;
+const host = new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://tifo.vercel.app").hostname;
 const handler = key
   ? createSessionRouteHandler(
       createOnrampServerKit({
