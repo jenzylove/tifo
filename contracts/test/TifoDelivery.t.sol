@@ -28,7 +28,7 @@ contract TifoDeliveryTest is Test {
     function _drop(uint32 hold) internal returns (TifoPromo p) {
         vm.prank(seller);
         // $10 budget, 50% back: the seller's share of a $10 sale is $5 once the first buyer's $5 reserve is held.
-        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, hold, 0, "{}"));
+        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, hold, 0, 0, "{}"));
     }
 
     function _buy(TifoPromo p, uint256 i, uint8 side, uint256 amt) internal returns (address u) {
@@ -107,7 +107,8 @@ contract TifoDeliveryTest is Test {
         p.refundUnsent(0);
         vm.warp(block.timestamp + HOLD);
         p.refundUnsent(0);
-        assertEq(usdc.balanceOf(buyer), 5e6);
+        assertEq(usdc.balanceOf(buyer), 10e6); // all of it: the seller's share and this order's rebate money
+        assertEq(p.reserve(), 0);
         assertEq(usdc.balanceOf(seller), 0);
         // and it cannot be marked sent or paid out afterwards
         vm.prank(seller);
@@ -130,16 +131,16 @@ contract TifoDeliveryTest is Test {
         p.resolveDispute(0, false);
         vm.prank(operator);
         p.resolveDispute(0, true);
-        assertEq(usdc.balanceOf(buyer), 5e6);
+        assertEq(usdc.balanceOf(buyer), 10e6);
     }
 
     function test_escrowDoesNotTouchRefundsOrRemainder() public {
         TifoPromo p = _drop(HOLD);
         address a = _buy(p, 1, 0, 10e6); // A fan
         _buy(p, 2, 1, 10e6); // B fan
-        // reserve = $5 (largest bill), escrow = the rest of $20
-        assertEq(p.reserve(), 5e6);
-        assertEq(p.escrowed(), 15e6);
+        // each physical order keeps its own $5 rebate money; escrow = the rest of $20
+        assertEq(p.reserve(), 10e6);
+        assertEq(p.escrowed(), 10e6);
         assertEq(usdc.balanceOf(address(p)), 20e6);
         vm.warp(kickoff + 2 hours);
         vm.prank(agent);
@@ -149,8 +150,13 @@ contract TifoDeliveryTest is Test {
         p.payRefunds(10);
         p.releaseRemainder();
         assertEq(usdc.balanceOf(a), 5e6); // 50% back
-        assertEq(usdc.balanceOf(address(p)), 15e6); // only the held deliveries remain
-        assertEq(p.escrowed(), 15e6);
+        assertEq(usdc.balanceOf(address(p)), 15e6); // the held deliveries, and the B order's rebate money until it is delivered
+        assertEq(p.escrowed(), 10e6);
+        // B is delivered after full time: the seller gets its share and the rebate money it kept
+        vm.prank(address(uint160(0xB000 + 2)));
+        p.confirmReceived(1);
+        assertEq(usdc.balanceOf(seller), 10e6);
+        assertEq(usdc.balanceOf(address(p)), 5e6); // only A's undelivered share
     }
 
     function test_accountOwnerCanMarkSent() public {
@@ -158,7 +164,7 @@ contract TifoDeliveryTest is Test {
         TifoAccount acct = TifoAccount(factory.createAccount(0, 100e6, 50e6, address(0)));
         vm.prank(seller);
         TifoPromo p = TifoPromo(
-            acct.open(TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, HOLD, 0), "{}")
+            acct.open(TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, HOLD, 0, 0), "{}")
         );
         address buyer = _buy(p, 1, 0, 10e6);
         vm.prank(seller); // the person behind the account, not the account contract
@@ -171,6 +177,6 @@ contract TifoDeliveryTest is Test {
     function test_holdIsCapped() public {
         vm.prank(seller);
         vm.expectRevert(bytes("hold"));
-        factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, 31 days, 0, "{}");
+        factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 10e6, 5000, 5000, 5000, 5000, 0, 0, 31 days, 0, 0, "{}");
     }
 }

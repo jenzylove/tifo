@@ -20,6 +20,7 @@ interface ITifoFactory {
         uint16 drawBps,
         uint32 holdSecs,
         uint32 minBuyers,
+        uint256 minAmount,
         string calldata meta
     ) external returns (address);
 }
@@ -49,6 +50,7 @@ contract TifoAccount {
         uint16 drawBps;
         uint32 holdSecs; // 0 for digital; otherwise payment waits for delivery
         uint32 minBuyers; // the offer only pays out once this many different wallets bought; 0 for always
+        uint256 minAmount; // the least one order may pay: the price of one unit
     }
 
     struct Deal {
@@ -258,7 +260,7 @@ contract TifoAccount {
     // ---------------------------------------------------------------- internals
 
     function _open(Terms memory t, string memory meta, bool byAgent, string memory reason) internal returns (address promo) {
-        promo = factory.createPromo(t.fixtureId, t.closesAt, t.settleNotBefore, t.cap, t.minBps, t.maxBps, t.rateA, t.rateB, t.floorBps, t.drawBps, t.holdSecs, t.minBuyers, meta);
+        promo = factory.createPromo(t.fixtureId, t.closesAt, t.settleNotBefore, t.cap, t.minBps, t.maxBps, t.rateA, t.rateB, t.floorBps, t.drawBps, t.holdSecs, t.minBuyers, t.minAmount, meta);
         deals.push(Deal(promo, uint64(block.timestamp), t.closesAt, t.cap, byAgent, reason));
         emit DealOpened(promo, t.cap, byAgent, reason);
     }

@@ -124,7 +124,7 @@ for (let i = 0; i < COUNT; i++) {
   const hash = await wallet.writeContract({
     address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo",
     // Shipped items hold the seller's share until delivery; on a practice drop nothing ships, so it returns to the buyer.
-    args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + m.league.durationMin * 60), cap, s.tier, s.tier, s.tier, s.tier, 0, DRAW, 7 * 86_400, 0, meta],
+    args: [keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + m.league.durationMin * 60), cap, s.tier, s.tier, s.tier, s.tier, 0, DRAW, 7 * 86_400, 0, BigInt(Math.round(s.price * 1e6)), meta],
   });
   const rc = await pub.waitForTransactionReceipt({ hash });
   const log = rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());

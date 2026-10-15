@@ -184,7 +184,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), low, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), low, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, BigInt(Math.round(priceUsd * 1e6)), meta,
       ];
       // Every drop opens through the seller's account, so the agent can pay winners and send the seller their money.
       // A first drop creates that account in the same confirmation.
