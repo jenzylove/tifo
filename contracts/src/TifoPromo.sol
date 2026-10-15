@@ -23,6 +23,8 @@ interface IERC20 {
 /// or `holdSecs` after the seller marks it sent; if the seller never marks it sent, the buyer can take it back.
 /// A seller can make the offer depend on reach (`minBuyers`): unless that many different wallets buy before kickoff,
 /// nobody is paid back and the seller keeps every sale.
+/// Every order pays at least `minAmount` (the price of one unit), so a slot, a buyer count or a delivery cannot be had for dust.
+/// On a physical drop each order keeps its own rebate in the reserve, so an order that is never sent can be paid back in full.
 contract TifoPromo {
     enum Outcome {
         None,
@@ -85,6 +87,7 @@ contract TifoPromo {
     uint16 public immutable drawBps; // thank you paid to every buyer on a draw
     uint32 public immutable holdSecs; // 0: pay the seller at sale. Otherwise hold until delivery (see Shipment)
     uint32 public immutable minBuyers; // the offer only pays out once this many different wallets bought (0 or 1: from the first sale)
+    uint256 public immutable minAmount; // the least one order may pay: the price of one unit
 
     uint16[2] public rateBps;
     uint256[2] public liability;
@@ -100,6 +103,9 @@ contract TifoPromo {
     mapping(address => uint8) public sideOf; // 0 = none, 1 = A, 2 = B
     Shipment[] internal shipments; // one per order, same index
     uint256 public escrowed; // held for deliveries, separate from the refund reserve
+    mapping(uint256 => uint256) public reservedFor; // physical drops: the part of the reserve that belongs to this order
+    uint256 public pendingReserved; // physical drops: reserve belonging to orders whose delivery is not settled yet
+    mapping(address => uint256) public owed; // a refund the token refused to send (a blocked wallet); the buyer claims it
 
     Outcome public proposed;
     uint64 public proposedAt;
@@ -119,6 +125,7 @@ contract TifoPromo {
     event DeliverySent(uint256 indexed order, string tracking);
     event DeliveryDisputed(uint256 indexed order);
     event DeliveryReleased(uint256 indexed order, address to, uint256 amount, bool toBuyer);
+    event RefundOwed(address indexed buyer, uint256 amount);
 
     error NotAgent();
     error NotOperator();
@@ -138,6 +145,8 @@ contract TifoPromo {
     error NotSeller();
     error NotBuyer();
     error BadState();
+    error BelowPrice();
+    error AlreadyProposed();
 
     constructor(
         address usdc_,
@@ -155,7 +164,8 @@ contract TifoPromo {
         uint16 floorBps_,
         uint16 drawBps_,
         uint32 holdSecs_,
-        uint32 minBuyers_
+        uint32 minBuyers_,
+        uint256 minAmount_
     ) {
         require(holdSecs_ <= MAX_HOLD, "hold");
         require(minBps_ <= maxBps_ && maxBps_ <= BPS, "bounds");
@@ -177,6 +187,7 @@ contract TifoPromo {
         drawBps = drawBps_;
         holdSecs = holdSecs_;
         minBuyers = minBuyers_;
+        minAmount = minAmount_;
     }
 
     /// @notice True once enough different wallets bought for the offer to pay out.
@@ -191,13 +202,9 @@ contract TifoPromo {
         _buy(msg.sender, msg.sender, side, amount, orderRef, minRateBps);
     }
 
-    /// @notice Pay on behalf of `buyer` (a checkout relayer or a smart-account batch). The rebate goes to `buyer`.
-    function buyFor(address buyer, uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) external {
-        _buy(msg.sender, buyer, side, amount, orderRef, minRateBps);
-    }
-
-    /// @notice Gasless checkout: the buyer signs a USDC permit, anyone (our relayer) submits it.
-    /// Funds can only come from the buyer who signed, and the rebate can only go back to them.
+    /// @notice Gasless checkout: the buyer signs a USDC permit and the agent's relayer submits it.
+    /// Funds can only come from the buyer who signed, and the rebate can only go back to them. Only the relayer may
+    /// submit, because the permit does not cover the side or the order reference.
     function buyWithPermit(
         address buyer,
         uint8 side,
@@ -209,6 +216,7 @@ contract TifoPromo {
         bytes32 r,
         bytes32 s
     ) external {
+        if (msg.sender != agent) revert NotAgent();
         // A front-run permit leaves the allowance in place, so a failed permit is not fatal.
         try usdc.permit(buyer, address(this), amount, deadline, v, r, s) {} catch {}
         _buy(buyer, buyer, side, amount, orderRef, minRateBps);
@@ -218,6 +226,7 @@ contract TifoPromo {
         if (block.timestamp >= closesAt || finalOutcome != Outcome.None || proposed != Outcome.None) revert Closed();
         if (side > 1) revert BadSide();
         require(amount > 0 && buyer != address(0), "amount");
+        if (amount < minAmount) revert BelowPrice();
         uint8 s = sideOf[buyer];
         if (s != 0 && s != side + 1) revert OneSidePerWallet();
         if (orderRef != bytes32(0)) {
@@ -239,14 +248,23 @@ contract TifoPromo {
 
         l[side] += (amount * rate) / BPS;
         dl += (amount * dRate) / BPS;
-        uint256 newReserve = l[0] > l[1] ? l[0] : l[1];
-        if (dl > newReserve) newReserve = dl;
-        uint256 held = newReserve - reserve;
+        uint256 held;
+        if (holdSecs > 0) {
+            // Physical product: this order keeps its own largest possible rebate, so it can be undone in full.
+            held = (amount * (rate > dRate ? rate : dRate)) / BPS;
+            reservedFor[orders.length] = held;
+            pendingReserved += held;
+            reserve += held;
+        } else {
+            uint256 newReserve = l[0] > l[1] ? l[0] : l[1];
+            if (dl > newReserve) newReserve = dl;
+            held = newReserve - reserve;
+            reserve = newReserve;
+        }
         uint256 toSeller = amount - held;
 
         liability = l;
         drawLiability = dl;
-        reserve = newReserve;
         salesTotal += amount;
         if (s == 0) buyers++;
         sideOf[buyer] = side + 1;
@@ -286,6 +304,8 @@ contract TifoPromo {
     function proposeResult(Outcome o, bytes32 evidence_) external {
         if (msg.sender != agent) revert NotAgent();
         if (finalOutcome != Outcome.None) revert AlreadyFinal();
+        // One proposal only: a wrong one is fixed by the operator inside the window, so the agent cannot restart it.
+        if (proposed != Outcome.None) revert AlreadyProposed();
         if (o == Outcome.None) revert BadOutcome();
         if (o == Outcome.Void) {
             if (block.timestamp < closesAt) revert TooEarly();
@@ -352,10 +372,7 @@ contract TifoPromo {
                 if (ord.side != winner) continue;
                 uint256 amt = (ord.amount * ord.rateBps) / BPS;
                 if (amt == 0) continue;
-                reserve -= amt;
-                refundedTotal += amt;
-                _send(ord.buyer, amt);
-                emit Refunded(ord.buyer, amt);
+                _payRefund(i, ord.buyer, amt);
                 paid++;
             }
         } else if (o == Outcome.Draw) {
@@ -363,10 +380,7 @@ contract TifoPromo {
                 Order storage ord = orders[i];
                 uint256 amt = (ord.amount * ord.drawBps) / BPS;
                 if (amt == 0) continue;
-                reserve -= amt;
-                refundedTotal += amt;
-                _send(ord.buyer, amt);
-                emit Refunded(ord.buyer, amt);
+                _payRefund(i, ord.buyer, amt);
                 paid++;
             }
         } else {
@@ -375,13 +389,42 @@ contract TifoPromo {
         refundCursor = end;
     }
 
+    function _payRefund(uint256 i, address to, uint256 amt) internal {
+        reserve -= amt;
+        refundedTotal += amt;
+        if (holdSecs > 0) {
+            reservedFor[i] -= amt;
+            if (_open(i)) pendingReserved -= amt;
+        }
+        // A refund the token refuses (a blocked wallet) is kept for the buyer to claim, so it cannot stop the others.
+        try usdc.transfer(to, amt) returns (bool ok) {
+            if (!ok) _owe(to, amt);
+        } catch {
+            _owe(to, amt);
+        }
+        emit Refunded(to, amt);
+    }
+
+    function _owe(address to, uint256 amt) internal {
+        owed[to] += amt;
+        emit RefundOwed(to, amt);
+    }
+
+    /// @notice A buyer collects a refund that could not be sent to them when it was paid.
+    function claim() external {
+        uint256 amt = owed[msg.sender];
+        owed[msg.sender] = 0;
+        if (amt > 0) _send(msg.sender, amt);
+    }
+
     function releaseRemainder() external {
         if (finalOutcome == Outcome.None) revert NotFinal();
         if (refundCursor < orders.length && finalOutcome != Outcome.Void && offerOn()) revert RefundsPending();
         require(!remainderReleased, "released");
         remainderReleased = true;
-        uint256 amt = reserve;
-        reserve = 0;
+        // Rebate money of physical orders still waiting on delivery stays until that delivery is settled.
+        uint256 amt = reserve - pendingReserved;
+        reserve = pendingReserved;
         if (amt > 0) _send(seller, amt);
         journal.push(Entry(uint64(block.timestamp), "remainder", ""));
         emit RemainderReleased(amt);
@@ -440,12 +483,37 @@ contract TifoPromo {
     function _settleShipment(uint256 i, bool toBuyer) internal {
         Shipment storage sh = shipments[i];
         uint256 amt = sh.held;
+        uint256 r = reservedFor[i];
         sh.state = toBuyer ? Delivery.Refunded : Delivery.Released;
         sh.held = 0;
         escrowed -= amt;
+        pendingReserved -= r;
+        if (toBuyer) {
+            // Undo the order: the buyer gets back everything they paid that has not already come back as a rebate.
+            Order storage ord = orders[i];
+            if (finalOutcome == Outcome.None) {
+                liability[ord.side] -= (ord.amount * ord.rateBps) / BPS;
+                drawLiability -= (ord.amount * ord.drawBps) / BPS;
+            }
+            ord.rateBps = 0;
+            ord.drawBps = 0;
+            reserve -= r;
+            reservedFor[i] = 0;
+            amt += r;
+        } else if (remainderReleased) {
+            // Delivered after full time: the rebate money this order kept is now the seller's too.
+            reserve -= r;
+            reservedFor[i] = 0;
+            amt += r;
+        }
         address to = toBuyer ? orders[i].buyer : seller;
         if (amt > 0) _send(to, amt);
         emit DeliveryReleased(i, to, amt, toBuyer);
+    }
+
+    function _open(uint256 i) internal view returns (bool) {
+        Delivery st = shipments[i].state;
+        return st == Delivery.Held || st == Delivery.Sent || st == Delivery.Disputed;
     }
 
     function _isSeller(address who) internal view returns (bool) {

@@ -65,11 +65,12 @@ contract TifoFactory {
         uint16 drawBps,
         uint32 holdSecs,
         uint32 minBuyers,
+        uint256 minAmount,
         string calldata meta
     ) external returns (address promo) {
         require(closesAt > block.timestamp, "kickoff passed");
         promo = address(
-            new TifoPromo(usdc, msg.sender, agent, operator, fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers)
+            new TifoPromo(usdc, msg.sender, agent, operator, fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount)
         );
         promos.push(promo);
         infos.push(PromoInfo(promo, msg.sender, closesAt, uint64(block.timestamp), cap, meta));

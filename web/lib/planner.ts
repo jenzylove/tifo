@@ -25,6 +25,7 @@ export interface Terms {
   drawBps: number;
   holdSecs: number; // 0 for digital products; otherwise payment waits for delivery
   minBuyers: number; // the offer only pays out once this many people bought; 0 is from the first sale
+  minAmount: bigint; // the least one order may pay: the price of one unit, in USDC units
 }
 
 export interface Plan {
@@ -192,6 +193,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
       minBps: lo, maxBps: hi, rateA: rates[0], rateB: rates[1], floorBps: 0, drawBps: DRAW,
       holdSecs: template.delivery ? 0 : HOLD_SECS,
       minBuyers: stock && (template.minBuyers ?? 0) > stock ? 0 : (template.minBuyers ?? 0),
+      minAmount: BigInt(Math.round(price * 1e6)),
     },
     meta: JSON.stringify(meta),
     at,

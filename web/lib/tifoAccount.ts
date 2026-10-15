@@ -2,6 +2,7 @@
 import type { Address } from "viem";
 import { erc20Abi, tifoAccountAbi, tifoFactoryAbi } from "./abi";
 import { FACTORY, USDC, publicClient, OLD_FACTORIES } from "./chain";
+import { legacyAccountProposalsAbi } from "./legacyAbi";
 import type { PromoMeta } from "./promos";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -109,7 +110,13 @@ export async function accountState(address: Address): Promise<AccountState> {
     Number(payoutsCount) ? publicClient.readContract({ ...c, functionName: "getPayouts", args: last(payoutsCount, 100) }) : [],
   ]);
   const n = Number(count);
-  const raw = n ? await publicClient.readContract({ ...c, functionName: "getProposals", args: [BigInt(Math.max(0, n - 20)), 20n] }).catch(() => []) : [];
+  const args = [BigInt(Math.max(0, n - 20)), 20n] as const;
+  const raw: readonly { terms: { cap: bigint }; meta: string; reason: string; at: bigint; status: number }[] = n
+    ? await publicClient
+        .readContract({ ...c, functionName: "getProposals", args })
+        .catch(() => publicClient.readContract({ address, abi: legacyAccountProposalsAbi, functionName: "getProposals", args }))
+        .catch(() => [])
+    : [];
   const first = Math.max(0, n - 20);
   const proposals = raw
     .map((p, i): AccountProposal => {
