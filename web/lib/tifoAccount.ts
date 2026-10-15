@@ -66,6 +66,22 @@ export async function olderAccountsOf(owner: Address): Promise<Address[]> {
   return r.flatMap((x) => (x.status === "success" && x.result !== ZERO ? [x.result as Address] : []));
 }
 
+/**
+ * The person behind a drop's seller address: the owner of the Tifo account when the drop was opened through one,
+ * otherwise the seller wallet itself. An account counts only if one of our factories made it for that owner, so a
+ * contract that merely claims an owner() is not believed.
+ */
+export async function dropOwner(seller: Address): Promise<Address> {
+  const owner = (await publicClient.readContract({ address: seller, abi: tifoAccountAbi, functionName: "owner" }).catch(() => null)) as Address | null;
+  if (!owner) return seller;
+  const factories = [FACTORY, ...OLD_FACTORIES].filter((f) => !/^0x0+$/.test(f));
+  const r = await publicClient.multicall({
+    allowFailure: true,
+    contracts: factories.map((f) => ({ address: f, abi: tifoFactoryAbi, functionName: "accountOf", args: [owner] }) as const),
+  });
+  return r.some((x) => x.status === "success" && String(x.result).toLowerCase() === seller.toLowerCase()) ? owner : seller;
+}
+
 const STATUS = ["waiting", "approved", "declined"] as const;
 
 export async function accountState(address: Address): Promise<AccountState> {

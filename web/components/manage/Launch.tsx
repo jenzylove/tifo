@@ -167,7 +167,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     try {
       let sealed: string | undefined;
       if (kind === "digital") {
-        const r = await fetch("/api/seal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: delivery }) });
+        const r = await fetch("/api/seal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: delivery, owner: account.address }) });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error);
         sealed = j.sealed;

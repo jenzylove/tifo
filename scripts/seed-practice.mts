@@ -79,10 +79,10 @@ if (AFTER > 0) {
 // A digital drop opens its content on the page after paying. If the practice site cannot seal it
 // (DELIVERY_SECRET not set there), the drop still opens, just without that step.
 let sealWorks = true;
-async function sealText(text: string): Promise<string | undefined> {
+async function sealText(text: string, owner: string): Promise<string | undefined> {
   if (!sealWorks) return undefined;
   try {
-    const r = await fetch(`${SITE}/api/seal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+    const r = await fetch(`${SITE}/api/seal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, owner }) });
     const j = (await r.json()) as { sealed?: string; error?: string };
     if (r.ok && j.sealed) return j.sealed;
     fail(`instant delivery is off on the practice site (${j.error ?? r.status}); digital drops open without it`);

@@ -30,7 +30,7 @@ const bal = (a: Hex) => pub.readContract({ address: USDC, abi: erc20, functionNa
 console.log(`seller ${sellerAcct.address} $${Number(await bal(sellerAcct.address)) / 1e6} · fan ${fanAcct.address} $${Number(await bal(fanAcct.address)) / 1e6}`);
 
 const note = `https://example.com/download/tifo-test-${Date.now()}`;
-const sealRes = await post("/api/seal", { text: note });
+const sealRes = await post("/api/seal", { text: note, owner: sellerAcct.address });
 const { sealed } = await sealRes.json();
 check("seal returns a sealed note that hides the link", sealRes.ok && typeof sealed === "string" && !sealed.includes("example.com"));
 
