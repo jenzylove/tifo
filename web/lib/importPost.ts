@@ -20,17 +20,18 @@ Return only what the post says or clearly shows; use null when it does not. pric
 (NGN for ₦ or "naira", USD for $). kind is "digital" for downloads, templates, codes or courses, "booking" for appointments, sessions
 or services at a time, otherwise "physical". product is a short name (under 60 characters). description is one plain sentence.`;
 
+const nullable = (t: object) => ({ anyOf: [t, { type: "null" }] });
 const schema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    shop: { type: ["string", "null"] },
-    product: { type: ["string", "null"] },
-    price: { type: ["number", "null"] },
-    currency: { type: ["string", "null"] },
-    description: { type: ["string", "null"] },
-    kind: { type: ["string", "null"], enum: ["digital", "physical", "booking", null] },
-    stock: { type: ["integer", "null"] },
+    shop: nullable({ type: "string" }),
+    product: nullable({ type: "string" }),
+    price: nullable({ type: "number" }),
+    currency: nullable({ type: "string" }),
+    description: nullable({ type: "string" }),
+    kind: nullable({ type: "string", enum: ["digital", "physical", "booking"] }),
+    stock: nullable({ type: "integer" }),
   },
   required: ["shop", "product", "price", "currency", "description", "kind", "stock"],
 };
