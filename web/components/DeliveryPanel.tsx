@@ -8,6 +8,15 @@ import { useAccount } from "@/lib/account";
 import { explorerAddr, publicClient } from "@/lib/chain";
 import { deliveryWithCircle, walletError } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
+import { viewMessage } from "@/lib/deliveryMessage";
+import DeliveryForm from "./DeliveryForm";
+import { savedOrder } from "./Purchase";
+
+interface Info {
+  buyer: string;
+  at: number;
+  info: { name: string; phone: string; address: string; note?: string };
+}
 
 export interface DeliveryRow {
   i: number;
@@ -31,6 +40,26 @@ export default function DeliveryPanel({ promo, seller, holdSecs, rows, shop }: {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [retry, setRetry] = useState<Retry>(null);
   const days = Math.round(holdSecs / 86_400);
+  const [info, setInfo] = useState<Record<string, Info> | null>(null);
+  const [infoMsg, setInfoMsg] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  /** The seller signs a fresh message with their wallet; the server checks it before opening the addresses. */
+  async function showInfo() {
+    if (!acct) return;
+    setInfoMsg("Confirm it is you…");
+    try {
+      const at = Math.floor(Date.now() / 1000);
+      const signature = await acct.signMessage({ message: viewMessage(promo, at) });
+      const r = await fetch("/api/delivery-info/list", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo, at, signature }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      setInfo(Object.fromEntries((j.list as Info[]).map((x) => [x.buyer.toLowerCase(), x])));
+      setInfoMsg((j.list as Info[]).length ? "" : "No buyer has added delivery details yet.");
+    } catch (e) {
+      setInfoMsg(walletError(e));
+    }
+  }
 
   // The seller is either the wallet that opened the drop, or the owner of the Tifo account that opened it.
   useEffect(() => {
@@ -96,6 +125,12 @@ export default function DeliveryPanel({ promo, seller, holdSecs, rows, shop }: {
                 {r.state === "Refunded" && "Your money was returned."}
               </small>
             </div>
+            {r.state === "Held" && !adding && savedOrder(promo) && (
+              <button className="link fine" onClick={() => setAdding(true)}>
+                Add or update your delivery details
+              </button>
+            )}
+            {r.state === "Held" && adding && savedOrder(promo) && <DeliveryForm promo={promo} shop={shop} order={savedOrder(promo)!} onDone={() => setAdding(false)} />}
             {(r.state === "Held" || r.state === "Sent") && (
               <div className="dl-actions">
                 <button className="btn sm" disabled={busy !== null} onClick={() => act(r.i, "confirmReceived")}>
@@ -114,11 +149,31 @@ export default function DeliveryPanel({ promo, seller, holdSecs, rows, shop }: {
       {isSeller && (
         <>
           {toSend.length === 0 && <p className="fine">Nothing waiting to be sent.</p>}
+          {toSend.length > 0 && !info && (
+            <button className="btn sm ghost" onClick={showInfo}>
+              Show delivery addresses
+            </button>
+          )}
+          {infoMsg && <p className="fine">{infoMsg}</p>}
           {toSend.map((r) => (
             <div key={r.i} className="dl-row">
               <div>
                 <b>Order {r.i + 1}</b> · {r.amount} · buyer {short(r.buyer)}
                 <small>Mark it sent by {day(r.at + holdSecs)}, or the buyer gets the money back.</small>
+                {info?.[r.buyer.toLowerCase()] && (
+                  <span className="dl-addr">
+                    <b>{info[r.buyer.toLowerCase()].info.name}</b> · {info[r.buyer.toLowerCase()].info.phone}
+                    <br />
+                    {info[r.buyer.toLowerCase()].info.address}
+                    {info[r.buyer.toLowerCase()].info.note && (
+                      <>
+                        <br />
+                        <i>{info[r.buyer.toLowerCase()].info.note}</i>
+                      </>
+                    )}
+                  </span>
+                )}
+                {info && !info[r.buyer.toLowerCase()] && <small>This buyer has not added an address yet. Message them or wait.</small>}
               </div>
               <div className="dl-actions">
                 <input

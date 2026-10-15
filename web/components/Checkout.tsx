@@ -1,5 +1,6 @@
 "use client";
 // The buy box on a drop page: the product at full price, plus a promo that pays back a % if the chosen team wins.
+import DeliveryForm from "./DeliveryForm";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
@@ -272,6 +273,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
             : "Your order is in."}
         </p>
         {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
+        {!digital && !booking && <DeliveryForm promo={promo} shop={shop} order={{ hash: status.hash, secret: status.secret }} />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {reach_ && (
             <a className="btn sm" href={reach_.href} target="_blank" rel="noreferrer">
