@@ -111,19 +111,45 @@ async function step(p: PromoSummary, now: number): Promise<TickResult | null> {
   return { promo: p.address, action: `wait: ${c.reason}` };
 }
 
+// Anyone can open drops on the factory, so the agent's gas has to go where buyers' money is first, and some must stay
+// for them. Each pass sends at most MAX_WRITES transactions, drops holding the most money go first, and once the
+// agent's gas runs low it only works on drops that hold money.
+const MAX_WRITES = 30;
+const LOW_GAS = 500_000_000_000_000_000n; // 0.5 USDC (Arc's native USDC has 18 decimals)
+export const MIN_DELIVERY_ACT = 500_000n; // $0.50: smaller held amounts are left for the buyer or seller to settle
+
 /** One pass over every promo: settle what's ready, finalize what's past the window, push refunds, settle deliveries. */
 export async function tick(): Promise<TickResult[]> {
   const out: TickResult[] = [];
   const now = Math.floor(Date.now() / 1000);
-  for (const p of await listPromos()) {
+  const promos = await listPromos();
+  const states = await Promise.all(promos.map((p) => promoState(p.address).catch(() => null)));
+  const stake = (i: number) => states[i]?.reserve ?? 0n;
+  const order = promos.map((_, i) => i).sort((a, b) => (stake(b) > stake(a) ? 1 : stake(b) < stake(a) ? -1 : 0));
+  const gas = await Promise.resolve()
+    .then(() => publicClient.getBalance({ address: wallet().account.address }))
+    .catch(() => LOW_GAS);
+  const lowGas = gas < LOW_GAS;
+  if (lowGas) out.push({ promo: FACTORY, action: `agent gas low (${Number(gas / 10n ** 12n) / 1e6} USDC): only drops holding money are worked on` });
+  let writes = 0;
+  for (const i of order) {
+    const p = promos[i];
+    if (writes >= MAX_WRITES) {
+      out.push({ promo: p.address, action: "deferred: this pass's transactions are used up" });
+      continue;
+    }
     try {
-      const r = await step(p, now);
+      // With little gas left, a drop that holds no refund money waits; nobody is owed anything by its result.
+      const r = lowGas && stake(i) === 0n ? null : await step(p, now);
       if (r) out.push(r);
+      if (r?.hash) writes++;
     } catch (e) {
       out.push({ promo: p.address, action: `error: ${(e as Error).message.slice(0, 200)}` });
     }
     try {
-      out.push(...(await deliveriesTick(p, now)));
+      const d = await deliveriesTick(p, now, MAX_WRITES - writes);
+      writes += d.filter((x) => x.hash).length;
+      out.push(...d);
     } catch (e) {
       out.push({ promo: p.address, action: `delivery error: ${(e as Error).message.slice(0, 200)}` });
     }
@@ -200,7 +226,7 @@ export async function payoutsTick(only?: Address): Promise<TickResult[]> {
  * buyers whose order was never marked sent. Both are open to anyone on the contract; the agent just keeps them moving.
  * Disputes are left alone: only the operator settles those.
  */
-export async function deliveriesTick(p: PromoSummary, now: number): Promise<TickResult[]> {
+export async function deliveriesTick(p: PromoSummary, now: number, budget = MAX_WRITES): Promise<TickResult[]> {
   if (!p.meta.contact && p.meta.delivery) return []; // digital
   const st = await promoState(p.address);
   if (!st.ordersCount) return [];
@@ -208,9 +234,9 @@ export async function deliveriesTick(p: PromoSummary, now: number): Promise<Tick
   if (!d) return [];
   const orders = await promoOrders(p.address, st.ordersCount);
   const out: TickResult[] = [];
-  for (let i = 0; i < d.list.length; i++) {
+  for (let i = 0; i < d.list.length && out.length < budget; i++) {
     const act = dueAction(d.list[i], orders[i].at, d.holdSecs, now);
-    if (!act) continue;
+    if (!act || orders[i].amount < MIN_DELIVERY_ACT) continue;
     const hash = await send(p.address, act, [BigInt(i)]);
     out.push({ promo: p.address, action: act === "release" ? `delivery ${i}: paid the seller` : `delivery ${i}: never sent, returned to buyer`, hash });
   }

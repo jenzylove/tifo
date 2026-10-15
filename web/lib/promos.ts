@@ -52,11 +52,22 @@ export function isCheckDrop(meta: Pick<PromoMeta, "product" | "shop">): boolean 
   return mark(meta.product ?? "") || mark(meta.shop ?? "");
 }
 
+/**
+ * Drops or sellers taken off Tifo by the operator (spam, a shop pretending to be someone else). HIDDEN_DROPS lists
+ * addresses of either. A hidden drop is not shown, opened, relayed or worked on by the agent; its contract still lets
+ * anyone settle it and every buyer claim what they are owed.
+ */
+const HIDDEN = new Set(((process.env.HIDDEN_DROPS ?? "").match(/0x[0-9a-fA-F]{40}/g) ?? []).map((a) => a.toLowerCase()));
+const isHidden = (p: PromoSummary) => HIDDEN.has(p.address.toLowerCase()) || HIDDEN.has(p.seller.toLowerCase());
+
 export async function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
   const all = await Promise.all(
     [src.factory, ...(src.older ?? [])].filter((f) => !/^0x0+$/.test(f)).map((f) => fromFactory(f, src.client).catch(() => [] as PromoSummary[])),
   );
-  return all.flat().sort((a, b) => b.closesAt - a.closesAt);
+  return all
+    .flat()
+    .filter((p) => !isHidden(p))
+    .sort((a, b) => b.closesAt - a.closesAt);
 }
 
 async function fromFactory(FACTORY: Address, publicClient: Source["client"]): Promise<PromoSummary[]> {
