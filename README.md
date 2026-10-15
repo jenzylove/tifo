@@ -53,7 +53,7 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 - **One link.** A seller adds a product, a price and how many they have, and chooses how much back to offer: 25%, 50% or all of it. The agent suggests the match. One passkey confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
 - **Buying.** Buyers open the link, pick a team and pay the normal price in USDC with a passkey wallet made in seconds. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
 - **The cost is known up front.** The most a drop can cost is stock × price × share, shown before posting. Fans split between two teams and only one side wins, so a 25% back offer usually costs about what a 10% off sale does.
-- **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every winner and returns what is left. On a draw every buyer gets a small thank you.
+- **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every winner and returns what is left. On a draw every buyer gets a small thank you. Polymarket's market usually resolves hours after the match, so most results are settled by ESPN and TheSportsDB agreeing.
 - **The seller gets paid.** After each sale and after full time, the agent sends the seller's share to their payout wallet.
 - **Shipped products** keep the payment inside the drop until the buyer confirms it arrived. **Bookable services** sell each time slot once, enforced on chain. **Digital products** open on the page as soon as the buyer pays.
 
@@ -119,7 +119,7 @@ Earlier mainnet factories, [`0x9cda0b64…876CEE`](https://explorer.arc.io/addre
 
 ```bash
 npm install
-cd contracts && forge test        # 41 contract tests, including an invariant run
+cd contracts && forge test        # 58 contract tests, including an invariant run and a fuzz run over physical drops
 cd .. && npm test                 # money math and the naira payment checks
 cd web && npm run dev
 ```
