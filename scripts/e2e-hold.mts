@@ -31,7 +31,7 @@ if ((await bal(buyer.address)) < parseUnits("2.5", 6)) await wait(await sw.write
 async function openDrop(holdSecs: number, label: string): Promise<Hex> {
   const now = Math.floor(Date.now() / 1000);
   const meta = JSON.stringify({ slug: `e2e-hold-${label}-${now}`, league: "Check", teamA: "Home", teamB: "Away", kickoff: new Date((now + 3600) * 1000).toISOString(), shop: "Tifo check", product: `Delivery hold check ${label} (not for sale)`, priceUsd: 1, contact: "check", shape: "back", backBps: 5000, baseRates: [5000, 5000], minBps: 5000, maxBps: 5000, effectiveBps: 5000 });
-  const hash = await sw.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo", args: [keccak256(toBytes(meta)), BigInt(now + 3600), BigInt(now + 3600 + 6600), parseUnits("1", 6), 5000, 5000, 5000, 5000, 0, 0, holdSecs, 0, PRICE, meta] });
+  const hash = await sw.writeContract({ address: FACTORY, abi: tifoFactoryAbi, functionName: "createPromo", args: [keccak256(toBytes(meta)), BigInt(now + 3600), BigInt(now + 3600 + 6600), parseUnits("1", 6), 5000, 5000, 5000, 5000, 0, 0, holdSecs, 0, PRICE, 0, meta] });
   const rc = await wait(hash);
   const log = rc.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
   const promo = `0x${log!.topics[1]!.slice(26)}` as Hex;

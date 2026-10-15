@@ -45,7 +45,7 @@ contract TifoMoneyTest is Test {
     /// $100 budget, $20 product, "free if your team wins": five spots per side, then the floor.
     function test_freeSpots_sixthBuyerGetsTheFloor() public {
         vm.prank(seller);
-        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 10_000, 10_000, 10_000, 10_000, 0, 0, 0, 0, 0, "{}"));
+        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 10_000, 10_000, 10_000, 10_000, 0, 0, 0, 0, 0, 0, "{}"));
         for (uint256 i; i < 5; i++) _fan(i, promo, 0, 20e6, 10_000);
 
         // The sixth buyer who was shown "free" is refused rather than silently given less.
@@ -79,7 +79,7 @@ contract TifoMoneyTest is Test {
 
     function test_drawPaysEveryBuyerTheThankYou() public {
         vm.prank(seller);
-        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 500, 0, 0, 0, "{}"));
+        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 500, 0, 0, 0, 0, "{}"));
         address a = _fan(1, promo, 0, 40e6, 0);
         address b = _fan(2, promo, 1, 20e6, 0);
         assertEq(promo.drawLiability(), 3e6);
@@ -95,7 +95,7 @@ contract TifoMoneyTest is Test {
     /// A checkout that times out and retries sends the same order reference. It must not charge twice.
     function test_sameOrderReferenceIsChargedOnce() public {
         vm.prank(seller);
-        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, 0, "{}"));
+        TifoPromo promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, 0, 0, "{}"));
         address u = makeAddr("retry");
         usdc.mint(u, 40e6);
         vm.startPrank(u);
@@ -109,7 +109,7 @@ contract TifoMoneyTest is Test {
     }
 
     function _terms(uint256 cap) internal view returns (TifoAccount.Terms memory) {
-        return TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, cap, 500, 6000, 3000, 4000, 0, 500, 0, 0, 0);
+        return TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, cap, 500, 6000, 3000, 4000, 0, 500, 0, 0, 0, 0);
     }
 
     function test_account_agentActsInsideTheRuleAndOnlyProposesOutsideIt() public {

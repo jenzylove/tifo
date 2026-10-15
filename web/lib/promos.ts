@@ -28,6 +28,7 @@ export interface PromoMeta {
   slots?: string[]; // a bookable service: the times on offer (ISO). Stock is the number of slots
   stock?: number; // how many the seller has; with backBps it sets the cap (stock x price x share back)
   minBuyers?: number; // the offer only pays out once this many people bought (the contract holds the real value)
+  refNeeded?: number; // a buyer who brings this many friends gets their order free (the contract holds the real value)
   baseRates: [number, number];
   minBps: number;
   maxBps: number;
@@ -115,6 +116,7 @@ export interface PromoState {
   drawLiability: bigint;
   minBuyers: number; // 0 or 1: the offer works from the first sale
   buyers: number; // different wallets that bought
+  refNeeded: number; // friends a buyer must bring for a free order; 0 when the drop has no referrals
 }
 
 export async function promoState(address: Address, src: Source = mainSource): Promise<PromoState> {
@@ -139,7 +141,7 @@ export async function promoState(address: Address, src: Source = mainSource): Pr
   });
   const [rateA, rateB, la, lb, reserve, cap, count] = r[0] as readonly [number, number, bigint, bigint, bigint, bigint, bigint];
   // Drops made before the threshold existed do not have these two; they work from the first sale.
-  const [mb, nb] = await src.client.multicall({ allowFailure: true, contracts: [{ ...c, functionName: "minBuyers" }, { ...c, functionName: "buyers" }] });
+  const [mb, nb, rn] = await src.client.multicall({ allowFailure: true, contracts: [{ ...c, functionName: "minBuyers" }, { ...c, functionName: "buyers" }, { ...c, functionName: "refNeeded" }] });
   return {
     rates: [rateA, rateB],
     liability: [la, lb],
@@ -160,6 +162,7 @@ export async function promoState(address: Address, src: Source = mainSource): Pr
     drawLiability: r[12] as bigint,
     minBuyers: mb.status === "success" ? Number(mb.result) : 0,
     buyers: nb.status === "success" ? Number(nb.result) : 0,
+    refNeeded: rn.status === "success" ? Number(rn.result) : 0,
   };
 }
 

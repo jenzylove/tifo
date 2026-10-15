@@ -52,7 +52,7 @@ contract TifoPromoTest is Test {
         factory = new TifoFactory(address(usdc), agent, operator);
         kickoff = uint64(block.timestamp + 1 days);
         vm.prank(seller);
-        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, 0, "{}"));
+        promo = TifoPromo(factory.createPromo(keccak256("epl-mnu-tot-2026-10-10"), kickoff, kickoff + 105 minutes, 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, 0, 0, "{}"));
         for (uint256 i; i < 3; i++) {
             address u = [a1, a2, b1][i];
             usdc.mint(u, 1_000e6);
@@ -103,7 +103,7 @@ contract TifoPromoTest is Test {
         // a rate change applies only to future orders
         vm.prank(agent);
         promo.setRates(1000, 5000, "x");
-        (, , , uint16 locked, , ) = promo.orders(0);
+        uint16 locked = promo.getOrders(0, 1)[0].rateBps;
         assertEq(locked, 3000);
     }
 
@@ -217,7 +217,7 @@ contract TifoPromoInvariant is Test {
         vm.warp(1_000_000);
         usdc = new MockUSDC();
         address agent = makeAddr("agent");
-        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000, 300, 500, 0, 0, 0);
+        promo = new TifoPromo(address(usdc), seller, agent, makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 250e6, 500, 6000, 2000, 4000, 300, 500, 0, 0, 0, 0);
         handler = new Handler(promo, usdc, agent, seller);
         targetContract(address(handler));
     }
@@ -232,50 +232,5 @@ contract TifoPromoInvariant is Test {
         assertLe(r, cap);
         assertEq(usdc.balanceOf(address(promo)), r);
         assertEq(handler.paidIn(), handler.toSeller() + r);
-    }
-}
-
-contract PermitUSDC is MockUSDC {
-    // Minimal permit: trusts (v,r,s) = signature from `owner` via ecrecover over a simple digest.
-    bytes32 public constant TYPEHASH = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
-    mapping(address => uint256) public nonces;
-
-    function digest(address owner, address spender, uint256 value, uint256 nonce, uint256 deadline) public pure returns (bytes32) {
-        return keccak256(abi.encode(TYPEHASH, owner, spender, value, nonce, deadline));
-    }
-
-    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external {
-        require(block.timestamp <= deadline, "expired");
-        require(ecrecover(digest(owner, spender, value, nonces[owner]++, deadline), v, r, s) == owner, "sig");
-        allowance[owner][spender] = value;
-    }
-}
-
-contract TifoPermitTest is Test {
-    function test_gaslessBuy_onlyPullsFromSigner() public {
-        vm.warp(1_000_000);
-        PermitUSDC usdc = new PermitUSDC();
-        address seller = makeAddr("seller");
-        TifoPromo promo = new TifoPromo(address(usdc), seller, makeAddr("agent"), makeAddr("op"), bytes32(0), uint64(block.timestamp + 1 days), uint64(block.timestamp + 2 days), 100e6, 500, 6000, 3000, 4000, 0, 0, 0, 0, 0);
-        (address fan, uint256 pk) = makeAddrAndKey("fan");
-        usdc.mint(fan, 20e6);
-        uint256 deadline = block.timestamp + 1 hours;
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, usdc.digest(fan, address(promo), 20e6, 0, deadline));
-        // only the agent's relayer may submit: the permit does not cover the side or the order reference
-        vm.prank(makeAddr("stranger"));
-        vm.expectRevert(TifoPromo.NotAgent.selector);
-        promo.buyWithPermit(fan, 1, 20e6, bytes32("other"), 0, deadline, v, r, s);
-        address relayer = makeAddr("agent");
-        vm.prank(relayer);
-        promo.buyWithPermit(fan, 0, 20e6, bytes32("order-1"), 0, deadline, v, r, s);
-        assertEq(usdc.balanceOf(fan), 0);
-        assertEq(usdc.balanceOf(seller), 14e6); // 20 - 6 held
-        assertEq(promo.sideOf(fan), 1);
-        // a relayer can't make someone else pay without their signature
-        address victim = makeAddr("victim");
-        usdc.mint(victim, 20e6);
-        vm.prank(relayer);
-        vm.expectRevert();
-        promo.buyWithPermit(victim, 0, 20e6, bytes32(0), 0, deadline, v, r, s);
     }
 }

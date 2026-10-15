@@ -33,24 +33,6 @@ async function send(address: Address, functionName: string, args: readonly unkno
   return hash;
 }
 
-export interface PermitBuy {
-  promo: Address;
-  buyer: Address;
-  side: 0 | 1;
-  amount: bigint;
-  orderRef: Hex;
-  minRateBps: number; // the offer the buyer was shown; the sale is refused if it is gone
-  deadline: bigint;
-  v: number;
-  r: Hex;
-  s: Hex;
-}
-
-/** Relay a buyer's signed permit. The buyer pays no gas; funds can only come from the signer. */
-export async function relayBuy(b: PermitBuy): Promise<Hex> {
-  return send(b.promo, "buyWithPermit", [b.buyer, b.side, b.amount, b.orderRef, b.minRateBps, b.deadline, b.v, b.r, b.s]);
-}
-
 /**
  * After every sale: if one side's refund bill has run ahead, move the offers.
  * The math (core.rebalance) is deterministic; the agent only acts when the change is material
@@ -90,6 +72,17 @@ async function step(p: PromoSummary, now: number): Promise<TickResult | null> {
       if (st.buyers < st.minBuyers)
         await send(p.address, "note", ["offer off", `${st.buyers} of the ${st.minBuyers} buyers needed bought, so the offer stayed off. Every sale goes to the seller.`]).catch(() => {});
       return { promo: p.address, action: "pay refunds", hash: await send(p.address, "payRefunds", [200n]) };
+    }
+    // Referrals are settled before the remainder: free orders first, then whatever was set aside for unfinished ones.
+    if (st.refNeeded > 0 && !st.remainderReleased) {
+      const [cursor, total] = await publicClient.multicall({
+        allowFailure: false,
+        contracts: [
+          { address: p.address, abi: tifoPromoAbi, functionName: "refCursor" },
+          { address: p.address, abi: tifoPromoAbi, functionName: "referrersCount" },
+        ],
+      });
+      if (cursor < total) return { promo: p.address, action: "settle referrals", hash: await send(p.address, "settleReferrals", [100n]) };
     }
     if (!st.remainderReleased) return { promo: p.address, action: "release remainder", hash: await send(p.address, "releaseRemainder", []) };
     return null;
@@ -159,21 +152,20 @@ export async function tick(): Promise<TickResult[]> {
 }
 
 /**
- * A buyer came from another buyer's challenge link. The agent checks it on chain (both wallets bought this drop, on
- * opposite sides, the challenger first) and writes the pair in the drop's journal, once per new buyer. No money
- * depends on it: it is a record of a sale the seller's own post did not bring.
+ * A buyer came through a friend's link. When that friend reaches the number of referrals the seller set, the agent says
+ * so in the drop's journal, once: their order will be free after the match. The contract already counted it; the note
+ * is the record a person can read.
  */
-export async function recordPair(p: PromoSummary, from: Address, buyer: Address): Promise<TickResult | null> {
-  if (from.toLowerCase() === buyer.toLowerCase()) return null;
+export async function noteReferral(p: PromoSummary, referrer: Address): Promise<TickResult | null> {
+  const c = { address: p.address, abi: tifoPromoAbi } as const;
+  const [need, count] = await publicClient.multicall({ allowFailure: false, contracts: [{ ...c, functionName: "refNeeded" }, { ...c, functionName: "refCount", args: [referrer] }] });
+  if (!Number(need) || Number(count) < Number(need)) return null;
   const st = await promoState(p.address);
-  const [orders, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
-  const first = orders.find((o) => o.buyer.toLowerCase() === from.toLowerCase());
-  const second = orders.find((o) => o.buyer.toLowerCase() === buyer.toLowerCase());
-  if (!first || !second || first.side === second.side || second.at < first.at) return null;
-  if (journal.some((j) => j.kind === "pair" && j.text.toLowerCase().includes(`brought ${buyer.toLowerCase()}`))) return null;
-  const team = [shortTeam(p.meta.teamA), shortTeam(p.meta.teamB)];
-  const text = `${from.toLowerCase()} (${team[first.side]}) brought ${buyer.toLowerCase()} (${team[second.side]})`;
-  return { promo: p.address, action: `pair: ${text}`, hash: await send(p.address, "note", ["pair", text]) };
+  const journal = await promoJournal(p.address, st.journalCount);
+  const who = referrer.toLowerCase();
+  if (journal.some((j) => j.kind === "referral" && j.text.toLowerCase().includes(who))) return null;
+  const text = `${who} brought ${Number(need)} new buyers, so their order is free: what they paid comes back after the match, whoever wins.`;
+  return { promo: p.address, action: `referral: ${text}`, hash: await send(p.address, "note", ["referral", text]) };
 }
 
 const MIN_PAYOUT = 100_000n; // $0.10: below this the transfer is not worth a transaction

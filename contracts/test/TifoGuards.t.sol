@@ -41,7 +41,7 @@ contract TifoGuardsTest is Test {
 
     function _drop(uint256 cap, uint16 rate, uint16 draw, uint32 hold, uint32 minBuyers, uint256 price) internal returns (TifoPromo p) {
         vm.prank(seller);
-        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 2 hours, cap, rate, rate, rate, rate, 0, draw, hold, minBuyers, price, "{}"));
+        p = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 2 hours, cap, rate, rate, rate, rate, 0, draw, hold, minBuyers, price, 0, "{}"));
     }
 
     function _buy(TifoPromo p, address u, uint8 side, uint256 amt, bytes32 ref) internal {
@@ -130,8 +130,8 @@ contract TifoGuardsTest is Test {
     }
 
     function _order(TifoPromo p, uint256 i) internal view returns (address, uint8, uint256, uint16, uint16, uint64, uint16, uint16, uint64) {
-        (address buyer, uint8 side, uint256 amount, uint16 rate, uint16 draw, uint64 at) = p.orders(i);
-        return (buyer, side, amount, rate, draw, at, rate, draw, at);
+        TifoPromo.Order memory o = p.getOrders(i, 1)[0];
+        return (o.buyer, o.side, o.amount, o.rateBps, o.drawBps, o.at, o.rateBps, o.drawBps, o.at);
     }
 
     function test_deliveredOrder_paysTheSellerAndTheRebateMoneyAfterFullTime() public {

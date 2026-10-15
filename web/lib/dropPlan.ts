@@ -19,6 +19,7 @@ export interface DropPlan {
   backPct: number; // 10 to 100
   balance: boolean;
   minBuyers: number; // 0, 3, 5 or 10
+  refFriends: number; // 0, 2, 3 or 5: a buyer who brings this many friends gets their order free
   reason: string;
   byModel: boolean; // false when the plan came from the fallback rule
 }
@@ -50,6 +51,9 @@ Choose:
   even whoever wins. Recommend true unless the seller wants one fixed offer.
 - min_buyers: 0, 3, 5 or 10. Above 0 the offer only pays out if that many people buy, which makes buyers share the link.
   Use 3 or 5 for small stock, 0 when stock is 1 or 2.
+- ref_friends: 0, 2, 3 or 5. Above 0, a buyer who brings that many friends who buy gets their own order free after the match,
+  paid for by those extra sales. Good for digital products and bookings that spread by word of mouth. Must be 0 when how_delivered
+  is "physical".
 - reason: two or three short sentences to the seller in plain words: why this match, why this offer. Quote only numbers you were
   given. Say "sale ends" rather than kickoff. No betting words, no odds, no markdown.`;
 
@@ -61,9 +65,10 @@ const schema = {
     back_pct: { type: "integer" },
     balance: { type: "boolean" },
     min_buyers: { type: "integer", enum: REACH },
+    ref_friends: { type: "integer", enum: [0, 2, 3, 5] },
     reason: { type: "string" },
   },
-  required: ["match_slug", "back_pct", "balance", "min_buyers", "reason"],
+  required: ["match_slug", "back_pct", "balance", "min_buyers", "ref_friends", "reason"],
 };
 
 /** The rule the agent falls back on when the model cannot answer: the biggest close match, 50% back, balanced. */
@@ -82,6 +87,7 @@ function fallback(input: DropPlanInput, ms: Match[]): DropPlan | null {
     backPct: 50,
     balance: true,
     minBuyers: input.units >= 6 ? 3 : 0,
+    refFriends: 0,
     reason: `${shortTeam(best.teamA)} v ${shortTeam(best.teamB)} is the biggest close match coming up, so fans on both sides will want in. Half back if their team wins reads like a normal sale and keeps your cost even.`,
     byModel: false,
   };
@@ -113,14 +119,15 @@ export async function planDrop(input: DropPlanInput): Promise<DropPlan> {
     } as Parameters<typeof client.messages.create>[0] & { stream?: false });
     const text = res.content.find((b) => b.type === "text");
     if (!text || text.type !== "text") throw new Error("no plan");
-    const out = JSON.parse(text.text) as { match_slug: string; back_pct: number; balance: boolean; min_buyers: number; reason: string };
+    const out = JSON.parse(text.text) as { match_slug: string; back_pct: number; balance: boolean; min_buyers: number; ref_friends: number; reason: string };
     // The model's answer is a suggestion: the match must be one it was given and every number is clamped.
     const m = ms.find((x) => x.slug === out.match_slug);
     if (!m) throw new Error("unknown match");
     const backPct = Math.min(100, Math.max(10, Math.round(Number(out.back_pct) || 50)));
     let minBuyers = REACH.includes(out.min_buyers) ? out.min_buyers : 0;
     if (minBuyers > input.units) minBuyers = 0;
-    return { slug: m.slug, backPct, balance: out.balance !== false, minBuyers, reason: String(out.reason ?? "").slice(0, 600), byModel: true };
+    const refFriends = input.kind === "physical" || ![0, 2, 3, 5].includes(out.ref_friends) ? 0 : out.ref_friends;
+    return { slug: m.slug, backPct, balance: out.balance !== false, minBuyers, refFriends, reason: String(out.reason ?? "").slice(0, 600), byModel: true };
   } catch (e) {
     console.error("plan-drop fell back", e);
     const f = fallback(input, ms);

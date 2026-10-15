@@ -41,7 +41,7 @@ const terms = (cap: string, tag: string) => ({
   closesAt: BigInt(now + 7200),
   settleNotBefore: BigInt(now + 7200 + 6600),
   cap: parseUnits(cap, 6),
-  minBps: 5000, maxBps: 5000, rateA: 5000, rateB: 5000, floorBps: 0, drawBps: 0, holdSecs: 0, minBuyers: 0, minAmount: parseUnits("1", 6),
+  minBps: 5000, maxBps: 5000, rateA: 5000, rateB: 5000, floorBps: 0, drawBps: 0, holdSecs: 0, minBuyers: 0, minAmount: parseUnits("1", 6), refNeeded: 0,
 });
 const meta = (tag: string) => JSON.stringify({ slug: `e2e-proposal-${tag}`, league: "Check", teamA: "Home", teamB: "Away", kickoff: new Date((now + 7200) * 1000).toISOString(), shop: "Tifo check", product: `Rule check ${tag} (not for sale)`, priceUsd: 1, baseRates: [5000, 5000], minBps: 5000, maxBps: 5000, effectiveBps: 5000 });
 

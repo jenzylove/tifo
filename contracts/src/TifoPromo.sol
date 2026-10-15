@@ -9,7 +9,6 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function balanceOf(address who) external view returns (uint256);
-    function permit(address owner, address spender, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external;
 }
 
 /// @title TifoPromo
@@ -17,7 +16,7 @@ interface IERC20 {
 /// fans of side B if B wins; a draw pays every buyer a small thank you (`drawBps`); voided matches pay nothing.
 /// The contract keeps exactly enough USDC to cover the largest of the three possible bills and
 /// forwards everything else to the seller the moment a sale lands. That bill can never exceed `cap`.
-/// The agent can only change offers for future orders, propose a result, and push refunds.
+/// The agent can only change offers for future orders, propose a result, and push refunds. Buyers pay from their own wallet.
 /// It has no path to move funds anywhere except buyers' refunds and the seller's remainder.
 /// For physical products (`holdSecs` > 0) the seller's share of each sale is held until the buyer confirms delivery,
 /// or `holdSecs` after the seller marks it sent; if the seller never marks it sent, the buyer can take it back.
@@ -25,6 +24,9 @@ interface IERC20 {
 /// nobody is paid back and the seller keeps every sale.
 /// Every order pays at least `minAmount` (the price of one unit), so a slot, a buyer count or a delivery cannot be had for dust.
 /// On a physical drop each order keeps its own rebate in the reserve, so an order that is never sent can be paid back in full.
+/// Referrals (`refNeeded` > 0): a buyer who brings that many new buyers gets what they paid back after full time, whoever
+/// wins. Each referred sale sets aside a share of the referrer's price from the seller's part of that sale, so the free
+/// order is paid for by the extra sales; if too few friends buy, what was set aside goes to the seller.
 contract TifoPromo {
     enum Outcome {
         None,
@@ -88,6 +90,7 @@ contract TifoPromo {
     uint32 public immutable holdSecs; // 0: pay the seller at sale. Otherwise hold until delivery (see Shipment)
     uint32 public immutable minBuyers; // the offer only pays out once this many different wallets bought (0 or 1: from the first sale)
     uint256 public immutable minAmount; // the least one order may pay: the price of one unit
+    uint8 public immutable refNeeded; // new buyers a buyer must bring for their own order to be free; 0 turns referrals off
 
     uint16[2] public rateBps;
     uint256[2] public liability;
@@ -97,7 +100,7 @@ contract TifoPromo {
     uint256 public reserve;
     uint32 public buyers; // different wallets that bought
 
-    Order[] public orders;
+    Order[] internal orders;
     Entry[] internal journal;
     uint256 public refundedTotal;
     mapping(address => uint8) public sideOf; // 0 = none, 1 = A, 2 = B
@@ -106,10 +109,18 @@ contract TifoPromo {
     mapping(uint256 => uint256) public reservedFor; // physical drops: the part of the reserve that belongs to this order
     uint256 public pendingReserved; // physical drops: reserve belonging to orders whose delivery is not settled yet
     mapping(address => uint256) public owed; // a refund the token refused to send (a blocked wallet); the buyer claims it
+    mapping(address => uint256) public paidBy; // everything a wallet paid in this drop
+    mapping(address => uint256) public paidBack; // everything a wallet got back from this drop
+    mapping(address => uint32) public refCount; // new buyers this wallet brought
+    mapping(address => uint256) public refHeld; // set aside from those buyers' sales for this wallet's free order
+    mapping(address => address) public referredBy; // who brought this buyer
+    address[] internal referrers;
+    uint256 internal refReserve; // everything set aside for referrals, separate from the refund reserve
+    uint256 public refCursor; // referrers settled after full time
 
     Outcome public proposed;
     uint64 public proposedAt;
-    bytes32 public evidence;
+    bytes32 internal evidence;
     Outcome public finalOutcome;
     uint256 public refundCursor;
     bool public remainderReleased;
@@ -126,6 +137,8 @@ contract TifoPromo {
     event DeliveryDisputed(uint256 indexed order);
     event DeliveryReleased(uint256 indexed order, address to, uint256 amount, bool toBuyer);
     event RefundOwed(address indexed buyer, uint256 amount);
+    event Referred(address indexed referrer, address indexed buyer, uint32 count, uint256 setAside);
+    event ReferralSettled(address indexed referrer, uint256 toReferrer, uint256 toSeller);
 
     error NotAgent();
     error NotOperator();
@@ -165,8 +178,10 @@ contract TifoPromo {
         uint16 drawBps_,
         uint32 holdSecs_,
         uint32 minBuyers_,
-        uint256 minAmount_
+        uint256 minAmount_,
+        uint8 refNeeded_
     ) {
+        require(refNeeded_ == 0 || holdSecs_ == 0, "ref");
         require(holdSecs_ <= MAX_HOLD, "hold");
         require(minBps_ <= maxBps_ && maxBps_ <= BPS, "bounds");
         require(floorBps_ <= minBps_ && drawBps_ <= BPS, "floor");
@@ -188,6 +203,7 @@ contract TifoPromo {
         holdSecs = holdSecs_;
         minBuyers = minBuyers_;
         minAmount = minAmount_;
+        refNeeded = refNeeded_;
     }
 
     /// @notice True once enough different wallets bought for the offer to pay out.
@@ -199,30 +215,15 @@ contract TifoPromo {
 
     /// @param minRateBps The lowest offer the buyer accepts. If the shown offer is gone by the time this lands, it reverts.
     function buy(uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) external {
-        _buy(msg.sender, msg.sender, side, amount, orderRef, minRateBps);
+        _buy(msg.sender, msg.sender, side, amount, orderRef, minRateBps, address(0));
     }
 
-    /// @notice Gasless checkout: the buyer signs a USDC permit and the agent's relayer submits it.
-    /// Funds can only come from the buyer who signed, and the rebate can only go back to them. Only the relayer may
-    /// submit, because the permit does not cover the side or the order reference.
-    function buyWithPermit(
-        address buyer,
-        uint8 side,
-        uint256 amount,
-        bytes32 orderRef,
-        uint16 minRateBps,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external {
-        if (msg.sender != agent) revert NotAgent();
-        // A front-run permit leaves the allowance in place, so a failed permit is not fatal.
-        try usdc.permit(buyer, address(this), amount, deadline, v, r, s) {} catch {}
-        _buy(buyer, buyer, side, amount, orderRef, minRateBps);
+    /// @notice Buy through another buyer's link. It counts toward their free order only if this wallet is new to the drop.
+    function buyRef(uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps, address referrer) external {
+        _buy(msg.sender, msg.sender, side, amount, orderRef, minRateBps, referrer);
     }
 
-    function _buy(address payer, address buyer, uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps) internal {
+    function _buy(address payer, address buyer, uint8 side, uint256 amount, bytes32 orderRef, uint16 minRateBps, address referrer) internal {
         if (block.timestamp >= closesAt || finalOutcome != Outcome.None || proposed != Outcome.None) revert Closed();
         if (side > 1) revert BadSide();
         require(amount > 0 && buyer != address(0), "amount");
@@ -262,6 +263,23 @@ contract TifoPromo {
             reserve = newReserve;
         }
         uint256 toSeller = amount - held;
+        paidBy[buyer] += amount;
+        // A new wallet that came through a buyer's link: set aside its share of that buyer's free order.
+        if (referrer != address(0) && refNeeded > 0 && s == 0 && referrer != buyer && sideOf[referrer] != 0 && refCount[referrer] < refNeeded) {
+            uint32 c = refCount[referrer];
+            uint256 target = paidBy[referrer];
+            uint256 have = refHeld[referrer];
+            uint256 left = refNeeded - c;
+            uint256 hold = target > have ? (target - have + left - 1) / left : 0;
+            if (hold > toSeller) hold = toSeller;
+            if (c == 0) referrers.push(referrer);
+            refCount[referrer] = c + 1;
+            referredBy[buyer] = referrer;
+            refHeld[referrer] = have + hold;
+            refReserve += hold;
+            toSeller -= hold;
+            emit Referred(referrer, buyer, c + 1, hold);
+        }
 
         liability = l;
         drawLiability = dl;
@@ -392,18 +410,64 @@ contract TifoPromo {
     function _payRefund(uint256 i, address to, uint256 amt) internal {
         reserve -= amt;
         refundedTotal += amt;
+        paidBack[to] += amt;
         if (holdSecs > 0) {
             reservedFor[i] -= amt;
             if (_open(i)) pendingReserved -= amt;
         }
-        // A refund the token refuses (a blocked wallet) is kept for the buyer to claim, so it cannot stop the others.
+        _sendOrOwe(to, amt);
+        emit Refunded(to, amt);
+    }
+
+    /// A payment the token refuses (a blocked wallet) is kept for the buyer to claim, so it cannot stop the others.
+    function _sendOrOwe(address to, uint256 amt) internal {
         try usdc.transfer(to, amt) returns (bool ok) {
             if (!ok) _owe(to, amt);
         } catch {
             _owe(to, amt);
         }
-        emit Refunded(to, amt);
     }
+
+    function referrersCount() external view returns (uint256) {
+        return referrers.length;
+    }
+
+    function _refundsDone() internal view returns (bool) {
+        return refundCursor >= orders.length || finalOutcome == Outcome.Void || !offerOn();
+    }
+
+    /// @notice After full time and the result refunds, settle referrals: a buyer who brought enough new buyers gets back
+    /// what they paid (less anything the result already paid them), from the money set aside; the rest goes to the seller.
+    function settleReferrals(uint256 maxCount) external returns (uint256 done) {
+        if (finalOutcome == Outcome.None) revert NotFinal();
+        if (!_refundsDone()) revert RefundsPending();
+        uint256 i = refCursor;
+        uint256 end = i + maxCount > referrers.length ? referrers.length : i + maxCount;
+        uint256 toSellerTotal;
+        for (; i < end; i++) {
+            address r = referrers[i];
+            uint256 h = refHeld[r];
+            refHeld[r] = 0;
+            refReserve -= h;
+            uint256 toR;
+            if (refCount[r] >= refNeeded) {
+                uint256 back = paidBy[r] > paidBack[r] ? paidBy[r] - paidBack[r] : 0;
+                toR = h < back ? h : back;
+                if (toR > 0) {
+                    paidBack[r] += toR;
+                    refundedTotal += toR;
+                    _sendOrOwe(r, toR);
+                }
+            }
+            toSellerTotal += h - toR;
+            emit ReferralSettled(r, toR, h - toR);
+            done++;
+        }
+        refCursor = end;
+        if (toSellerTotal > 0) _send(seller, toSellerTotal);
+    }
+
+
 
     function _owe(address to, uint256 amt) internal {
         owed[to] += amt;
@@ -419,7 +483,7 @@ contract TifoPromo {
 
     function releaseRemainder() external {
         if (finalOutcome == Outcome.None) revert NotFinal();
-        if (refundCursor < orders.length && finalOutcome != Outcome.Void && offerOn()) revert RefundsPending();
+        if (!_refundsDone() || refCursor < referrers.length) revert RefundsPending();
         require(!remainderReleased, "released");
         remainderReleased = true;
         // Rebate money of physical orders still waiting on delivery stays until that delivery is settled.

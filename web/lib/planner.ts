@@ -26,6 +26,7 @@ export interface Terms {
   holdSecs: number; // 0 for digital products; otherwise payment waits for delivery
   minBuyers: number; // the offer only pays out once this many people bought; 0 is from the first sale
   minAmount: bigint; // the least one order may pay: the price of one unit, in USDC units
+  refNeeded: number; // friends a buyer must bring for a free order; 0 for no referrals
 }
 
 export interface Plan {
@@ -167,7 +168,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
   const meta: PromoMeta = {
     slug: m.slug, league: m.league.name, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
     shop: template.shop, product: template.product, priceUsd: price, image: template.image, description: template.description,
-    profitUsd: template.profitUsd, delivery: template.delivery, contact: template.contact, minBuyers: template.minBuyers,
+    profitUsd: template.profitUsd, delivery: template.delivery, contact: template.contact, minBuyers: template.minBuyers, refNeeded: template.delivery ? template.refNeeded : undefined,
     shape, backBps: tier, stock: stock ?? undefined, baseRates: rates, minBps: lo, maxBps: hi, effectiveBps: shape === "free" ? 0 : tier,
     byAgent: withinRule, reason,
   };
@@ -194,6 +195,7 @@ export async function planFrom({ name, account, drops, fixtures }: PlanInput): P
       holdSecs: template.delivery ? 0 : HOLD_SECS,
       minBuyers: stock && (template.minBuyers ?? 0) > stock ? 0 : (template.minBuyers ?? 0),
       minAmount: BigInt(Math.round(price * 1e6)),
+      refNeeded: template.delivery ? Math.min(10, template.refNeeded ?? 0) : 0,
     },
     meta: JSON.stringify(meta),
     at,

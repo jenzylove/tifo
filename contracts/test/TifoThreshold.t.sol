@@ -27,7 +27,7 @@ contract TifoThresholdTest is Test {
     /// $4 product, "free if your team wins", $20 budget, the offer switches on at `minBuyers`.
     function _drop(uint32 minBuyers) internal returns (TifoPromo promo) {
         vm.prank(seller);
-        promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 20e6, 10_000, 10_000, 10_000, 10_000, 0, 500, 0, minBuyers, 0, "{}"));
+        promo = TifoPromo(factory.createPromo(bytes32("m"), kickoff, kickoff + 105 minutes, 20e6, 10_000, 10_000, 10_000, 10_000, 0, 500, 0, minBuyers, 0, 0, "{}"));
     }
 
     function _fan(uint256 i, TifoPromo promo, uint8 side) internal returns (address u) {
@@ -134,7 +134,7 @@ contract TifoThresholdTest is Test {
     function test_accountDropsCarryTheLine() public {
         vm.prank(seller);
         (address account, address p) = factory.createAccountAndOpen(
-            1000, 20e6, 20e6, address(0), TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 20e6, 10_000, 10_000, 10_000, 10_000, 0, 0, 0, 4, 0), "{}"
+            1000, 20e6, 20e6, address(0), TifoAccount.Terms(bytes32("m"), kickoff, kickoff + 105 minutes, 20e6, 10_000, 10_000, 10_000, 10_000, 0, 0, 0, 4, 0, 0), "{}"
         );
         assertTrue(account != address(0));
         assertEq(TifoPromo(p).minBuyers(), 4);

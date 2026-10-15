@@ -430,12 +430,16 @@ async function diagnoseSignature(account: SmartAccount, original: unknown): Prom
 }
 
 /** Approve and buy in one sponsored user operation. Returns the on-chain transaction hash. */
-export async function buyWithCircle(account: SmartAccount, promo: Address, side: 0 | 1, amount: bigint, orderRef: Hex, minRateBps: number): Promise<Hex> {
+export async function buyWithCircle(account: SmartAccount, promo: Address, side: 0 | 1, amount: bigint, orderRef: Hex, minRateBps: number, referrer?: Address | null): Promise<Hex> {
+  // Through a friend's link the purchase counts toward their free order (drops with referrals only).
+  const buy = referrer
+    ? encodeFunctionData({ abi: tifoPromoAbi, functionName: "buyRef", args: [side, amount, orderRef, minRateBps, referrer] })
+    : encodeFunctionData({ abi: tifoPromoAbi, functionName: "buy", args: [side, amount, orderRef, minRateBps] });
   return sendAs(
     account,
     [
       { to: USDC, data: encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [promo, amount] }) },
-      { to: promo, data: encodeFunctionData({ abi: tifoPromoAbi, functionName: "buy", args: [side, amount, orderRef, minRateBps] }) },
+      { to: promo, data: buy },
     ],
     "The payment was not accepted on chain. Nothing was charged.",
     (r) => r.transactionHash,
@@ -477,11 +481,11 @@ export async function createAccountAndOpenWithCircle(
   payout: Address,
   args: NonNullable<CreatePromoArgs>,
 ): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded, meta] = args;
   const data = encodeFunctionData({
     abi: tifoFactoryAbi,
     functionName: "createAccountAndOpen",
-    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount }, meta],
+    args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded }, meta],
   });
   return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     // The factory logs the new drop (PromoCreated, drop address first) and the new account (AccountCreated).
@@ -515,11 +519,11 @@ export async function withdrawFromAccountWithCircle(account: SmartAccount, tifoA
 
 /** Open a drop through the seller's account, so its sales land there and it counts toward the week. */
 export async function openViaAccountWithCircle(account: SmartAccount, tifoAccount: Address, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
-  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, meta] = args;
+  const [fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded, meta] = args;
   const data = encodeFunctionData({
     abi: tifoAccountAbi,
     functionName: "open",
-    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount }, meta],
+    args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded }, meta],
   });
   return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
     const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());

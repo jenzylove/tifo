@@ -148,6 +148,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
 
         <div className="info">
           <span className="pill ac" style={{ justifySelf: "start" }}>{free ? "Free if your team wins" : `${share / 100}% back if your team wins`}</span>
+          {st.refNeeded > 0 && phase === "open" && <span className="fine">Or bring {st.refNeeded} friends who buy, and yours is free whoever wins.</span>}
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
           {description && <p className="desc">{description}</p>}
@@ -173,6 +174,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
               reach={st.minBuyers > 1 ? { need: st.minBuyers, have: st.buyers } : null}
               moving={p.meta.minBps < p.meta.maxBps}
               lastMove={[...journal].reverse().find((j) => j.kind === "rates")?.text}
+              refNeeded={st.refNeeded}
             />
           ) : (
             <div className="buybox">
@@ -328,6 +330,8 @@ function label(kind: string, text: string, A: string, B: string) {
       return `Result final: ${out(text)}. Refunds sent.`;
     case "remainder":
       return "Returned the unused set-aside to the shop.";
+    case "referral":
+      return `Manager: ${text}`;
     default:
       return `${kind}: ${text}`;
   }

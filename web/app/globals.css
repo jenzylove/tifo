@@ -627,3 +627,5 @@ html, body { overflow-x: clip; }
 .dl-form { display: grid; gap: 8px; margin-top: 12px; padding: 14px; border-radius: 18px; background: var(--surface-2); }
 .dl-form .input { background: var(--surface); }
 .dl-addr { display: block; margin-top: 6px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; line-height: 1.4; }
+.refer { display: grid; gap: 8px; margin-top: 14px; padding: 16px; border-radius: 18px; background: var(--surface-2); }
+.refer .btn { justify-self: start; }

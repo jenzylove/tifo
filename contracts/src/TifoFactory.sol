@@ -19,6 +19,29 @@ contract TifoAccountDeployer {
     }
 }
 
+/// @notice Creates drops for the factory that deployed it, split out for the same 24 KB limit. Only that factory can call
+/// it, and the seller is whoever called the factory.
+contract TifoPromoDeployer {
+    address public immutable factory;
+    address public immutable usdc;
+    address public immutable agent;
+    address public immutable operator;
+
+    constructor(address usdc_, address agent_, address operator_) {
+        factory = msg.sender;
+        usdc = usdc_;
+        agent = agent_;
+        operator = operator_;
+    }
+
+    function deploy(address seller, TifoAccount.Terms calldata t) external returns (address) {
+        require(msg.sender == factory, "factory");
+        return address(
+            new TifoPromo(usdc, seller, agent, operator, t.fixtureId, t.closesAt, t.settleNotBefore, t.cap, t.minBps, t.maxBps, t.rateA, t.rateB, t.floorBps, t.drawBps, t.holdSecs, t.minBuyers, t.minAmount, t.refNeeded)
+        );
+    }
+}
+
 /// @notice Sellers open promos here. The seller is always msg.sender, so a promo can only
 /// forward money to the wallet that created it. Agent and operator are fixed at deploy.
 contract TifoFactory {
@@ -26,6 +49,7 @@ contract TifoFactory {
     address public immutable agent;
     address public immutable operator;
     TifoAccountDeployer public immutable accountDeployer;
+    TifoPromoDeployer public immutable promoDeployer;
     address[] public promos;
     mapping(address => address) public accountOf; // a seller's TifoAccount, if they opened one
 
@@ -50,6 +74,7 @@ contract TifoFactory {
         agent = agent_;
         operator = operator_;
         accountDeployer = new TifoAccountDeployer();
+        promoDeployer = new TifoPromoDeployer(usdc_, agent_, operator_);
     }
 
     function createPromo(
@@ -66,11 +91,13 @@ contract TifoFactory {
         uint32 holdSecs,
         uint32 minBuyers,
         uint256 minAmount,
+        uint8 refNeeded,
         string calldata meta
     ) external returns (address promo) {
         require(closesAt > block.timestamp, "kickoff passed");
-        promo = address(
-            new TifoPromo(usdc, msg.sender, agent, operator, fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount)
+        promo = promoDeployer.deploy(
+            msg.sender,
+            TifoAccount.Terms(fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded)
         );
         promos.push(promo);
         infos.push(PromoInfo(promo, msg.sender, closesAt, uint64(block.timestamp), cap, meta));

@@ -4,8 +4,8 @@ import DeliveryForm from "./DeliveryForm";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { keccak256, parseSignature, toHex, type Address, type Hex } from "viem";
-import { erc20Abi } from "@/lib/abi";
+import { keccak256, toHex, type Address, type Hex } from "viem";
+import { erc20Abi, tifoPromoAbi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
@@ -40,6 +40,7 @@ interface Props {
   reach?: { need: number; have: number } | null; // the offer switches on once `need` different people bought
   moving?: boolean; // the agent moves the offers as fans pick sides
   lastMove?: string; // the agent's latest reason for moving them, from the drop's own log
+  refNeeded?: number; // a buyer who brings this many friends gets their order free; 0 or missing when off
 }
 
 type Status = { kind: "idle" } | { kind: "working"; text: string } | { kind: "done"; hash: Hex; secret: Hex; side: 0 | 1; qty: number } | { kind: "error"; text: string };
@@ -52,7 +53,7 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
-export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving, lastMove }: Props) {
+export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving, lastMove, refNeeded = 0 }: Props) {
   const router = useRouter();
   // The agent moved the offer between page load and payment: show the new one and let the buyer decide again.
   const fail = (e: unknown) => {
@@ -64,6 +65,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [side, setSide] = useState<0 | 1 | null>(null);
   const [qty, setQty] = useState(1);
   const [slot, setSlot] = useState<number | null>(null); // the time picked, for a bookable service
+  const [referrer, setReferrer] = useState<Address | null>(null); // the buyer whose link brought this one
+  const [refDone, setRefDone] = useState<number | null>(null); // after paying: friends this buyer has brought so far
+  const [refCopied, setRefCopied] = useState(false);
   const booking = !!slots?.length;
   const [balance, setBalance] = useState<bigint | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -91,6 +95,22 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     setBio(biometric());
     if (circleEnabled() && !closed) preparePasskey().catch(() => {});
   }, [closed]);
+  useEffect(() => {
+    // Opened from another buyer's link (?ref=<their wallet>): this purchase counts toward their free order.
+    const r = new URLSearchParams(location.search).get("ref");
+    if (refNeeded > 0 && r && /^0x[0-9a-fA-F]{40}$/.test(r)) setReferrer(r as Address);
+  }, [refNeeded]);
+  useEffect(() => {
+    if (status.kind !== "done" || !refNeeded || !acct) return;
+    const read = () =>
+      publicClient
+        .readContract({ address: promo, abi: tifoPromoAbi, functionName: "refCount", args: [acct.address] })
+        .then((n) => setRefDone(Number(n)))
+        .catch(() => {});
+    read();
+    const t = setInterval(read, 15_000);
+    return () => clearInterval(t);
+  }, [status.kind, refNeeded, acct, promo]);
   useEffect(() => {
     // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
     const id = new URLSearchParams(location.search).get("checkout_id");
@@ -151,6 +171,11 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     }
   }
 
+  /** Tell the agent a sale landed: it rebalances, pays the seller, and notes a friend's free order if this sale completed it. */
+  function afterSale(buyer: Address | null) {
+    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo, buyer, referrer: referrer ?? undefined }) }).catch(() => {});
+  }
+
   /** A bookable service pays against the slot's own reference, so the contract refuses a second booking of it. */
   function order(): { secret: Hex; orderRef: Hex } {
     const o = newOrder();
@@ -171,7 +196,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
       const { secret, orderRef } = order();
       try {
-        done(await buyWithCircle(acct, promo, side, amount, orderRef, rates[side]), secret);
+        done(await buyWithCircle(acct, promo, side, amount, orderRef, rates[side], referrer), secret);
       } catch (e) {
         if (!(e instanceof NeedsTap)) throw e;
         setTap({ go: e.go, secret });
@@ -186,7 +211,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     setTap(null);
     saveOrder(promo, { hash, secret });
     setStatus({ kind: "done", hash, secret, side: side!, qty });
-    fetch("/api/after-sale", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ promo }) }).catch(() => {});
+    afterSale(acct?.address ?? null);
   }
 
   async function confirmTap() {
@@ -211,47 +236,21 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       const pre = await precheck(promo, address, side, amount, teams);
       if ("error" in pre) throw new Error(pre.error);
       if (pre.rateBps < rates[side]) throw new Error(GONE);
-      const nonce = (await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "nonces", args: [address] })) as bigint;
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
-      setStatus({ kind: "working", text: "Sign to pay. No gas needed." });
-      const sig = await client.signTypedData({
-        account: address,
-        domain: { name: "USDC", version: "2", chainId: chain.id, verifyingContract: USDC },
-        types: {
-          Permit: [
-            { name: "owner", type: "address" },
-            { name: "spender", type: "address" },
-            { name: "value", type: "uint256" },
-            { name: "nonce", type: "uint256" },
-            { name: "deadline", type: "uint256" },
-          ],
-        },
-        primaryType: "Permit",
-        message: { owner: address, spender: promo, value: amount, nonce, deadline },
-      });
-      const { r, s, v, yParity } = parseSignature(sig);
-      setStatus({ kind: "working", text: "Paying on Arc…" });
+      // The wallet pays its own gas (USDC on Arc, a fraction of a cent): approve, then buy.
       const { secret, orderRef } = order();
-      const res = await fetch("/api/relay", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          promo,
-          buyer: address,
-          side,
-          amount: amount.toString(),
-          orderRef,
-          minRateBps: rates[side],
-          deadline: deadline.toString(),
-          v: Number(v ?? BigInt(27 + (yParity ?? 0))),
-          r,
-          s,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Payment failed");
-      saveOrder(promo, { hash: j.hash, secret });
-      setStatus({ kind: "done", hash: j.hash, secret, side, qty });
+      setStatus({ kind: "working", text: "Approve the payment in your wallet…" });
+      await publicClient.waitForTransactionReceipt({ hash: await client.writeContract({ account: address, chain, address: USDC, abi: erc20Abi, functionName: "approve", args: [promo, amount] }) });
+      setStatus({ kind: "working", text: "Confirm the purchase in your wallet…" });
+      const hash = await client.writeContract(
+        referrer
+          ? { account: address, chain, address: promo, abi: tifoPromoAbi, functionName: "buyRef", args: [side, amount, orderRef, rates[side], referrer] }
+          : { account: address, chain, address: promo, abi: tifoPromoAbi, functionName: "buy", args: [side, amount, orderRef, rates[side]] },
+      );
+      setStatus({ kind: "working", text: "Paying on Arc…" });
+      await publicClient.waitForTransactionReceipt({ hash });
+      saveOrder(promo, { hash, secret });
+      afterSale(address);
+      setStatus({ kind: "done", hash, secret, side, qty });
     } catch (e) {
       fail(e);
     }
@@ -274,6 +273,38 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         </p>
         {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
         {!digital && !booking && <DeliveryForm promo={promo} shop={shop} order={{ hash: status.hash, secret: status.secret }} />}
+        {refNeeded > 0 && acct && !closed && (
+          <div className="refer">
+            <b>
+              Bring {refNeeded} {refNeeded === 1 ? "friend" : "friends"} and yours is free
+            </b>
+            <p className="fine">
+              When {refNeeded} people who have not bought yet buy through your link, everything you paid comes back after the match, whoever wins.
+              {refDone !== null && ` ${Math.min(refDone, refNeeded)} of ${refNeeded} so far.`}
+            </p>
+            {refDone !== null && (
+              <div className="reach-bar" aria-hidden>
+                <i style={{ width: `${Math.max(6, Math.min(100, (refDone / refNeeded) * 100))}%` }} />
+              </div>
+            )}
+            <button
+              className="btn sm ac"
+              onClick={async () => {
+                const url = `${location.origin}/p/${promo}?ref=${acct.address}`;
+                const text = `I just got ${product} from ${shop}. Get yours here and pick your team:`;
+                try {
+                  if (navigator.share) await navigator.share({ text, url });
+                  else await navigator.clipboard.writeText(`${text} ${url}`);
+                  setRefCopied(true);
+                } catch {
+                  // the share sheet was closed
+                }
+              }}
+            >
+              {refCopied ? "Link ready. Share it again" : "Share my link"}
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {reach_ && (
             <a className="btn sm" href={reach_.href} target="_blank" rel="noreferrer">

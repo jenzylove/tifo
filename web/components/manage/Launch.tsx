@@ -36,6 +36,7 @@ interface Plan {
   backPct: number;
   balance: boolean;
   minBuyers: number;
+  refFriends?: number;
   reason: string;
   byModel: boolean;
 }
@@ -46,6 +47,7 @@ const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to
 const NAME_KEY = "tifo.seller.name";
 const MAX_STOCK = 500;
 const REACH = [0, 3, 5, 10]; // when the offer switches on: from the first sale, or once this many people bought
+const REFS = [0, 2, 3, 5]; // referrals: off, or a buyer's order is free once this many friends buy through their link
 const SHARES = [25, 50, 100]; // the usual offers; any whole percent from 10 to 100 is allowed
 const EARNED_SHARE_BPS = 1_000; // the weekly limit also grows by 10% of what the seller's drops sold the week before
 const HOLD_SECS = 7 * 86_400; // physical products: payment waits for delivery (see TifoPromo.markSent)
@@ -78,6 +80,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const [custom, setCustom] = useState(false);
   const [balance, setBalance] = useState(true); // the agent may move each side's offer between half and the full offer
   const [minBuyers, setMinBuyers] = useState(0); // the offer only pays out once this many people bought; 0 is from the first sale
+  const [refs, setRefs] = useState(0); // a buyer who brings this many friends gets their order free; 0 is off
   const [browse, setBrowse] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "err"; text?: string; promo?: string }>({ kind: "idle" });
@@ -104,6 +107,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const units = kind === "booking" ? slotTimes.length : Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
   const reach = units > 0 && minBuyers > units ? 0 : minBuyers; // cannot ask for more buyers than there is to sell
   const tier = Math.min(100, Math.max(10, Math.round(backPct))) * 100;
+  const refNeeded = kind === "physical" ? 0 : refs; // shipped orders wait for delivery, so referrals are for digital and bookings
   const low = balance ? Math.max(500, Math.floor(tier / 2 / 500) * 500) : tier; // the lowest the agent may take a side's offer
 
   const list = useMemo(() => {
@@ -162,6 +166,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       setCustom(!SHARES.includes(p.backPct));
       setBalance(p.balance);
       setMinBuyers(p.minBuyers);
+      setRefs(p.refFriends ?? 0);
       setEditing(false);
     } catch (e) {
       setPlanErr((e as Error).message);
@@ -189,11 +194,11 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
         slots: kind === "booking" ? slotTimes.map((x) => new Date(x).toISOString()).sort() : undefined,
         shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: low, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
-        minBuyers: reach || undefined, reason: plan?.reason || undefined,
+        minBuyers: reach || undefined, refNeeded: refNeeded || undefined, reason: plan?.reason || undefined,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
-        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), low, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, BigInt(Math.round(priceUsd * 1e6)), meta,
+        keccak256(toBytes(m.slug)), BigInt(kickoff), BigInt(kickoff + 110 * 60), BigInt(Math.round(cap * 1e6)), low, tier, tier, tier, 0, DRAW, kind === "physical" ? HOLD_SECS : 0, reach, BigInt(Math.round(priceUsd * 1e6)), refNeeded, meta,
       ];
       // Every drop opens through the seller's account, so the agent can pay winners and send the seller their money.
       // A first drop creates that account in the same confirmation.
@@ -358,6 +363,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
           <ul className="plan-terms">
             <li>{balance ? `If more fans pick one team, I lower that team's offer for new buyers (never below ${low / 100}%), so your cost stays even.` : "Every buyer gets the same offer."}</li>
             <li>{reach ? `The offer only pays out once ${reach} people buy, so buyers will share your link.` : "The offer works from the first sale."}</li>
+            {refNeeded > 0 && <li>Referrals are on: a buyer who brings {refNeeded} friends gets their order free after the match. I set aside a share of each friend&apos;s payment for it, so the extra sales pay for it.</li>}
             <li>I pay winning fans back after the match and send you your money. Every move is written on chain with my reason.</li>
           </ul>
           <div className="sum-lines">
@@ -446,6 +452,18 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="field">
+                Referrals <small>a buyer gets their order free once this many friends buy through their link</small>
+                <div className="tiers four" role="radiogroup" aria-label="Referrals">
+                  {REFS.map((n) => (
+                    <button key={n} role="radio" aria-checked={refNeeded === n} className={refNeeded === n ? "on" : ""} disabled={kind === "physical" && n > 0} onClick={() => setRefs(n)}>
+                      {n === 0 ? "Off" : n}
+                      <small>{n === 0 ? "no referrals" : "friends"}</small>
+                    </button>
+                  ))}
+                </div>
+                {kind === "physical" && <small>Not for products you deliver yet: those payments wait for delivery.</small>}
               </div>
               <label className="field">
                 What one costs you <small>optional, to see when the drop pays for itself</small>
