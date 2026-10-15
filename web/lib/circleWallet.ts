@@ -126,8 +126,22 @@ let prepared: Prepared | null = null;
 let preparing: Promise<Prepared> | null = null;
 const FRESH_MS = 4 * 60_000;
 
+let keeping = false;
+/** Keep the options fresh while the page is open: a seller often fills the form or checks WhatsApp before tapping. */
+function keepFresh() {
+  if (keeping || typeof document === "undefined") return;
+  keeping = true;
+  const refresh = () => {
+    if (document.visibilityState === "visible" && !passkeyReady()) preparePasskey().catch(() => {});
+  };
+  setInterval(refresh, 60_000);
+  document.addEventListener("visibilitychange", refresh);
+  window.addEventListener("focus", refresh);
+}
+
 /** Fetch passkey options before the user taps. Call when a wallet button appears. */
 export function preparePasskey(): Promise<Prepared> {
+  keepFresh();
   if (prepared && Date.now() - prepared.at < FRESH_MS) return Promise.resolve(prepared);
   if (preparing) return preparing;
   const rp = createRpClient({ transport: toPasskeyTransport(CLIENT_URL, CLIENT_KEY) });
@@ -183,9 +197,19 @@ function credentialJson(c: PublicKeyCredential): unknown {
 
 /** Create a new passkey wallet, or sign in with an existing passkey on this device. */
 export async function connectCircle(mode: "register" | "login"): Promise<SmartAccount> {
+  const tapped = Date.now();
+  const wasReady = passkeyReady();
+  // Without options in hand the tap would be spent on a network call and iOS would refuse the prompt. Fetch them
+  // now and ask for one more tap, which then opens Face ID straight away.
+  if (!wasReady) {
+    await preparePasskey();
+    throw new PasskeyWarm();
+  }
   try {
     return await connectOnce(mode);
   } catch (e) {
+    // iOS refuses at once (no sheet shown) when passkeys are switched off or the browser cannot use them.
+    if (e instanceof Error) (e as Error & { instant?: boolean }).instant = Date.now() - tapped < 1500;
     // Fresh options for the next tap, so an iPhone opens Face ID straight away when the person tries again.
     prepared = null;
     preparePasskey().catch(() => {});
@@ -196,6 +220,9 @@ export async function connectCircle(mode: "register" | "login"): Promise<SmartAc
         network: NETWORK,
         host: location.hostname,
         ua: navigator.userAgent,
+        ready: wasReady,
+        ms: Date.now() - tapped,
+        errName: (e as Error)?.name,
         nativeToJSON: typeof (globalThis.PublicKeyCredential?.prototype as unknown as { toJSON?: unknown })?.toJSON,
         error: errorText(e).slice(0, 1200),
       });
@@ -207,8 +234,16 @@ export async function connectCircle(mode: "register" | "login"): Promise<SmartAc
   }
 }
 
+/** The passkey options were not ready at the tap; they are now, and the next tap opens the prompt. */
+export class PasskeyWarm extends Error {
+  constructor() {
+    super("Ready. Tap the button once more to open the passkey prompt.");
+    this.name = "PasskeyWarm";
+  }
+}
+
 async function connectOnce(mode: "register" | "login"): Promise<SmartAccount> {
-  const ready = passkeyReady() ? prepared! : await preparePasskey();
+  const ready = prepared!;
   prepared = null; // options are single use
   const rp = createRpClient({ transport: toPasskeyTransport(CLIENT_URL, CLIENT_KEY) });
   let credential: P256Credential;
@@ -261,7 +296,13 @@ export function walletError(e: unknown): string {
   const name = (e as Error)?.name ?? "";
   if (typeof navigator !== "undefined" && /Instagram|FBAN|FBAV|Telegram|musical_ly|TikTok|Snapchat/i.test(navigator.userAgent + ((window as unknown as { TelegramWebviewProxy?: unknown }).TelegramWebviewProxy ? " Telegram" : "")))
     return `This app's built-in browser does not allow ${biometric()}. Open the link in your phone's own browser (Safari or Chrome) and try again. Nothing was charged.`;
-  if (name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|cancel/i.test(m))
+  if (name === "PasskeyWarm") return m;
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const ios = /iPhone|iPad|iPod|CriOS|FxiOS|EdgiOS/.test(ua) || (/Macintosh|Intel Mac/.test(ua) && typeof document !== "undefined" && "ontouchend" in document);
+  const notAllowed = name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|cancel/i.test(m);
+  if (notAllowed && (e as { instant?: boolean })?.instant && ios)
+    return `Your iPhone blocked ${biometric()} before it opened. Open this link in Safari and try again. If it still fails, go to Settings, General, AutoFill & Passwords and turn on "AutoFill Passwords and Passkeys" with Passwords (iCloud) ticked. Nothing was charged.`;
+  if (notAllowed)
     return `The ${biometric()} prompt was closed or timed out, so nothing was charged. Tap the button again and finish the prompt. If your passkey is on your phone, keep the phone nearby.`;
   if (name === "InvalidStateError" || /already registered/i.test(m)) return "This phone already has a Tifo wallet. Tap \"I already have one\".";
   if (/Credential Management API not supported|PublicKeyCredential/i.test(m)) return "This browser can't use passkeys. Open the link in Safari or Chrome.";
