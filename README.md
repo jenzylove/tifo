@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://tifo.vercel.app"><img src="https://img.shields.io/badge/live-tifo.vercel.app-111114" alt="Live site"></a>
   <a href="https://youtu.be/KK74r_sll74"><img src="https://img.shields.io/badge/demo-2%20min%20video-f3f25c?logo=youtube&logoColor=111114" alt="Demo video"></a>
-  <a href="https://explorer.arc.io/address/0x65e2FF8aa04dc67609C35132c435Ef97EC01a93A"><img src="https://img.shields.io/badge/Arc-mainnet-a78bfa" alt="Tifo on Arc mainnet"></a>
+  <a href="https://explorer.arc.io/address/0x7E9A6e16015dae854cB8D0370411552AD5f05c34"><img src="https://img.shields.io/badge/Arc-mainnet-a78bfa" alt="Tifo on Arc mainnet"></a>
   <a href="https://github.com/jenzylove/tifo/actions/workflows/test.yml"><img src="https://github.com/jenzylove/tifo/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <a href="https://tameion.thecanteenapp.com"><img src="https://img.shields.io/badge/built%20for-Tameion%20Agents%20Hackathon-111114" alt="Built for the Tameion Agents Hackathon"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6d4bf5" alt="MIT licence"></a>
@@ -42,7 +42,7 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 | The agent's record, read from the chain | https://tifo.vercel.app/proof |
 | First payout on mainnet | [`0xf0a800df…e0d8b1`](https://explorer.arc.io/tx/0xf0a800df76bb0d45f03ef5f81c5f30faff67f07e45712dfa20b3d7339ce0d8b1) |
 | Try it with free test money | https://tifo-test.vercel.app |
-| Contracts on Arc mainnet | [`TifoFactory 0x65e2FF8a…01a93A`](https://explorer.arc.io/address/0x65e2FF8aa04dc67609C35132c435Ef97EC01a93A) |
+| Contracts on Arc mainnet | [`TifoFactory 0x7E9A6e16…f05c34`](https://explorer.arc.io/address/0x7E9A6e16015dae854cB8D0370411552AD5f05c34) |
 | What works, with transactions | [docs/BUILD_LOG.md](docs/BUILD_LOG.md) |
 | Plan and acceptance tests | [docs/PRD.md](docs/PRD.md) |
 
@@ -50,12 +50,13 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 
 ## How it works
 
-- **One link.** A seller adds a product, a price and how many they have, and chooses how much back to offer: 25%, 50% or all of it. The agent suggests the match. One passkey confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
+- **One link.** A seller adds a product, a price and how many they have (or starts from an Instagram post: a screenshot, the caption or the link). The agent plans the whole drop and says why: the match, how much back (any share from 10% to 100%), whether it balances the offer, whether the offer waits for a few buyers, and whether to turn on referrals. The seller posts it or changes what they like. One passkey confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
 - **Buying.** Buyers open the link, pick a team and pay the normal price in USDC with a passkey wallet made in seconds. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
 - **The cost is known up front.** The most a drop can cost is stock × price × share, shown before posting. Fans split between two teams and only one side wins, so a 25% back offer usually costs about what a 10% off sale does.
 - **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every winner and returns what is left. On a draw every buyer gets a small thank you. Polymarket's market usually resolves hours after the match, so most results are settled by ESPN and TheSportsDB agreeing.
 - **The seller gets paid.** After each sale and after full time, the agent sends the seller's share to their payout wallet.
-- **Shipped products** keep the payment inside the drop until the buyer confirms it arrived. **Bookable services** sell each time slot once, enforced on chain. **Digital products** open on the page as soon as the buyer pays.
+- **Referrals.** With referrals on, a buyer who brings the number of new buyers the seller set gets everything they paid back after the match, whoever wins. Each referred sale sets aside a share of that buyer's price on chain, so the extra sales pay for the free order.
+- **Shipped products** keep the payment inside the drop until the buyer confirms it arrived. Buyers add their delivery address after paying, sealed for the seller, who signs with their wallet to see it. **Bookable services** sell each time slot once, enforced on chain. **Digital products** open on the page as soon as the buyer pays.
 
 ```mermaid
 flowchart LR
@@ -108,18 +109,18 @@ The hackathon's required reading, [Agents and Ledgers in 2026](https://thecantee
 
 | Contract | What it holds | Address on Arc mainnet |
 |---|---|---|
-| [`TifoFactory`](contracts/src/TifoFactory.sol) | Every drop and account, readable in one call | [`0x65e2FF8aa04dc67609C35132c435Ef97EC01a93A`](https://explorer.arc.io/address/0x65e2FF8aa04dc67609C35132c435Ef97EC01a93A) |
+| [`TifoFactory`](contracts/src/TifoFactory.sol) | Every drop and account, readable in one call | [`0x7E9A6e16015dae854cB8D0370411552AD5f05c34`](https://explorer.arc.io/address/0x7E9A6e16015dae854cB8D0370411552AD5f05c34) |
 | [`TifoPromo`](contracts/src/TifoPromo.sol) | One drop: its orders, refund reserve, delivery holds and the agent's journal | one per drop |
 | [`TifoAccount`](contracts/src/TifoAccount.sol) | A seller's weekly rule, proposals, payout wallet and payouts | one per seller |
 | [`TifoFloat`](contracts/src/TifoFloat.sol) | USDC for naira payments, with ceilings per release and per day | [`0x19D149bA7A767A28502908Fa117AE84f4f9B35ee`](https://explorer.arc.io/address/0x19D149bA7A767A28502908Fa117AE84f4f9B35ee) |
 
-Earlier mainnet factories, [`0x0d61355A…EAEd9E`](https://explorer.arc.io/address/0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E), [`0x9cda0b64…876CEE`](https://explorer.arc.io/address/0x9cda0b646353dAc380156dAedc30892323876CEE) and [`0x52619A7F…0745Ac`](https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac), stay listed and keep settling their drops. The practice version runs the same contracts on Arc testnet.
+Earlier mainnet factories, [`0x65e2FF8a…01a93A`](https://explorer.arc.io/address/0x65e2FF8aa04dc67609C35132c435Ef97EC01a93A), [`0x0d61355A…EAEd9E`](https://explorer.arc.io/address/0x0d61355A5A2a472936163b48f72a415Ec6EAEd9E), [`0x9cda0b64…876CEE`](https://explorer.arc.io/address/0x9cda0b646353dAc380156dAedc30892323876CEE) and [`0x52619A7F…0745Ac`](https://explorer.arc.io/address/0x52619A7FDc8E1B3FaD4FE923e306af735A0745Ac), stay listed and keep settling their drops. The practice version runs the same contracts on Arc testnet.
 
 ## Run it
 
 ```bash
 npm install
-cd contracts && forge test        # 58 contract tests, including an invariant run and a fuzz run over physical drops
+cd contracts && forge test        # 64 contract tests, including an invariant run and fuzz runs over physical drops and referrals
 cd .. && npm test                 # money math and the naira payment checks
 cd web && npm run dev
 ```
