@@ -71,16 +71,21 @@ try {
   const nums = seller.page.locator('.maker input[type="number"]');
   await nums.nth(0).fill(process.env.QA_PRICE ?? "5");
   await seller.page.getByPlaceholder(/Paste the download link/).fill("https://example.com/budget-planner-kit.zip");
-  await seller.page.locator(".pick").first().waitFor({ timeout: 60_000 });
+  await seller.shot("11-seller-form", true);
+  // The agent plans the drop; the seller reads the plan, then sets what the run needs and posts it.
+  await seller.page.getByRole("button", { name: /Let my agent plan it/ }).click();
+  await seller.page.getByText("Your agent's plan").waitFor({ timeout: 90_000 });
   await seller.page.waitForTimeout(700);
+  await seller.shot("11b-agent-plan", true);
+  log("agent plan:", (await seller.page.locator(".plan-offer").innerText()).replace(/\n/g, " · "), "|", await seller.page.locator(".plan-why").innerText());
   // QA_REACH: the offer only switches on once this many people buy (0 leaves it on from the first sale).
   const REACH = Number(process.env.QA_REACH ?? 3);
-  if (REACH > 0) {
-    await seller.page.locator(".reach-pick button").filter({ hasText: new RegExp(`^${REACH}`) }).click();
-    await seller.page.getByText(`If fewer than ${REACH} people buy before kickoff`).waitFor({ timeout: 10_000 });
-  }
-  await seller.shot("11-seller-form", true);
-  await seller.page.getByRole("button", { name: /Get my link/ }).click();
+  await seller.page.getByRole("button", { name: "Change something" }).click();
+  await seller.page.locator(".reach-pick button").filter({ hasText: new RegExp(`^${REACH === 0 ? "Now" : REACH}`) }).click();
+  await seller.page.getByRole("radio", { name: /My agent balances it/ }).click();
+  await seller.page.waitForTimeout(400);
+  await seller.shot("11c-plan-changed", true);
+  await seller.page.getByRole("button", { name: /^Post it$/ }).click();
   // Either the drop goes live, or the form says why not. Record whichever happens.
   await Promise.race([
     seller.page.getByText("Your drop is live.").waitFor({ timeout: 150_000 }),

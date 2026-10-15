@@ -1,6 +1,7 @@
 "use client";
-// Make a drop in one short form. The seller says what they sell; the manager suggests the matches and the
-// offer (25%, 50% or 100% back if your team wins); the seller only confirms. Everything that moves money is checked by the contract.
+// Make a drop. The seller says what they sell (or starts from a post they already made); their agent plans the drop:
+// the match, how much comes back, whether it balances the offer and waits for a few buyers, and why. The seller posts it
+// or changes what they like. Everything that moves money is checked by the contract.
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { isAddress, keccak256, toBytes, type Address } from "viem";
@@ -8,9 +9,9 @@ import type { SmartAccount } from "viem/account-abstraction";
 import type { Odds } from "@tifo/core";
 import { biometric, createAccountAndOpenWithCircle, openViaAccountWithCircle, type CreatePromoArgs } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
-import { isBigMatch, shortTeam as short } from "@/lib/matches";
+import { shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
-import { FULL, LOW, TIERS, type Tier } from "@/lib/offer";
+import { FULL } from "@/lib/offer";
 import ImageUpload from "./ImageUpload";
 
 interface ApiMatch {
@@ -27,62 +28,56 @@ export interface Prefill {
   slug?: string;
   discountPct?: number;
   capUsd?: number;
-  backBps?: number; // 2500, 5000 or 10000 when the manager suggests a tier
+  backBps?: number; // when the manager suggests how much comes back
+}
+
+interface Plan {
+  slug: string;
+  backPct: number;
+  balance: boolean;
+  minBuyers: number;
+  reason: string;
+  byModel: boolean;
 }
 
 type Msg = { role: "user" | "assistant"; content: string };
 type Kind = "digital" | "physical" | "booking";
 const DRAW = 500; // on a draw every buyer gets 5% back as a thank you (shown to buyers in the small print)
-const nearestTier = (bps?: number): Tier | null => (bps && bps > 0 ? TIERS.reduce((a, t) => (Math.abs(t - bps) < Math.abs(a - bps) ? t : a), TIERS[0]) : null);
 const NAME_KEY = "tifo.seller.name";
 const MAX_STOCK = 500;
 const REACH = [0, 3, 5, 10]; // when the offer switches on: from the first sale, or once this many people bought
+const SHARES = [25, 50, 100]; // the usual offers; any whole percent from 10 to 100 is allowed
 const EARNED_SHARE_BPS = 1_000; // the weekly limit also grows by 10% of what the seller's drops sold the week before
 const HOLD_SECS = 7 * 86_400; // physical products: payment waits for delivery (see TifoPromo.markSent)
 
-// How much a league's fans tend to show up, for ranking suggestions. Unknown leagues still qualify.
-const LEAGUE_WEIGHT: Record<string, number> = {
-  "Champions League": 5, "Premier League": 5, "La Liga": 4, "Serie A": 4, Bundesliga: 4, "Europa League": 3,
-  "Ligue 1": 3, "UEFA Nations League": 3, International: 3, MLS: 2,
-};
-
-/** The manager's picks: big leagues, kicking off soon but not too soon, and close enough that both sides buy. */
-function suggest(matches: ApiMatch[]): { m: ApiMatch; why: string }[] {
-  const now = Date.now();
-  return matches
-    // Only matches ordinary buyers have heard of: top leagues, Champions League, national teams.
-    .filter((m) => m.odds && (LEAGUE_WEIGHT[m.league] ?? 0) >= 3 && isBigMatch(m.teamA, m.teamB) && Date.parse(m.kickoff) > now + 3 * 3600_000 && Date.parse(m.kickoff) < now + 6 * 86_400_000)
-    .map((m) => {
-      const gap = Math.abs(m.odds!.pA - m.odds!.pB);
-      const days = (Date.parse(m.kickoff) - now) / 86_400_000;
-      const score = (LEAGUE_WEIGHT[m.league] ?? 1) + (1 - gap) * 3 - days * 0.25;
-      const why = gap < 0.2 ? "Close match, so fans on both sides will want in" : (LEAGUE_WEIGHT[m.league] ?? 1) >= 4 ? "Big match with fans on both sides" : "Kicks off soon, good for a quick drop";
-      return { m, why, score };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-}
-
 const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const offer = (pct: number) => (pct >= 100 ? "Free if your team wins" : `${pct}% back if your team wins`);
 
 export default function Launch({ account, sellerName, tifoAccount, prefill, onLaunched }: { account: SmartAccount; sellerName: string | null; tifoAccount?: Address; prefill?: Prefill; onLaunched: () => void }) {
   const [matches, setMatches] = useState<ApiMatch[] | null>(null);
   const [name, setName] = useState(sellerName ?? "");
   const [product, setProduct] = useState("");
+  const [description, setDescription] = useState("");
   const [image, setImage] = useState("");
   const [price, setPrice] = useState("");
+  const [priceNote, setPriceNote] = useState("");
   const [cost, setCost] = useState("");
   const [kind, setKind] = useState<Kind>("digital");
   const [delivery, setDelivery] = useState("");
   const [contact, setContact] = useState("");
   const [slots, setSlots] = useState<string[]>([""]); // datetime-local values, for a bookable service
   const [fill, setFill] = useState({ day: "", from: "10:00", to: "14:00", every: "30" }); // shortcut: fill a day with times
-  const [slug, setSlug] = useState(prefill?.slug ?? "");
   const [stock, setStock] = useState("10"); // how many the seller has to sell; this caps the most the drop can cost
-  const [tier, setTier] = useState<Tier>(nearestTier(prefill?.backBps) ?? 5_000);
+  // The plan: the agent fills these in, the seller may change any of them.
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [planErr, setPlanErr] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [slug, setSlug] = useState(prefill?.slug ?? "");
+  const [backPct, setBackPct] = useState(prefill?.backBps ? Math.round(prefill.backBps / 100) : 50);
+  const [custom, setCustom] = useState(false);
   const [balance, setBalance] = useState(true); // the agent may move each side's offer between half and the full offer
   const [minBuyers, setMinBuyers] = useState(0); // the offer only pays out once this many people bought; 0 is from the first sale
-  const [wantCap, setWantCap] = useState<number | null>(prefill?.capUsd ?? null);
   const [browse, setBrowse] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<{ kind: "idle" | "working" | "done" | "err"; text?: string; promo?: string }>({ kind: "idle" });
@@ -98,33 +93,19 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   }, [sellerName]);
   useEffect(() => {
     if (prefill?.slug) setSlug(prefill.slug);
-    if (prefill?.capUsd) setWantCap(prefill.capUsd);
-    const t = nearestTier(prefill?.backBps);
-    if (t) setTier(t);
+    if (prefill?.backBps) setBackPct(Math.round(prefill.backBps / 100));
   }, [prefill]);
 
   const priceUsd = Number(price);
   const costUsd = Math.max(0, Number(cost) || 0);
   const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
-  // A budget suggested by the manager becomes a share back that fits it, once price and stock are known.
   const slotTimes = slots.filter((x) => x && Date.parse(x) > Date.now());
   // A bookable service has exactly as many units as times on offer.
   const units = kind === "booking" ? slotTimes.length : Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
   const reach = units > 0 && minBuyers > units ? 0 : minBuyers; // cannot ask for more buyers than there is to sell
-  const low = balance ? Math.floor(tier / 2 / 500) * 500 : tier; // the lowest the agent may take a side's offer
-  const pct = (b: number) => (b >= FULL ? "free" : `${b / 100}% back`);
-  useEffect(() => {
-    if (wantCap && priceUsd > 0 && units > 0) {
-      const fits = [...TIERS].reverse().find((t) => (units * priceUsd * t) / FULL <= wantCap + 1e-9);
-      if (fits) setTier(fits);
-      setWantCap(null);
-    }
-  }, [wantCap, priceUsd, units]);
+  const tier = Math.min(100, Math.max(10, Math.round(backPct))) * 100;
+  const low = balance ? Math.max(500, Math.floor(tier / 2 / 500) * 500) : tier; // the lowest the agent may take a side's offer
 
-  const picks = useMemo(() => suggest(matches ?? []), [matches]);
-  useEffect(() => {
-    if (!slug && picks[0]) setSlug(picks[0].m.slug);
-  }, [picks, slug]);
   const list = useMemo(() => {
     const q = query.toLowerCase();
     return (matches ?? []).filter((m) => m.odds && Date.parse(m.kickoff) > Date.now() + 45 * 60_000 && (!q || m.title.toLowerCase().includes(q) || m.league.toLowerCase().includes(q)));
@@ -133,7 +114,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   // Every buyer gets the same share back. The worst case is all the stock selling to the side that wins.
   const cap = priceUsd > 0 ? Math.round(((units * priceUsd * tier) / FULL) * 100) / 100 : 0;
   // What it usually costs: buyers split between the two teams, one side wins, a draw pays only the small thank you.
-  const odds = matches?.find((x) => x.slug === slug)?.odds ?? null;
+  const odds = m?.odds ?? null;
   const usual = odds && priceUsd > 0 ? (units * priceUsd * (tier / FULL) * (odds.pA + odds.pB)) / 2 : null;
   const likePct = usual !== null && units > 0 ? Math.round((usual / (units * priceUsd)) * 100) : null;
   const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
@@ -141,25 +122,53 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const weeklyDefault = Math.max(10, Math.ceil(cap * 2));
   const weeklyUsd = Math.max(0, Number(weekly) || weeklyDefault);
   const payout = (payoutMode === "this" ? account.address : payoutTo.trim()) as Address;
-  const missing = !name.trim()
+
+  const productMissing = !name.trim()
     ? "Add your shop name"
     : !product.trim()
       ? "Name the product"
       : !(priceUsd >= 1)
-        ? "Set a price"
+        ? "Set a price of at least $1"
         : kind === "booking" && units < 1
           ? "Add at least one time"
-        : kind === "booking" && !contact.trim()
-          ? "Add your WhatsApp number"
-        : !(units >= 1)
-          ? "Say how many you have"
-        : kind === "digital" && !delivery.trim()
-          ? "Add what the buyer receives"
-          : !m
-            ? "Pick a match"
-            : !tifoAccount && payoutMode === "other" && !isAddress(payout)
-              ? "Add the wallet your money goes to"
-              : null;
+          : kind !== "digital" && !contact.trim()
+            ? "Add your WhatsApp or Instagram"
+            : !(units >= 1)
+              ? "Say how many you have"
+              : kind === "digital" && !delivery.trim()
+                ? "Add what the buyer receives"
+                : null;
+  const missing =
+    productMissing ??
+    (!m ? "Pick a match" : !(backPct >= 10 && backPct <= 100) ? "Set between 10% and 100% back" : !tifoAccount && payoutMode === "other" && !isAddress(payout) ? "Add the wallet your money goes to" : null);
+
+  /** Ask the agent for the whole plan. */
+  async function askAgent() {
+    if (productMissing) return;
+    setPlanning(true);
+    setPlanErr("");
+    try {
+      const r = await fetch("/api/plan-drop", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ product: product.trim(), priceUsd, units, kind, profitUsd: costUsd > 0 ? profitUsd : null, shop: name.trim() || null }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      const p = j as Plan;
+      setPlan(p);
+      setSlug(p.slug);
+      setBackPct(p.backPct);
+      setCustom(!SHARES.includes(p.backPct));
+      setBalance(p.balance);
+      setMinBuyers(p.minBuyers);
+      setEditing(false);
+    } catch (e) {
+      setPlanErr((e as Error).message);
+    } finally {
+      setPlanning(false);
+    }
+  }
 
   async function launch() {
     if (!m || missing) return;
@@ -176,11 +185,11 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       const kickoff = Math.floor(Date.parse(m.kickoff) / 1000);
       const meta = JSON.stringify({
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
-        shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined,
+        shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined, description: description.trim() || undefined,
         profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
         slots: kind === "booking" ? slotTimes.map((x) => new Date(x).toISOString()).sort() : undefined,
         shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: low, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
-        minBuyers: reach || undefined,
+        minBuyers: reach || undefined, reason: plan?.reason || undefined,
       });
       setStatus({ kind: "working", text: `Confirm with ${biometric()}. Gas is covered.` });
       const args: NonNullable<CreatePromoArgs> = [
@@ -205,15 +214,32 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before kickoff. Only ${units} available.`}
-        again={() => setStatus({ kind: "idle" })}
+        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before the sale ends. Only ${units} available.`}
+        again={() => {
+          setStatus({ kind: "idle" });
+          setPlan(null);
+        }}
       />
     );
 
+  const [ca, cb] = m ? teamColors(m.teamA, m.teamB) : ["#ccc", "#ccc"];
   return (
     <div className="maker">
       <section className="panel launch">
         <h3>What are you selling?</h3>
+        <FromPost
+          onFill={(x) => {
+            if (x.shop && !sellerName && !name.trim()) setName(x.shop);
+            if (x.product) setProduct(x.product);
+            if (x.description) setDescription(x.description);
+            if (x.priceUsd) setPrice(String(x.priceUsd));
+            setPriceNote(x.priceNote ?? "");
+            if (x.kind) setKind(x.kind);
+            if (x.stock) setStock(String(x.stock));
+            if (x.image) setImage(x.image);
+            setPlan(null);
+          }}
+        />
         {!sellerName && (
           <label className="field">
             Shop name
@@ -232,26 +258,23 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
               <i>$</i>
               <input className="input" type="number" min={1} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="5" />
             </span>
+            {priceNote && <small>{priceNote}</small>}
           </label>
-          <label className="field">
-            What one costs you
-            <span className="money-in">
-              <i>$</i>
-              <input className="input" type="number" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" />
-            </span>
-            <small>Leave at 0 if it is digital</small>
+          <label className="field" hidden={kind === "booking"}>
+            How many you have
+            <input className="input" type="number" min={1} max={MAX_STOCK} step={1} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
           </label>
         </div>
         <div className="field">
           How they get it
-          <div className="seg">
+          <div className="seg three">
             <button className={kind === "digital" ? "on" : ""} onClick={() => setKind("digital")}>Download or link</button>
             <button className={kind === "physical" ? "on" : ""} onClick={() => setKind("physical")}>I deliver it</button>
             <button className={kind === "booking" ? "on" : ""} onClick={() => setKind("booking")}>Book a time</button>
           </div>
           {kind === "booking" ? (
             <>
-              <small>A consultation, an appointment, a lesson. Add the times you are free. Each time can be booked once, and the drop sells as many as you add.</small>
+              <small>A consultation, an appointment, a lesson. Add the times you are free. Each time can be booked once.</small>
               {slots.map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: 8 }}>
                   <input className="input" type="datetime-local" value={v} onChange={(e) => setSlots((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))} />
@@ -274,9 +297,9 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                   <input className="input" type="time" value={fill.from} onChange={(e) => setFill((f) => ({ ...f, from: e.target.value }))} aria-label="From" />
                   <input className="input" type="time" value={fill.to} onChange={(e) => setFill((f) => ({ ...f, to: e.target.value }))} aria-label="To" />
                   <select className="input" value={fill.every} onChange={(e) => setFill((f) => ({ ...f, every: e.target.value }))} aria-label="Each session">
-                    {["15", "20", "30", "45", "60", "90", "120"].map((m) => (
-                      <option key={m} value={m}>
-                        {m} min each
+                    {["15", "20", "30", "45", "60", "90", "120"].map((x) => (
+                      <option key={x} value={x}>
+                        {x} min each
                       </option>
                     ))}
                   </select>
@@ -298,125 +321,45 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                   Add these times
                 </button>
               </details>
-              <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number. Buyers message you here after booking" />
             </>
           ) : kind === "digital" ? (
-            <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link. Only buyers see it." />
+            <input className="input" value={delivery} maxLength={600} onChange={(e) => setDelivery(e.target.value)} placeholder="Paste the download link or code. Only buyers see it." />
           ) : (
-            <>
-            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number for delivery details" />
-            <small>
-              Buyers&apos; payments wait in the drop until they have the product. You are paid when they confirm, or 7 days after you mark the order sent.
-              Mark each order sent within 7 days, or that buyer gets their money back.
-            </small>
-            </>
+            <small>Buyers add their delivery address after paying. Their payment waits in the drop until they have it.</small>
+          )}
+          {kind !== "digital" && (
+            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="Your WhatsApp number or @instagram, so buyers can reach you" />
           )}
         </div>
-      </section>
-
-      <section className="panel launch">
-        <h3>
-          <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span className="orb" /> Your manager suggests
-          </span>
-        </h3>
-        {matches === null && <div className="skeleton" />}
-        <div className="picks">
-          {picks.map(({ m: x, why }) => {
-            const [ca, cb] = teamColors(x.teamA, x.teamB);
-            return (
-              <button key={x.slug} className={`pick ${x.slug === slug ? "on" : ""}`} onClick={() => setSlug(x.slug)}>
-                <span className="dots" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
-                  <i />
-                  <i />
-                </span>
-                <span className="t">
-                  <b>
-                    {short(x.teamA)} v {short(x.teamB)}
-                  </b>
-                  <small>
-                    {x.league} · {when(x.kickoff)}
-                  </small>
-                  <em>{why}</em>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {!browse ? (
-          <button className="link" onClick={() => setBrowse(true)}>
-            Choose a different match
-          </button>
-        ) : (
+        {!plan && (
           <>
-            <input className="input" placeholder="Search a team or league" value={query} onChange={(e) => setQuery(e.target.value)} />
-            <div className="matchlist">
-              {list.slice(0, 40).map((x) => (
-                <button key={x.slug} className={x.slug === slug ? "on" : ""} onClick={() => setSlug(x.slug)}>
-                  <span>
-                    {short(x.teamA)} v {short(x.teamB)}
-                    <small>{x.league}</small>
-                  </span>
-                  <small>{when(x.kickoff)}</small>
-                </button>
-              ))}
-            </div>
+            <button className="btn block" disabled={!!productMissing || planning} onClick={askAgent}>
+              {productMissing ?? (planning ? "Your agent is planning…" : "Let my agent plan it")}
+            </button>
+            {planErr && <p className="status err">{planErr}</p>}
           </>
         )}
       </section>
 
-      <section className="panel launch">
-        <h3>Money back if their team wins</h3>
-        <div className="tiers" role="radiogroup" aria-label="How much comes back">
-          {TIERS.map((t) => (
-            <button key={t} role="radio" aria-checked={tier === t} className={tier === t ? "on" : ""} onClick={() => setTier(t)}>
-              {t >= FULL ? "100%" : `${t / 100}%`}
-              <small>{t >= FULL ? "free" : "back"}</small>
-            </button>
-          ))}
-        </div>
-        <div className="tiers two" role="radiogroup" aria-label="Who sets the offer" style={{ marginTop: 8 }}>
-          <button role="radio" aria-checked={balance} className={balance ? "on" : ""} onClick={() => setBalance(true)}>
-            Your agent balances it
-            <small>
-              between {pct(Math.floor(tier / 2 / 500) * 500)} and {pct(tier)}
-            </small>
-          </button>
-          <button role="radio" aria-checked={!balance} className={!balance ? "on" : ""} onClick={() => setBalance(false)}>
-            Fixed
-            <small>{pct(tier)} for everyone</small>
-          </button>
-        </div>
-        <p className="fine">
-          {balance
-            ? `When more fans pick one team, your agent lowers that team's offer for new buyers, down to ${pct(low)}, so your cost stays about the same whoever wins. Each buyer keeps the offer they paid for, and every move is written on chain with the reason.`
-            : "Every buyer gets the same offer, whichever team they pick."}
-        </p>
-        <label className="field" style={{ marginTop: 18 }} hidden={kind === "booking"}>
-          How many do you have to sell?
-          <input className="input" type="number" min={1} max={MAX_STOCK} step={1} value={stock} onChange={(e) => setStock(e.target.value)} placeholder="10" />
-        </label>
-        <div className="field" style={{ marginTop: 18 }}>
-          Switch the offer on
-          <div className="tiers reach-pick" role="radiogroup" aria-label="When the offer switches on">
-            {REACH.map((n) => (
-              <button key={n} role="radio" aria-checked={reach === n} className={reach === n ? "on" : ""} disabled={n > 0 && units > 0 && n > units} onClick={() => setMinBuyers(n)}>
-                {n === 0 ? "Now" : n}
-                <small>{n === 0 ? "first sale" : "buyers"}</small>
-              </button>
-            ))}
+      {plan && m && (
+        <section className="panel launch plan-card" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
+          <h3>
+            <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <span className="orb" /> Your agent&apos;s plan
+            </span>
+          </h3>
+          <div className="plan-offer">
+            <b>{offer(backPct)}</b>
+            <span>
+              {short(m.teamA)} v {short(m.teamB)} · sale ends {when(m.kickoff)}
+            </span>
           </div>
-        </div>
-        <p className="fine">
-          {reach === 0
-            ? "The offer works from the first sale."
-            : `If fewer than ${reach} people buy before kickoff, nobody gets money back and you keep every sale. Buyers see how many more are needed, so they share your link.`}
-        </p>
-        <p className="fine">
-          Every buyer gets {balance ? "up to " : ""}{tier >= FULL ? "the full price" : `${tier / 100}%`} back if their team wins. Nobody is left out. Your stock is what caps the cost: even if all {units || "of them"}{" "}
-          sell to fans of the team that wins, it cannot cost more than the figure below. Buyers see how many are left once only {LOW} remain.
-        </p>
-        {priceUsd >= 1 && (
+          <p className="plan-why">{plan.reason}</p>
+          <ul className="plan-terms">
+            <li>{balance ? `If more fans pick one team, I lower that team's offer for new buyers (never below ${low / 100}%), so your cost stays even.` : "Every buyer gets the same offer."}</li>
+            <li>{reach ? `The offer only pays out once ${reach} people buy, so buyers will share your link.` : "The offer works from the first sale."}</li>
+            <li>I pay winning fans back after the match and send you your money. Every move is written on chain with my reason.</li>
+          </ul>
           <div className="sum-lines">
             <div>
               <span>Most it can cost you</span>
@@ -430,12 +373,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                 </b>
               </div>
             )}
-            {usual !== null && (
-              <small className="fine">
-                From the match odds, if your buyers split evenly between the two teams. Only one side can win, and a draw pays back very little.
-              </small>
-            )}
-            {breakEven !== null && (
+            {breakEven !== null && costUsd > 0 && (
               <div>
                 <span>Pays for itself after</span>
                 <b>
@@ -444,53 +382,126 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
               </div>
             )}
           </div>
-        )}
-        {!tifoAccount && (
-          <div className="agent-rule">
-            <h3>Your agent</h3>
-            <p className="fine">
-              It runs this drop for you: it takes the payments, pays winning fans back at full time and sends you your money. After that it can run your next
-              drops by itself, inside the limit you set here.
-            </p>
-            <div className="grid2">
-              <label className="field">
-                Weekly limit <small>the most its drops may cost you in a week</small>
-                <span className="money-in">
-                  <i>$</i>
-                  <input className="input" type="number" min={1} step="1" value={weekly} onChange={(e) => setWeekly(e.target.value)} placeholder={String(weeklyDefault)} />
-                </span>
-              </label>
+
+          {editing && (
+            <div className="plan-edit">
               <div className="field">
-                Send my money to
-                <div className="seg">
-                  <button className={payoutMode === "this" ? "on" : ""} onClick={() => setPayoutMode("this")}>
-                    This Tifo wallet
-                  </button>
-                  <button className={payoutMode === "other" ? "on" : ""} onClick={() => setPayoutMode("other")}>
-                    Another wallet
-                  </button>
+                Match
+                <div className="matchlist">
+                  {(browse ? list.slice(0, 40) : list.filter((x) => x.slug === slug)).map((x) => (
+                    <button key={x.slug} className={x.slug === slug ? "on" : ""} onClick={() => setSlug(x.slug)}>
+                      <span>
+                        {short(x.teamA)} v {short(x.teamB)}
+                        <small>{x.league}</small>
+                      </span>
+                      <small>sale ends {when(x.kickoff)}</small>
+                    </button>
+                  ))}
                 </div>
-                {payoutMode === "other" && (
-                  <input className="input" value={payoutTo} onChange={(e) => setPayoutTo(e.target.value.trim())} placeholder="0x… an address that accepts USDC on Arc" />
+                {browse ? (
+                  <input className="input" placeholder="Search a team or league" value={query} onChange={(e) => setQuery(e.target.value)} />
+                ) : (
+                  <button className="link fine" style={{ justifySelf: "start" }} onClick={() => setBrowse(true)}>
+                    Choose a different match
+                  </button>
                 )}
               </div>
+              <div className="field">
+                Money back if their team wins
+                <div className="tiers four" role="radiogroup" aria-label="How much comes back">
+                  {SHARES.map((t) => (
+                    <button key={t} role="radio" aria-checked={!custom && backPct === t} className={!custom && backPct === t ? "on" : ""} onClick={() => { setCustom(false); setBackPct(t); }}>
+                      {t}%<small>{t >= 100 ? "free" : "back"}</small>
+                    </button>
+                  ))}
+                  <button role="radio" aria-checked={custom} className={custom ? "on" : ""} onClick={() => setCustom(true)}>
+                    Other<small>you set it</small>
+                  </button>
+                </div>
+                {custom && (
+                  <span className="pct-in">
+                    <input className="input" type="number" min={10} max={100} step={1} value={backPct} onChange={(e) => setBackPct(Number(e.target.value))} />
+                    <i>% back</i>
+                  </span>
+                )}
+              </div>
+              <div className="field">
+                Offer
+                <div className="tiers two" role="radiogroup" aria-label="Who sets the offer">
+                  <button role="radio" aria-checked={balance} className={balance ? "on" : ""} onClick={() => setBalance(true)}>
+                    My agent balances it<small>keeps your cost even</small>
+                  </button>
+                  <button role="radio" aria-checked={!balance} className={!balance ? "on" : ""} onClick={() => setBalance(false)}>
+                    Fixed<small>same for everyone</small>
+                  </button>
+                </div>
+              </div>
+              <div className="field">
+                Offer starts
+                <div className="tiers four reach-pick" role="radiogroup" aria-label="When the offer switches on">
+                  {REACH.map((n) => (
+                    <button key={n} role="radio" aria-checked={reach === n} className={reach === n ? "on" : ""} disabled={n > 0 && units > 0 && n > units} onClick={() => setMinBuyers(n)}>
+                      {n === 0 ? "Now" : n}
+                      <small>{n === 0 ? "first sale" : "buyers"}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <label className="field">
+                What one costs you <small>optional, to see when the drop pays for itself</small>
+                <span className="money-in">
+                  <i>$</i>
+                  <input className="input" type="number" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} placeholder="0" />
+                </span>
+              </label>
+              {!tifoAccount && (
+                <div className="grid2">
+                  <label className="field">
+                    Weekly limit <small>the most your agent&apos;s drops may cost you in a week</small>
+                    <span className="money-in">
+                      <i>$</i>
+                      <input className="input" type="number" min={1} step="1" value={weekly} onChange={(e) => setWeekly(e.target.value)} placeholder={String(weeklyDefault)} />
+                    </span>
+                  </label>
+                  <div className="field">
+                    Send my money to
+                    <div className="seg">
+                      <button className={payoutMode === "this" ? "on" : ""} onClick={() => setPayoutMode("this")}>
+                        This Tifo wallet
+                      </button>
+                      <button className={payoutMode === "other" ? "on" : ""} onClick={() => setPayoutMode("other")}>
+                        Another wallet
+                      </button>
+                    </div>
+                    {payoutMode === "other" && <input className="input" value={payoutTo} onChange={(e) => setPayoutTo(e.target.value.trim())} placeholder="0x… an address that accepts USDC on Arc" />}
+                  </div>
+                </div>
+              )}
             </div>
-            <p className="fine">
-              Anything over the limit comes to you as a question first. The limit also grows by 10% of what your drops sold the week before. You can change
-              both later under Autopilot.
-            </p>
+          )}
+
+          {retry && (
+            <button className="btn block" onClick={retry}>
+              Confirm with {biometric()}
+            </button>
+          )}
+          <div className="plan-actions" hidden={!!retry}>
+            <button className="btn" disabled={!!missing || status.kind === "working"} onClick={launch}>
+              {missing ?? "Post it"}
+            </button>
+            {!editing && (
+              <button className="btn ghost" onClick={() => setEditing(true)}>
+                Change something
+              </button>
+            )}
+            <button className="link fine" onClick={askAgent} disabled={planning}>
+              {planning ? "Planning…" : "Plan it again"}
+            </button>
           </div>
-        )}
-        {retry && (
-          <button className="btn block" onClick={retry}>
-            Confirm with {biometric()}
-          </button>
-        )}
-        <button className="btn block" hidden={!!retry} disabled={!!missing || status.kind === "working"} onClick={launch}>
-          {missing ?? `Get my link`}
-        </button>
-        {status.text && <p className={`status ${status.kind === "err" ? "err" : ""}`}>{status.text}</p>}
-      </section>
+          {status.text && <p className={`status ${status.kind === "err" ? "err" : ""}`}>{status.text}</p>}
+          {!tifoAccount && !editing && <p className="fine">Your agent can run your next drops by itself inside a ${weeklyUsd} weekly limit, and asks you first above it. Change it under Change something.</p>}
+        </section>
+      )}
 
       <details className="ask">
         <summary>Rather just chat? Ask your manager</summary>
@@ -502,13 +513,75 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             if (p.product) setProduct(p.product);
             if (p.priceUsd) setPrice(String(p.priceUsd));
             if (p.image) setImage(p.image);
-            const t = nearestTier(p.effectiveBps);
-            if (t) setTier(t);
+            if (p.effectiveBps) setBackPct(Math.min(100, Math.max(10, Math.round(p.effectiveBps / 100))));
             if (p.stock) setStock(String(p.stock));
-            else setWantCap(p.capUsd);
+            setPlan((x) => x ?? { slug: p.slug, backPct: Math.round((p.effectiveBps || 5000) / 100), balance: true, minBuyers: 0, reason: "Planned with you in the chat.", byModel: true });
           }}
         />
       </details>
+    </div>
+  );
+}
+
+interface FromPostResult {
+  shop: string | null;
+  product: string | null;
+  priceUsd: number | null;
+  priceNote: string | null;
+  description: string | null;
+  kind: Kind | null;
+  stock: number | null;
+  image: string | null;
+}
+
+/** Optional: start from a post the seller already made. A screenshot, the caption or the post's link. */
+function FromPost({ onFill }: { onFill: (x: FromPostResult) => void }) {
+  const [open, setOpen] = useState(false);
+  const [shot, setShot] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!open)
+    return (
+      <button className="link fine from-post" onClick={() => setOpen(true)}>
+        Have an Instagram post for it? Start from that (optional)
+      </button>
+    );
+  async function read() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const t = text.trim();
+      const isLink = /^https?:\/\/\S+$/.test(t);
+      const r = await fetch("/api/import", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ image: shot || undefined, text: isLink ? undefined : t || undefined, url: isLink ? t : undefined }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      onFill(j as FromPostResult);
+      setMsg({ ok: true, text: "Filled in from your post. Check each field before you go on." });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="from-post-box">
+      <p className="fine">Upload a screenshot of the post, or paste its caption or link. Your agent fills in the product for you.</p>
+      <ImageUpload value={shot} onChange={setShot} label="screenshot" />
+      <textarea className="input" rows={3} value={text} maxLength={4000} onChange={(e) => setText(e.target.value)} placeholder="Paste the caption or the post's link" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="btn sm" disabled={busy || (!shot && !text.trim())} onClick={read}>
+          {busy ? "Reading…" : "Fill it in"}
+        </button>
+        <button className="btn sm ghost" onClick={() => setOpen(false)}>
+          Skip
+        </button>
+      </div>
+      {msg && <p className={`status ${msg.ok ? "ok" : "err"}`}>{msg.text}</p>}
     </div>
   );
 }
