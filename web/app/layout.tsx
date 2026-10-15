@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import TopNav from "@/components/TopNav";
 import { Geist_Mono, Host_Grotesk } from "next/font/google";
 import "./globals.css";
 import Logo from "@/components/Logo";
@@ -33,12 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="top">
           <div className="bar">
             <Logo />
-            <nav>
-              <a href="/drops" className="hide-sm">Drops</a>
-              <a href="/proof" className="hide-sm">Proof</a>
-              <a href="/wallet" className="hide-sm">Wallet</a>
-              <a href="/manage" className="btn sm">Make a drop</a>
-            </nav>
+            <TopNav />
           </div>
         </header>
         <main>{children}</main>
@@ -50,8 +46,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <p>Your matchday sales, run by an agent.</p>
               </div>
               <nav>
-                <a href="/manage">Make a drop</a>
-                <a href="/drops">Drops</a>
+                <a href="/manage?new=1">Make a drop</a>
+                <a href="/drops">Live drops</a>
                 <a href="/proof">Proof</a>
                 <a href="/wallet">Wallet</a>
                 {practice && <a href="/drops#practice">Try with test money</a>}

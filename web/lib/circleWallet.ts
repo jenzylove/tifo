@@ -100,6 +100,15 @@ function withoutVerifiedFlag(wrapped: Hex): Hex {
   return concat([slice(wrapped, 0, WRAP_HEAD), encodeAbiParameters(SIG_PART, [{ ...d, webAuthnData: { ...d.webAuthnData, requireUserVerification: false } }])]);
 }
 
+/** Forget this device's wallet on this site. The passkey stays on the device, so "I already have one" signs back in. */
+export function signOutCircle() {
+  try {
+    localStorage.removeItem(STORE);
+  } catch {
+    // nothing saved
+  }
+}
+
 export function savedCredential(): P256Credential | null {
   if (typeof localStorage === "undefined") return null;
   try {

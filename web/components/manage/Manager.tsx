@@ -23,6 +23,9 @@ export default function Manager() {
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
   const [prefill, setPrefill] = useState<Prefill>();
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has("new")) setTab("drops");
+  }, []);
 
   const load = useCallback(async () => {
     if (!acct) return;

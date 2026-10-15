@@ -68,7 +68,7 @@ export default async function Landing() {
           limit you set. You know the most it can cost before you post.
         </p>
         <div className="ctas">
-          <a className="btn ac" href="/manage">
+          <a className="btn ac" href="/manage?new=1">
             Make a drop
           </a>
           <a className="btn ghost" href={live ? `/p/${live.p.address}` : "/drops"}>
@@ -228,7 +228,7 @@ export default async function Landing() {
         <Reveal className="band">
           <h2>Your next sale could start at kickoff</h2>
           <p>Add one product, set a budget and share the link. It takes about a minute.</p>
-          <a className="btn" href="/manage">
+          <a className="btn" href="/manage?new=1">
             Make a drop
           </a>
         </Reveal>

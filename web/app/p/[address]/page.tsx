@@ -95,7 +95,13 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           <h2>
             {winner !== null ? (
               <>
-                {team[winner]} won. {paidFans} {team[winner]} {paidFans === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
+                {paidFans > 0 ? (
+                  <>
+                    {team[winner]} won. {paidFans} {team[winner]} {paidFans === 1 ? "fan" : "fans"} got <b>{usd(st.refundedTotal)}</b> back.
+                  </>
+                ) : (
+                  <>{team[winner]} won. No {team[winner]} fans had bought, so nothing was owed back.</>
+                )}
               </>
             ) : st.finalOutcome === "Draw" ? (
               st.refundedTotal > 0n ? `A draw. Every buyer got a thank you: ${usd(st.refundedTotal)} back in total.` : "A draw. No rebates this time."
