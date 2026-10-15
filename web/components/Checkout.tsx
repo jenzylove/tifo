@@ -68,6 +68,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [referrer, setReferrer] = useState<Address | null>(null); // the buyer whose link brought this one
   const [refDone, setRefDone] = useState<number | null>(null); // after paying: friends this buyer has brought so far
   const [refCopied, setRefCopied] = useState(false);
+  const [payer, setPayer] = useState<Address | null>(null); // the wallet that paid: a Tifo wallet or another wallet
   const booking = !!slots?.length;
   const [balance, setBalance] = useState<bigint | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -101,16 +102,16 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     if (refNeeded > 0 && r && /^0x[0-9a-fA-F]{40}$/.test(r)) setReferrer(r as Address);
   }, [refNeeded]);
   useEffect(() => {
-    if (status.kind !== "done" || !refNeeded || !acct) return;
+    if (status.kind !== "done" || !refNeeded || !payer) return;
     const read = () =>
       publicClient
-        .readContract({ address: promo, abi: tifoPromoAbi, functionName: "refCount", args: [acct.address] })
+        .readContract({ address: promo, abi: tifoPromoAbi, functionName: "refCount", args: [payer] })
         .then((n) => setRefDone(Number(n)))
         .catch(() => {});
     read();
     const t = setInterval(read, 15_000);
     return () => clearInterval(t);
-  }, [status.kind, refNeeded, acct, promo]);
+  }, [status.kind, refNeeded, payer, promo]);
   useEffect(() => {
     // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
     const id = new URLSearchParams(location.search).get("checkout_id");
@@ -210,6 +211,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   function done(hash: Hex, secret: Hex) {
     setTap(null);
     saveOrder(promo, { hash, secret });
+    setPayer(acct?.address ?? null);
     setStatus({ kind: "done", hash, secret, side: side!, qty });
     afterSale(acct?.address ?? null);
   }
@@ -249,6 +251,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       setStatus({ kind: "working", text: "Paying on Arc…" });
       await publicClient.waitForTransactionReceipt({ hash });
       saveOrder(promo, { hash, secret });
+      setPayer(address);
       afterSale(address);
       setStatus({ kind: "done", hash, secret, side, qty });
     } catch (e) {
@@ -273,7 +276,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         </p>
         {digital && <Purchase promo={promo} product={product} order={{ hash: status.hash, secret: status.secret }} />}
         {!digital && !booking && <DeliveryForm promo={promo} shop={shop} order={{ hash: status.hash, secret: status.secret }} />}
-        {refNeeded > 0 && acct && !closed && (
+        {refNeeded > 0 && payer && !closed && (
           <div className="refer">
             <b>
               Bring {refNeeded} {refNeeded === 1 ? "friend" : "friends"} and yours is free
@@ -290,7 +293,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
             <button
               className="btn sm ac"
               onClick={async () => {
-                const url = `${location.origin}/p/${promo}?ref=${acct.address}`;
+                const url = `${location.origin}/p/${promo}?ref=${payer}`;
                 const text = `I just got ${product} from ${shop}. Get yours here and pick your team:`;
                 try {
                   if (navigator.share) await navigator.share({ text, url });
@@ -390,7 +393,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
       {closed ? (
         <button className="btn block" disabled>
-          Promo closed at kickoff
+          The sale has ended
         </button>
       ) : (
         <button

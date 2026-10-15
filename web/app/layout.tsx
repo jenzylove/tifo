@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://tifo.vercel.app"),
   title: "Tifo · turn any big match into sales",
   description:
-    "Your matchday sales, run by an agent. Put your stock on a big match: buyers get money back in USDC if their team wins, you know the most it can cost before you post, and an agent runs the money inside a weekly limit you set.",
+    "An AI agent for your shop. It brings you sales on match days (buyers get money back in USDC if their team wins), keeps your books, pays you after every sale and only spends inside the limit you set.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -43,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <div className="foot-top">
               <div>
                 <Logo size={30} />
-                <p>Your matchday sales, run by an agent.</p>
+                <p>An AI agent for your shop, starting with match day sales.</p>
               </div>
               <nav>
                 <a href="/manage?new=1">Make a drop</a>

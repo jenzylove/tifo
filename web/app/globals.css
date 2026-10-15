@@ -629,3 +629,5 @@ html, body { overflow-x: clip; }
 .dl-addr { display: block; margin-top: 6px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: .9rem; line-height: 1.4; }
 .refer { display: grid; gap: 8px; margin-top: 14px; padding: 16px; border-radius: 18px; background: var(--surface-2); }
 .refer .btn { justify-self: start; }
+.orb.sm { width: 18px; height: 18px; }
+.agent-eyebrow { justify-content: center; margin: 18px 0 -6px; animation: rise .7s var(--ease) both .1s; }

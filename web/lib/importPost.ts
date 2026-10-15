@@ -36,11 +36,24 @@ const schema = {
   required: ["shop", "product", "price", "currency", "description", "kind", "stock"],
 };
 
+/** Only public web addresses: never this server's own network. */
+export function publicUrl(raw: string): URL | null {
+  try {
+    const u = new URL(raw);
+    if (!/^https?:$/.test(u.protocol)) return null;
+    const h = u.hostname.toLowerCase();
+    if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || /^(127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[)/.test(h) || !h.includes(".")) return null;
+    return u;
+  } catch {
+    return null;
+  }
+}
+
 /** A public post page usually carries its photo and caption in og: tags. Instagram often hides them; then the screenshot is the way. */
 export async function readLink(url: string): Promise<{ text: string | null; image: string | null }> {
   try {
-    const u = new URL(url);
-    if (!/^https?:$/.test(u.protocol) || /^(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(u.hostname)) return { text: null, image: null };
+    const u = publicUrl(url);
+    if (!u) return { text: null, image: null };
     const r = await fetch(u, { headers: { "user-agent": "Mozilla/5.0 (compatible; TifoBot/1.0)" }, signal: AbortSignal.timeout(6000), redirect: "follow" });
     const html = (await r.text()).slice(0, 400_000);
     const tag = (p: string) => new RegExp(`<meta[^>]+property=["']og:${p}["'][^>]+content=["']([^"']+)`, "i").exec(html)?.[1] ?? null;

@@ -267,7 +267,7 @@ function DropList({ data, limit }: { data: ManagerData; limit?: number }) {
       {data.drops.slice(0, limit ?? 100).map((d) => {
         const [ca, cb] = teamColors(d.meta.teamA, d.meta.teamB);
         const status =
-          d.phase === "open" ? <span className="pill ac">Open</span> : d.phase === "live" ? <span className="pill live">Match on</span> : d.phase === "result" ? <span className="pill">Result in</span> : <span className="pill ok">Settled</span>;
+          d.phase === "open" ? <span className="pill ac">Open</span> : d.phase === "live" ? <span className="pill live">Sale ended</span> : d.phase === "result" ? <span className="pill">Result in</span> : <span className="pill ok">Settled</span>;
         return (
           <a key={d.address} className="droprow" href={`/p/${d.address}`} style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
             <div className="th">{d.meta.image && <img src={d.meta.image} alt="" />}</div>

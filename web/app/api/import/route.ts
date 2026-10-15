@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { z } from "zod";
-import { importPost } from "@/lib/importPost";
+import { importPost, publicUrl } from "@/lib/importPost";
 import { limit, tooMany } from "@/lib/ratelimit";
 
 export const maxDuration = 60;
@@ -22,7 +22,8 @@ export async function POST(req: Request) {
     const out = await importPost(p.data);
     // A photo taken from someone else's server can expire, so keep our own copy.
     if (out.image && out.image !== p.data.image && process.env.BLOB_READ_WRITE_TOKEN) {
-      const r = await fetch(out.image, { signal: AbortSignal.timeout(6000) }).catch(() => null);
+      const src = publicUrl(out.image);
+      const r = src ? await fetch(src, { signal: AbortSignal.timeout(6000), redirect: "error" }).catch(() => null) : null;
       const type = r?.headers.get("content-type") ?? "";
       const buf = r?.ok && /^image\//.test(type) ? await r.arrayBuffer() : null;
       out.image = buf && buf.byteLength < 4 * 1024 * 1024 ? (await put(`drops/${crypto.randomUUID()}.${type.split("/")[1].split(";")[0]}`, buf, { access: "public", contentType: type })).url : null;

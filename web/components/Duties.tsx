@@ -4,11 +4,12 @@
 import { useEffect, useRef, useState } from "react";
 
 const ITEMS: [string, string][] = [
-  ["Plans the drop", "It looks at how your past drops went and the big matches coming up, then picks one and the share back that fits your margin. It tells you the most it can cost and what it usually costs before you say yes."],
-  ["Keeps your cost capped", "Every buyer gets the same share back if their team wins. Your stock caps the cost, so it can never go over the figure you saw, because a contract holds the money, not the AI."],
-  ["Pays the winners", "It checks the result against three sources and pays as soon as two agree. No claim form, no waiting a week."],
-  ["Shows you the score", "After every match you see what the drop brought in, what it cost, and whether it paid for itself."],
-  ["Runs by itself, if you let it", "Give it a weekly limit and it runs drops for you. Anything bigger than the limit, it has to ask first. It can never take money out."],
+  ["Plans your promos", "It reads what you sell and how your past drops went, picks a big match, the share back that fits your margin and whether to run referrals, and tells you why. You post it or change it."],
+  ["Keeps your cost capped", "You see the most a promo can cost before it goes live, and a contract holds the money, not the AI, so it can never go over that figure."],
+  ["Pays winners and pays you", "After the match it checks the result against independent sources, pays winning fans back by itself and sends you the rest. After every sale it sends your share to your wallet."],
+  ["Keeps your books", "Every dollar in and out is written down with the reason: sales, refunds, payouts and what each promo brought in against what it cost."],
+  ["Handles delivery and referrals", "Buyers add their address after paying and you see it next to each order; their payment waits until they have it. Buyers who bring friends get their order free, paid for by the extra sales."],
+  ["Runs by itself, if you let it", "Give it a weekly limit and it runs your next promos for you. Anything bigger, it asks first. It can never take money out for itself."],
 ];
 
 export default function Duties() {
@@ -49,7 +50,7 @@ export default function Duties() {
             <h2>
               It does the work. You set the <em>limit</em>
             </h2>
-            <p>Your matchday sales, run by an agent. Every decision it makes is written down where you can check it.</p>
+            <p>An agent for your shop, starting with match day sales. Every decision it makes is written down where you can check it.</p>
           </header>
           <ol>
             {ITEMS.map(([title, text], i) => (

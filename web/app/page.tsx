@@ -50,6 +50,9 @@ export default async function Landing() {
             </span>
           )}
         </a>
+        <p className="eyebrow agent-eyebrow">
+          <span className="orb sm" /> An AI agent for your shop
+        </p>
         <h1 className="mega">
           {HEAD.map((w, n) => (
             <span key={w}>
@@ -64,8 +67,8 @@ export default async function Landing() {
           </span>
         </h1>
         <p className="sub">
-          Put your stock on a big match and an agent runs the money: it picks the match, pays winning fans back and sends you the rest, inside a weekly
-          limit you set. You know the most it can cost before you post.
+          Its first job is bringing you sales on match days: it plans a promo around a big game, pays winning fans back and sends you the rest. It also
+          keeps your books, pays you after every sale and collects delivery addresses, and it only spends inside the limit you set.
         </p>
         <div className="ctas">
           <a className="btn ac" href="/manage?new=1">
@@ -86,10 +89,10 @@ export default async function Landing() {
             <div className="row">
               {stock} in stock <small>${budget} at most</small>
             </div>
-            <div className="row go">Get my link</div>
+            <div className="row go">Let my agent plan it</div>
           </div>
           <p className="cap">
-            <b>Step 1</b>Add your product, how many you have, and how much back: 25%, 50% or free.
+            <b>Step 1</b>Add your product, or start from your Instagram post. Your agent plans the match and the offer, and tells you why.
           </p>
         </div>
         <div className="step" style={{ ["--ca" as string]: ca, ["--cb" as string]: cb }}>
@@ -125,7 +128,7 @@ export default async function Landing() {
             </div>
           </div>
           <p className="cap">
-            <b>Step 3</b>Winners get paid by themselves. You see what the drop brought in against what it cost.
+            <b>Step 3</b>Your agent pays the winners, sends you your money and writes every dollar in your books.
           </p>
         </div>
       </div>
@@ -204,12 +207,20 @@ export default async function Landing() {
         </Reveal>
         <Reveal className="faq">
           <details>
+            <summary>Is it only for sales?</summary>
+            <p>
+              Sales come first, because that is what most small shops need. But your agent already does more: it keeps your books (every dollar in and out,
+              with the reason), sends you your money after every sale, holds payment for delivered orders until the customer has them, collects delivery
+              addresses, runs referrals, and plans your next promos by itself inside a weekly limit. Above the limit it asks you first.
+            </p>
+          </details>
+          <details>
             <summary>Is this betting?</summary>
             <p>No. The buyer pays your normal price for a real product and keeps it whatever happens. The money back is a discount that depends on the result. Nobody can put money in without buying something.</p>
           </details>
           <details>
             <summary>What is the most it can cost me?</summary>
-            <p>The budget you set before kickoff. The contract will not hand out more than that, whoever wins. A draw costs far less.</p>
+            <p>The figure your agent shows you before you post: your stock times the price times the share back. The contract will not hand out more than that, whoever wins. A draw costs far less.</p>
           </details>
           <details>
             <summary>When do I get paid?</summary>
@@ -221,13 +232,16 @@ export default async function Landing() {
           </details>
           <details>
             <summary>What can I sell?</summary>
-            <p>Anything, but digital products work best. A download link or an access code opens on the page the moment the buyer pays, so there is nothing to ship.</p>
+            <p>
+              Things you deliver, digital products and bookings. A download link or code opens on the page the moment the buyer pays. For things you deliver,
+              the buyer adds their address after paying and the payment waits until they confirm it arrived. For services, each time slot can be booked once.
+            </p>
           </details>
         </Reveal>
 
         <Reveal className="band">
-          <h2>Your next sale could start at kickoff</h2>
-          <p>Add one product, set a budget and share the link. It takes about a minute.</p>
+          <h2>Give your shop an agent this weekend</h2>
+          <p>Add one product and your agent plans the rest. It takes about a minute.</p>
           <a className="btn" href="/manage?new=1">
             Make a drop
           </a>

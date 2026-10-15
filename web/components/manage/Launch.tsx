@@ -689,7 +689,7 @@ function ManagerChat({ seller, onProposal }: { seller: string; onProposal: (p: C
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>{m.content}</div>
         ))}
-        {busy && <div className="msg assistant pending">Checking fixtures and odds…</div>}
+        {busy && <div className="msg assistant pending">Checking the matches coming up…</div>}
       </div>
       <form onSubmit={send} className="composer">
         <input className="input" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Message your manager…" disabled={busy} />
