@@ -39,6 +39,11 @@ export function sameTeam(a: string, b: string): boolean {
   return short.every((w) => long.has(w));
 }
 
+/** The official name, or any everyday name for it, is the same team as a source's name. */
+function clubMatches(official: string, theirs: string): boolean {
+  return sameTeam(official, theirs) || everydayNames(official).some((n) => sameTeam(n, theirs));
+}
+
 function verdictFrom(home: number, away: number): Verdict {
   return home > away ? "A" : away > home ? "B" : "DRAW";
 }
@@ -55,7 +60,7 @@ async function espn(m: Match): Promise<SourceResult> {
         const c = ev.competitions?.[0];
         const home = c?.competitors?.find((x: { homeAway: string }) => x.homeAway === "home");
         const away = c?.competitors?.find((x: { homeAway: string }) => x.homeAway === "away");
-        if (!home || !away || !sameTeam(m.teamA, home.team.displayName) || !sameTeam(m.teamB, away.team.displayName)) continue;
+        if (!home || !away || !clubMatches(m.teamA, home.team.displayName) || !clubMatches(m.teamB, away.team.displayName)) continue;
         const state = ev.status?.type?.name as string;
         const raw = `${home.team.displayName} ${home.score}-${away.score} ${away.team.displayName} ${state}`;
         if (state === "STATUS_POSTPONED" || state === "STATUS_CANCELED" || state === "STATUS_ABANDONED")
@@ -90,8 +95,25 @@ const EVERYDAY: [RegExp, string][] = [
   [/real sociedad/i, "Real Sociedad"],
   [/real betis/i, "Real Betis"],
   [/celta/i, "Celta Vigo"],
+  [/benfica/i, "Benfica"],
+  [/sporting (cp|clube de portugal)/i, "Sporting CP"],
+  [/^fc porto$|futebol clube do porto/i, "Porto"],
+  [/olymp[ia]+[kc][oó]s/i, "Olympiacos"],
+  [/sturm graz/i, "Sturm Graz"],
+  [/be[sş]ikta[sş]/i, "Besiktas"],
+  [/fenerbah[cç]e/i, "Fenerbahce"],
+  [/galatasaray/i, "Galatasaray"],
+  [/dinamo zagreb/i, "Dinamo Zagreb"],
+  [/anderlecht/i, "Anderlecht"],
+  [/ferencv[aá]ros/i, "Ferencvaros"],
+  [/viktoria plze[nň]/i, "Viktoria Plzen"],
+  [/levski sofia/i, "Levski Sofia"],
+  [/jagiellonia/i, "Jagiellonia"],
 ];
-const CLUB_WORDS = /\b(fc|afc|cf|osc|ac|sc|ssc|as|rc|rcd|ud|cd|ca|sv|vfl|vfb|tsg|calcio|club|de|f[uú]tbol|\d+\.?)\b/gi;
+const CLUB_WORDS = /\b(fc|afc|cf|osc|ac|sc|ssc|as|rc|rcd|ud|cd|ca|sv|vfl|vfb|tsg|calcio|club|de|f[uú]tbol|jk|sk|fk|pfk|nk|gnk|rsc|sfp|bk|if|ik|\d+\.?)\b/gi;
+// Words many clubs share; never used alone to name a club.
+const GENERIC = /^(united|city|town|athletic|rovers|wanderers|albion|county|real|sporting|olympique|dynamo|dinamo|racing|union|hotspur|villa|forest|palace|rangers|celtic|juniors|athletico|atletico)$/i;
+const plain = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ı/g, "i");
 
 /** The names to try for one club, most likely first. */
 export function everydayNames(name: string): string[] {
@@ -99,8 +121,12 @@ export function everydayNames(name: string): string[] {
   const alias = EVERYDAY.find(([re]) => re.test(name));
   if (alias) out.push(alias[1]);
   const stripped = name.replace(CLUB_WORDS, " ").replace(/\s+/g, " ").trim();
-  if (stripped) out.push(stripped);
+  if (stripped) out.push(stripped, plain(stripped));
   out.push(name.replace(/\b(FC|AFC|CF)\b/g, "").replace(/\s+/g, " ").trim());
+  // Long official names ("Sport Lisboa e Benfica"): the club is usually known by its last word.
+  const words = stripped.split(" ");
+  const last = plain(words[words.length - 1] ?? "");
+  if (words.length >= 3 && last.length >= 5 && !GENERIC.test(last)) out.push(last);
   return [...new Set(out.filter(Boolean))];
 }
 
