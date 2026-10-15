@@ -3,6 +3,7 @@ import { getAddress, isAddress, isHex } from "viem";
 import { z } from "zod";
 import { maybeRebalance, payoutsTick, relayBuy } from "@/lib/agent";
 import { listPromos } from "@/lib/promos";
+import { limit, tooMany } from "@/lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -20,6 +21,8 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
+  const rl = limit(req, "relay", 20, 10 * 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfter);
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return NextResponse.json({ error: "bad request" }, { status: 400 });
   const promo = (await listPromos()).find((x) => x.address.toLowerCase() === p.data.promo.toLowerCase());

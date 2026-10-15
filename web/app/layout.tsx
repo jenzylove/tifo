@@ -9,7 +9,7 @@ const sans = Host_Grotesk({ subsets: ["latin"], variable: "--sans" });
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--mono" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://tifo.vercel.app"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://tifo.vercel.app"),
   title: "Tifo · turn any big match into sales",
   description:
     "Your matchday sales, run by an agent. Put your stock on a big match: buyers get money back in USDC if their team wins, you know the most it can cost before you post, and an agent runs the money inside a weekly limit you set.",

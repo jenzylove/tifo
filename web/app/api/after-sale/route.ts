@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 import { maybeRebalance, payoutsTick, recordPair } from "@/lib/agent";
 import { listPromos } from "@/lib/promos";
+import { limit, tooMany } from "@/lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -9,6 +10,8 @@ export const maxDuration = 60;
 // never saw it). The agent re-reads the book from chain, moves the offers only if they should move,
 // and sends the seller's share of the sale on to their payout wallet.
 export async function POST(req: Request) {
+  const rl = limit(req, "after-sale", 30, 10 * 60_000);
+  if (!rl.ok) return tooMany(rl.retryAfter);
   const body = await req.json().catch(() => null);
   if (!body || !isAddress(body.promo)) return NextResponse.json({ error: "bad request" }, { status: 400 });
   const promo = (await listPromos()).find((p) => p.address.toLowerCase() === String(body.promo).toLowerCase());

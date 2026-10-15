@@ -68,7 +68,7 @@ export default async function Proof() {
             ))}
             {journal.map((j, i) => (
               <li key={`j${i}`}>
-                {new Date(j.at * 1000).toUTCString().slice(5, 22)} · agent · {j.kind}: {j.text}
+                {new Date(j.at * 1000).toUTCString().slice(5, 22)} · agent · {j.text ? `${j.kind}: ${j.text}` : j.kind === "remainder" ? "the rest went back to the seller" : j.kind}
               </li>
             ))}
           </ol>
