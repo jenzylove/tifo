@@ -5,6 +5,7 @@ import { isAddress, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerTx } from "@/lib/chain";
 import Books from "./Books";
+import ShareDrop from "@/components/ShareDrop";
 import { handleTap, type Retry } from "@/lib/tap";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import { biometric, circleEnabled, connectCircle, preparePasskey, savedCredential, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
@@ -291,6 +292,7 @@ function DropList({ data, limit }: { data: ManagerData; limit?: number }) {
                       ? "cost you nothing"
                       : "sales"}
               </span>
+              {d.phase === "open" && <ShareDrop address={d.address} product={d.meta.product} />}
             </div>
           </a>
         );

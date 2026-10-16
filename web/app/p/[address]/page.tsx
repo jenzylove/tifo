@@ -16,6 +16,7 @@ import { offerLabel } from "@/lib/precheck";
 import { bookedSlots } from "@/lib/booking";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
+import ShareDrop from "@/components/ShareDrop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -151,6 +152,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
           {st.refNeeded > 0 && phase === "open" && <span className="fine">Or bring {st.refNeeded} friends who buy, and yours is free whoever wins.</span>}
           <h1>{p.meta.product}</h1>
           <div className="price">${p.meta.priceUsd.toFixed(2)}</div>
+          {phase === "open" && <ShareDrop address={p.address} product={p.meta.product} />}
           {description && <p className="desc">{description}</p>}
           <div className="scarf" style={{ margin: "20px 0 0", maxWidth: 160 }} />
           {phase === "open" ? (
