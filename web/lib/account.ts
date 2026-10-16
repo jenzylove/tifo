@@ -3,6 +3,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { SmartAccount } from "viem/account-abstraction";
 import { restoreCircle, savedCredential } from "./circleWallet";
+import { restoreGoogle } from "./googleWallet";
 
 let account: SmartAccount | null = null;
 let restoring: Promise<void> | null = null;
@@ -20,6 +21,9 @@ export function useAccount(): SmartAccount | null {
     () => null,
   );
   useEffect(() => {
+    // A Google sign-in is restored as it is; a passkey wallet is rebuilt from the saved public key.
+    const g = !account ? restoreGoogle() : null;
+    if (g) return setAccount(g as unknown as SmartAccount);
     if (!account && !restoring && savedCredential())
       restoring = restoreCircle()
         .then((r) => {

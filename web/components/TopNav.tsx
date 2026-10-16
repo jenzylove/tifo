@@ -4,13 +4,14 @@
 import { useEffect, useRef, useState } from "react";
 import { setAccount, useAccount } from "@/lib/account";
 import { savedCredential, signOutCircle } from "@/lib/circleWallet";
+import { restoreGoogle, signOutGoogle } from "@/lib/googleWallet";
 
 export default function TopNav() {
   const acct = useAccount();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => setSaved(!!savedCredential()), [acct]);
+  useEffect(() => setSaved(!!savedCredential() || !!restoreGoogle()), [acct]);
   useEffect(() => {
     if (!open) return;
     const away = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
@@ -25,6 +26,7 @@ export default function TopNav() {
   const signedIn = !!acct || saved;
   const signOut = () => {
     signOutCircle();
+    signOutGoogle();
     setAccount(null);
     location.href = "/";
   };

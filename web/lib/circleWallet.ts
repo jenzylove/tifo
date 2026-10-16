@@ -22,6 +22,7 @@ const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
 const CLIENT_URL = "https://modular-sdk.circle.com/v1/rpc/w3s/buidl";
 const CHAIN_PATH = NETWORK === "testnet" ? "arcTestnet" : "arc";
 
+import { isGoogle, type GoogleAccount } from "./googleWallet";
 export const circleEnabled = () => CLIENT_KEY.length > 0;
 
 function transports() {
@@ -374,6 +375,8 @@ function report(stage: string, account: SmartAccount, extra: Record<string, unkn
 /** Send calls as one user operation; Circle's paymaster pays the gas. Prepares first, then signs, so the
  * passkey prompt comes as late and as close to the tap as possible. */
 async function send(account: SmartAccount, calls: Call[], failure: string) {
+  // Google sign-in wallets confirm in Circle's own window instead of a passkey prompt.
+  if (isGoogle(account)) return (await (account as unknown as GoogleAccount).send(calls, failure)) as unknown as Receipt;
   const { bundler } = transports();
   let prepared;
   try {

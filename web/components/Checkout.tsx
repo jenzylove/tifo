@@ -9,6 +9,7 @@ import { erc20Abi, tifoPromoAbi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
+import GoogleButton from "@/components/GoogleButton";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
 import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { lastFew } from "@/lib/offer";
@@ -451,6 +452,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 <section>
                   <h5>Your Tifo wallet</h5>
                   <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Any money back lands here.</p>
+                  <GoogleButton disabled={busy} />
                   <button className="btn block" disabled={busy || !ready} onClick={() => wallet(hasSaved ? "login" : "register")}>
                     {!ready ? "Getting ready…" : hasSaved ? `Sign in with ${bio}` : `Create a wallet with ${bio}`}
                   </button>

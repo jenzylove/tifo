@@ -6,6 +6,8 @@ import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerTx } from "@/lib/chain";
 import Books from "./Books";
 import ShareDrop from "@/components/ShareDrop";
+import GoogleButton from "@/components/GoogleButton";
+import { googleEnabled } from "@/lib/googleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import { biometric, circleEnabled, connectCircle, preparePasskey, savedCredential, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
@@ -441,15 +443,16 @@ function SignIn() {
         <span className="orb" style={{ width: 54, height: 54 }} />
         <h1>Your sales manager</h1>
         <p className="muted">
-          Sign in with {bio}. Your sales land in a Circle wallet that only you control, as USDC
+          Sign in with {googleEnabled() ? `Google or ${bio}` : bio}. Your sales land in a Circle wallet that only you control, as USDC
           {NETWORK === "testnet" ? " (testnet)" : ""}.
         </p>
         {!circleEnabled() ? (
           <p className="status err">Wallets aren&apos;t configured on this deployment.</p>
         ) : (
           <>
+            <GoogleButton className="btn google-btn" disabled={!!busy} />
             <button className="btn" disabled={!!busy || !ready} onClick={() => go(hasSaved ? "login" : "register")}>
-              {!ready ? "Getting ready…" : hasSaved ? "Sign in" : "Create my wallet"}
+              {!ready ? "Getting ready…" : hasSaved ? `Sign in with ${bio}` : googleEnabled() ? `Use ${bio} instead` : "Create my wallet"}
             </button>
             <button className="link" disabled={!!busy || !ready} onClick={() => go(hasSaved ? "register" : "login")}>
               {hasSaved ? "Create a new wallet instead" : "I already have one"}

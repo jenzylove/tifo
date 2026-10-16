@@ -6,6 +6,7 @@ import { isAddress, parseUnits, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerAddr, explorerTx } from "@/lib/chain";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
+import GoogleButton from "@/components/GoogleButton";
 import { biometric, circleEnabled, connectCircle, preparePasskey, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 
@@ -94,6 +95,7 @@ export default function WalletPage() {
         <p className="empty panel">Passkey wallets are not set up on this site.</p>
       ) : !acct ? (
         <section className="panel" style={{ display: "grid", gap: 10 }}>
+          <GoogleButton disabled={busy} />
           <button className="btn block" disabled={busy || !ready} onClick={() => open("login")}>
             {ready ? `Sign in with ${bio}` : "Getting ready…"}
           </button>
