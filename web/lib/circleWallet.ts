@@ -22,7 +22,7 @@ const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
 const CLIENT_URL = "https://modular-sdk.circle.com/v1/rpc/w3s/buidl";
 const CHAIN_PATH = NETWORK === "testnet" ? "arcTestnet" : "arc";
 
-import { isGoogle, type GoogleAccount } from "./googleWallet";
+import { isGoogle, restoreGoogle, type GoogleAccount } from "./googleWallet";
 export const circleEnabled = () => CLIENT_KEY.length > 0;
 
 function transports() {
@@ -284,6 +284,8 @@ async function connectOnce(mode: "register" | "login"): Promise<SmartAccount> {
 /** What this device calls its passkey prompt. */
 export function biometric(): string {
   if (typeof navigator === "undefined") return "Face ID or fingerprint";
+  // Signed in with Google: payments are confirmed in Circle's window, not with a passkey.
+  if (restoreGoogle()) return "Google";
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && "ontouchend" in document)) return "Face ID";
   if (/Macintosh/.test(ua)) return "Touch ID";

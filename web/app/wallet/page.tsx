@@ -7,6 +7,7 @@ import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerAddr, explorerTx } from "@/lib/chain";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import GoogleButton from "@/components/GoogleButton";
+import { isGoogle } from "@/lib/googleWallet";
 import { biometric, circleEnabled, connectCircle, preparePasskey, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 
@@ -127,6 +128,11 @@ export default function WalletPage() {
             <span>Balance</span>
             <b style={{ fontSize: "1.6rem" }}>{balance === null ? "…" : money(balance)}</b>
           </div>
+          {isGoogle(acct) ? (
+            <p className="fine">
+              Signed in with Google{acct.email ? ` as ${acct.email}` : ""}. To use another wallet, sign out from the menu.
+            </p>
+          ) : (
           <p className="fine">
             Not the wallet you expected?{" "}
             <button className="link" disabled={busy} onClick={() => open("login")}>
@@ -134,6 +140,7 @@ export default function WalletPage() {
             </button>{" "}
             and pick another one your device saved.
           </p>
+          )}
 
           <h3 style={{ margin: "8px 0 0" }}>Send USDC</h3>
           <input className="input" placeholder="To: 0x… address on the Arc network" value={to} onChange={(e) => setTo(e.target.value)} />
