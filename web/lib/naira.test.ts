@@ -613,6 +613,7 @@ describe("starting and releasing", () => {
     expect(body.pricing).toEqual({ currency: "NGN", amount: "15740.00" });
     expect(body.payment_method_types).toEqual(["NGN_BANK_TRANSFER", "NGN_CARD"]);
     expect(body.expires_in_minutes).toBe(30);
+    expect(body.customer_bears_fee).toBe(false); // the price shown already includes the charge
     expect(body.success_url).toBe(`${origin}/p/${PROMO}`);
     expect(body.cancel_url).toBe(`${origin}/p/${PROMO}`);
     expect(body).not.toHaveProperty("customer"); // a guest checkout

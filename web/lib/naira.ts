@@ -329,6 +329,7 @@ export async function startCheckout({ wallet, usdUnits, promo, origin }: { walle
     cancel_url: back,
     payment_method_types: ["NGN_BANK_TRANSFER", "NGN_CARD"],
     expires_in_minutes: 30,
+    customer_bears_fee: false, // the naira price already has the charge in it, so Bachs must not add it again
     metadata: { wallet, usdc_units: usdUnits.toString(), ...(promo ? { promo } : {}) },
   });
   const j = (r.json ?? {}) as { checkout_id?: unknown; checkout_url?: unknown };
