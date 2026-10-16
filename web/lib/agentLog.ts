@@ -4,6 +4,7 @@ import "server-only";
 import type { Address } from "viem";
 import { tifoAccountAbi } from "./abi";
 import { publicClient, usd } from "./chain";
+import { shortTeam } from "./matches";
 import { isCheckDrop, listPromos, promoJournal, promoState, type PromoSummary } from "./promos";
 import { accountState } from "./tifoAccount";
 
@@ -33,10 +34,11 @@ const LABEL: Record<string, string> = {
 /** The agent writes "A", "B" or "Draw" for a result; say which team that is. */
 function explain(kind: string, text: string, p: PromoSummary): string {
   if (kind === "remainder" && !text) return "The match is settled, so what was left of the money set aside went back to the seller.";
-  const team = (o: string) => (o === "A" ? p.meta.teamA : o === "B" ? p.meta.teamB : null);
+  const [A, B] = [shortTeam(p.meta.teamA), shortTeam(p.meta.teamB)];
+  const team = (o: string) => (o === "A" ? A : o === "B" ? B : null);
   if ((kind === "proposed" || kind === "final" || kind === "corrected") && /^(A|B|Draw|Void)$/.test(text.trim())) {
     const o = text.trim();
-    const res = team(o) ? `${team(o)} won ${p.meta.teamA} v ${p.meta.teamB}` : o === "Draw" ? `${p.meta.teamA} v ${p.meta.teamB} was a draw` : "The match did not count, so every buyer is refunded";
+    const res = team(o) ? `${team(o)} won ${A} v ${B}` : o === "Draw" ? `${A} v ${B} was a draw` : "The match did not count, so every buyer is refunded";
     if (kind === "corrected") return `${res}. The result was corrected during the 15 minute window.`;
     return kind === "proposed" ? `${res}. Proposed on chain. For 15 minutes a separate Tifo key can correct it if it is wrong, then it is final.` : `${res}. Final, so the money back goes out to the winning side.`;
   }
