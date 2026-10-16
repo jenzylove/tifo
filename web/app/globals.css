@@ -596,13 +596,13 @@ html, body { overflow-x: clip; }
 
 /* Header menu: on a phone every link folds into one button. */
 .top nav { position: relative; }
-.menu-btn { display: none; width: 40px; height: 40px; border: 0; border-radius: 999px; background: var(--surface-2); cursor: pointer; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+.menu-btn { display: inline-flex; width: 40px; height: 40px; border: 0; border-radius: 999px; background: var(--surface-2); cursor: pointer; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
 .menu-btn i { display: block; width: 16px; height: 2px; border-radius: 2px; background: var(--ink); }
 .menu { position: absolute; right: 0; top: calc(100% + 12px); min-width: 210px; display: grid; padding: 8px; border-radius: 20px; background: var(--surface); box-shadow: var(--shadow), inset 0 0 0 1px var(--line); animation: tp-in .2s var(--ease) both; }
 .top .menu a, .menu .link { padding: 12px 14px; border-radius: 12px; font-size: 1rem; font-weight: 600; color: var(--ink); text-align: left; background: none; border: 0; font-family: inherit; cursor: pointer; }
 .top .menu a:hover, .menu .link:hover { background: var(--surface-2); }
 .menu .link { color: var(--muted); }
-@media (max-width: 620px) { .menu-btn { display: inline-flex; } }
+/* the menu (with Sign out) shows on every screen size */
 
 
 /* Make a drop: the agent's plan */
