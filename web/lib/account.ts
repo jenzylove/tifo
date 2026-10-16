@@ -3,11 +3,13 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { SmartAccount } from "viem/account-abstraction";
 import { restoreCircle, savedCredential } from "./circleWallet";
-import { restoreGoogle } from "./googleWallet";
+import { onGoogleExpired, restoreGoogle } from "./googleWallet";
 
 let account: SmartAccount | null = null;
 let restoring: Promise<void> | null = null;
 const listeners = new Set<() => void>();
+// A Google session that can no longer be renewed signs the page out, so the sign-in screen shows again.
+onGoogleExpired(() => setAccount(null));
 
 export function setAccount(a: SmartAccount | null) {
   account = a;

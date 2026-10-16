@@ -78,7 +78,8 @@ export async function managerData(seller: Address): Promise<ManagerData> {
   const account: AccountState | null = head
     ? {
         ...head,
-        current: !!accountAddress,
+        current: !!accountAddress && head.address.toLowerCase() === accountAddress.toLowerCase(),
+        ownBalance: head.balance,
         balance: [head, ...rest].reduce((t, a) => t + BigInt(a.balance), 0n).toString(),
         paidOut: [head, ...rest].reduce((t, a) => t + BigInt(a.paidOut), 0n).toString(),
         deals: [head, ...rest].flatMap((a) => a.deals).sort((x, y) => y.at - x.at),

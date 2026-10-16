@@ -116,7 +116,7 @@ export default function CardTopUp({ address, amountUsd, onClose }: { address: st
           </>
         )}
         {state === "submitted" && <p className="status ok">Payment sent. Your USDC usually arrives within a few minutes, and this page buys as soon as it lands.</p>}
-        {done && <p className="status ok">Your balance is updating. Close this and tap Buy.</p>}
+        {done && <p className="status ok">Your balance is updating. Close this and confirm your order.</p>}
         <div ref={box} className="sheet-frame" hidden={state === "error" || state === "tab" || done} />
         {(state === "ready" || state === "loading") && !prefersWindow() && (
           <button className="link fine" onClick={openTab}>Not loading? Open it in a new tab</button>

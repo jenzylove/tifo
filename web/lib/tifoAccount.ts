@@ -12,7 +12,7 @@ export interface AccountProposal {
   cap: string; // USDC units as strings so the JSON survives
   reason: string;
   at: number;
-  status: "waiting" | "approved" | "declined";
+  status: "waiting" | "approved" | "declined" | "expired"; // expired: never answered and the sale would already be over
   meta: PromoMeta | null;
 }
 
@@ -42,6 +42,7 @@ export interface AccountState {
   committed: string; // budgets of drops opened in the last 7 days
   recentSales: string;
   balance: string; // USDC sitting in the account, on its way to the payout wallet
+  ownBalance?: string; // in the shop page, balance adds up older accounts; this is the current account's alone (what it can withdraw)
   payout: Address; // where the account's money is sent; only the owner can change it
   paidOut: string; // everything sent there so far
   deals: AccountDeal[]; // newest first
@@ -126,7 +127,10 @@ export async function accountState(address: Address): Promise<AccountState> {
       } catch {
         // a proposal whose details don't parse is still listed, with its reason
       }
-      return { id: first + i, cap: p.terms.cap.toString(), reason: p.reason, at: Number(p.at), status: STATUS[p.status] ?? "waiting", meta };
+      let status: AccountProposal["status"] = STATUS[p.status] ?? "waiting";
+      // A proposal still waiting after its match starts can no longer be approved (the contract refuses), so it is over.
+      if (status === "waiting" && meta?.kickoff && Date.parse(meta.kickoff) <= Date.now()) status = "expired";
+      return { id: first + i, cap: p.terms.cap.toString(), reason: p.reason, at: Number(p.at), status, meta };
     })
     .reverse();
   return {

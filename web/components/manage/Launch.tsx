@@ -3,6 +3,7 @@
 // the match, how much comes back, whether it balances the offer and waits for a few buyers, and why. The seller posts it
 // or changes what they like. Everything that moves money is checked by the contract.
 import { useEffect, useMemo, useState } from "react";
+import { copyText } from "@/lib/copy";
 import QRCode from "qrcode";
 import { isAddress, keccak256, toBytes, type Address } from "viem";
 import type { SmartAccount } from "viem/account-abstraction";
@@ -611,10 +612,7 @@ function Live({ url, post, again }: { url: string; post: string; again: () => vo
   useEffect(() => {
     QRCode.toDataURL(url, { margin: 1, width: 440 }).then(setQr).catch(() => {});
   }, [url]);
-  const copy = (what: string, text: string) => {
-    navigator.clipboard?.writeText(text);
-    setCopied(what);
-  };
+  const copy = (what: string, text: string) => copyText(text).then((ok) => setCopied(ok ? what : "failed"));
   return (
     <div className="panel done">
       <b>Your drop is live.</b>
@@ -622,7 +620,8 @@ function Live({ url, post, again }: { url: string; post: string; again: () => vo
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
         {qr && <img src={qr} alt="QR code for your drop" width={160} height={160} style={{ borderRadius: 8, background: "#fff" }} />}
         <div style={{ display: "grid", gap: 10, flex: "1 1 260px" }}>
-          <code style={{ wordBreak: "break-all" }}>{url}</code>
+          <code style={{ wordBreak: "break-all", userSelect: "all" }}>{url}</code>
+          {copied === "failed" && <p className="fine">This browser blocked copying. Press and hold the link above to copy it.</p>}
           <p style={{ margin: 0 }}>{post}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn sm" onClick={() => copy("link", url)}>{copied === "link" ? "Link copied" : "Copy link"}</button>

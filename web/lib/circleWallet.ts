@@ -22,7 +22,7 @@ const CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
 const CLIENT_URL = "https://modular-sdk.circle.com/v1/rpc/w3s/buidl";
 const CHAIN_PATH = NETWORK === "testnet" ? "arcTestnet" : "arc";
 
-import { isGoogle, restoreGoogle, type GoogleAccount } from "./googleWallet";
+import { isGoogle, PendingError, restoreGoogle, signOutGoogle, type GoogleAccount } from "./googleWallet";
 export const circleEnabled = () => CLIENT_KEY.length > 0;
 
 function transports() {
@@ -272,6 +272,7 @@ async function connectOnce(mode: "register" | "login"): Promise<SmartAccount> {
     credential = { id: cred.id, publicKey: serializePublicKey(pub, { compressed: true }), raw: cred as never };
   }
   preparePasskey().catch(() => {});
+  signOutGoogle();
   try {
     localStorage.setItem(STORE, JSON.stringify({ id: credential.id, publicKey: credential.publicKey }));
   } catch {
@@ -297,7 +298,14 @@ export function biometric(): string {
 export function walletError(e: unknown): string {
   const m = (e as Error)?.message ?? String(e);
   const name = (e as Error)?.name ?? "";
-  if (typeof navigator !== "undefined" && /Instagram|FBAN|FBAV|Telegram|musical_ly|TikTok|Snapchat/i.test(navigator.userAgent + ((window as unknown as { TelegramWebviewProxy?: unknown }).TelegramWebviewProxy ? " Telegram" : "")))
+  if (name === "PendingError") return m;
+  if (restoreGoogle()) {
+    if (/sign-in expired|signed out/i.test(m)) return m;
+    if (/closed|cancel|denied|rejected/i.test(m)) return "The Google confirmation was closed, so nothing was charged. Tap the button again when you're ready.";
+    return m.split("\n")[0];
+  }
+  const webauthn = name === "NotAllowedError" || name === "InvalidStateError" || /not allowed by the user agent|PublicKeyCredential/i.test(m);
+  if (webauthn && typeof navigator !== "undefined" && /Instagram|FBAN|FBAV|Telegram|musical_ly|TikTok|Snapchat/i.test(navigator.userAgent + ((window as unknown as { TelegramWebviewProxy?: unknown }).TelegramWebviewProxy ? " Telegram" : "")))
     return `This app's built-in browser does not allow ${biometric()}. Open the link in your phone's own browser (Safari or Chrome) and try again. Nothing was charged.`;
   if (name === "PasskeyWarm") return m;
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
@@ -408,7 +416,9 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
       method: "eth_sendUserOperation",
       params: [formatUserOperationRequest({ ...op, signature }), account.entryPoint.address],
     } as never)) as Hex;
-    const { receipt, success } = await bundler.waitForUserOperationReceipt({ hash });
+    const { receipt, success } = await bundler.waitForUserOperationReceipt({ hash, timeout: 180_000 }).catch(() => {
+      throw new PendingError(); // already sent: paying again could pay twice
+    });
     if (!success) throw new Error(failure);
     return receipt;
   };
@@ -419,6 +429,7 @@ async function send(account: SmartAccount, calls: Call[], failure: string) {
     const msg = String((e as Error)?.message ?? "");
     // A browser that blocked the prompt, a prompt that timed out and a prompt the person closed all end here.
     // Keep the prepared payment behind a "Confirm" button so one more tap retries it.
+    if (e instanceof PendingError) throw e;
     if (name === "NotAllowedError" || /not allowed by the user agent|NotAllowed|timed out|operation either/i.test(msg)) {
       let used = false;
       throw new NeedsTap(async () => {
@@ -492,16 +503,27 @@ export async function buyWithCircle(account: SmartAccount, promo: Address, side:
   );
 }
 
+/** The drop this transaction created for this seller. A bundle can carry other people's operations, so match the seller
+ * too. For a first drop the seller is the account made in the same transaction (AccountCreated, owner indexed). */
+function promoFrom(receipt: Receipt, seller: Address | "new-account", owner?: Address): Address {
+  const fromFactory = receipt.logs.filter((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
+  const tail = (t?: string) => (t ? `0x${t.slice(26)}`.toLowerCase() : "");
+  let who = seller === "new-account" ? "" : seller.toLowerCase();
+  if (seller === "new-account" && owner) {
+    const created = fromFactory.find((l) => l.topics.length === 2 && tail(l.topics[1]) === owner.toLowerCase());
+    if (created) who = `0x${created.data.slice(26, 66)}`.toLowerCase();
+  }
+  const log = fromFactory.find((l) => l.topics.length === 4 && (!who || tail(l.topics[2]) === who));
+  if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt. Open your shop: it is listed there.");
+  return tail(log.topics[1]) as Address;
+}
+
 export type CreatePromoArgs = Parameters<typeof encodeFunctionData<typeof tifoFactoryAbi, "createPromo">>[0]["args"];
 
 /** Open a promo from the shop's own wallet, so sales go straight to it. Returns the promo address. */
 export async function createPromoWithCircle(account: SmartAccount, args: NonNullable<CreatePromoArgs>): Promise<{ hash: Hex; promo: Address }> {
   const data = encodeFunctionData({ abi: tifoFactoryAbi, functionName: "createPromo", args });
-  return sendAs(account, [{ to: FACTORY, data }], "The promo was not created. Nothing was charged.", (receipt) => {
-    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
-    if (!log?.topics[1]) throw new Error("Promo created but its address was not found in the receipt.");
-    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
-  });
+  return sendAs(account, [{ to: FACTORY, data }], "The promo was not created. Nothing was charged.", (receipt) => ({ hash: receipt.transactionHash, promo: promoFrom(receipt, account.address) }));
 }
 
 /** Pay out USDC from the shop wallet (to an exchange deposit address on Arc, a supplier, etc.). */
@@ -533,12 +555,8 @@ export async function createAccountAndOpenWithCircle(
     functionName: "createAccountAndOpen",
     args: [weeklyBps, baseWeekly, perDealCap, payout, { fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded }, meta],
   });
-  return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => {
-    // The factory logs the new drop (PromoCreated, drop address first) and the new account (AccountCreated).
-    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase() && l.topics.length === 4);
-    if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
-    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
-  });
+  // The factory logs the new account (AccountCreated) and the new drop (PromoCreated, drop address first).
+  return sendAs(account, [{ to: FACTORY, data }], "The drop was not created. Nothing was charged.", (receipt) => ({ hash: receipt.transactionHash, promo: promoFrom(receipt, "new-account", account.address) }));
 }
 
 /** Change where the account's money is sent. Only the owner's wallet can. */
@@ -571,11 +589,7 @@ export async function openViaAccountWithCircle(account: SmartAccount, tifoAccoun
     functionName: "open",
     args: [{ fixtureId, closesAt, settleNotBefore, cap, minBps, maxBps, rateA, rateB, floorBps, drawBps, holdSecs, minBuyers, minAmount, refNeeded }, meta],
   });
-  return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => {
-    const log = receipt.logs.find((l) => l.address.toLowerCase() === FACTORY.toLowerCase());
-    if (!log?.topics[1]) throw new Error("Drop created but its address was not found in the receipt.");
-    return { hash: receipt.transactionHash, promo: `0x${log.topics[1].slice(26)}` as Address };
-  });
+  return sendAs(account, [{ to: tifoAccount, data }], "The drop was not created. Nothing was charged.", (receipt) => ({ hash: receipt.transactionHash, promo: promoFrom(receipt, tifoAccount) }));
 }
 
 /** Delivery steps on a drop that holds payment: the seller marks sent, the buyer confirms or disputes. */

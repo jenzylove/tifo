@@ -75,26 +75,31 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
     };
   }, [paying]);
 
-  function open(url: string) {
+  function open(url: string, tab?: Window | null) {
     // In a browser that blocks the new tab, go to Bachs on this tab. It sends the buyer back to this page when done.
-    if (!window.open(url, "_blank")) location.href = url;
+    if (tab && !tab.closed) tab.location.href = url;
+    else if (!window.open(url, "_blank")) location.href = url;
   }
 
   async function start() {
+    // Open the tab now, while the tap still counts: iPhones block a new tab opened after waiting on the network.
+    const tab = window.open("", "_blank");
     setState("starting");
     setErr("");
     try {
       const r = await fetch("/api/naira/start", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wallet: address, usd: amount, promo }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
+        tab?.close();
         setErr(j.error ?? "Naira payments could not start. Nothing was charged.");
         return setState(r.status === 503 ? "paused" : "error");
       }
       setQuote({ ngn: j.ngn, rate: j.rate });
       setPaying({ id: j.checkoutId, url: j.checkoutUrl });
       setState("waiting");
-      open(j.checkoutUrl);
+      open(j.checkoutUrl, tab);
     } catch {
+      tab?.close();
       setErr("Naira payments could not start. Nothing was charged. Try again.");
       setState("error");
     }
@@ -137,7 +142,7 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
           </>
         )}
 
-        {done && <p className="status ok">Payment received. Your order goes through in a moment.</p>}
+        {done && <p className="status ok">Money added to your wallet. Tap Continue, then confirm to finish your order.</p>}
 
         {state === "paused" && <p className="status err">Naira payments are paused right now. Pay another way.</p>}
 

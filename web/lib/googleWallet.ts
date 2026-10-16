@@ -2,7 +2,8 @@
 // Sign in with Google: a Circle user-controlled wallet on Arc, made the first time a person signs in. No passkey,
 // no Face ID. Each payment opens Circle's own confirmation window. It plugs into the same send path as passkey
 // wallets, so every screen that can pay with a passkey wallet can pay with this one too.
-import type { Address, Hex, Log } from "viem";
+import { decodeAbiParameters, decodeErrorResult, erc20Abi, keccak256, toBytes, type Address, type BaseError, type Hex, type Log } from "viem";
+import { tifoAccountAbi, tifoFactoryAbi, tifoPromoAbi } from "./abi";
 import { publicClient } from "./chain";
 
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -36,6 +37,49 @@ export interface GoogleAccount {
   email?: string;
   signMessage(args: { message: string }): Promise<Hex>;
   send(calls: { to: Address; data: Hex }[], failure: string): Promise<{ transactionHash: Hex; logs: Log[] }>;
+}
+
+/** The payment left the wallet but Arc has not confirmed it yet. Paying again could pay twice, so the person is told to wait. */
+export class PendingError extends Error {
+  constructor() {
+    super("Your payment was sent and is still confirming on Arc. Don't pay again: refresh this page in a minute to see it.");
+    this.name = "PendingError";
+  }
+}
+
+const APPROVE = "0x095ea7b3";
+const USER_OP_EVENT = keccak256(toBytes("UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)"));
+const ERRORS = [...tifoPromoAbi, ...tifoFactoryAbi, ...tifoAccountAbi].filter((x) => x.type === "error");
+
+/** True when the bundle carried this wallet's operation and the operation itself failed. */
+function opFailed(logs: Log[], wallet: Address): boolean {
+  const ev = logs.find((l) => l.topics[0] === USER_OP_EVENT && l.topics[2] && `0x${l.topics[2].slice(26)}`.toLowerCase() === wallet.toLowerCase());
+  if (!ev) return false;
+  const [, success] = decodeAbiParameters([{ type: "uint256" }, { type: "bool" }, { type: "uint256" }, { type: "uint256" }], ev.data);
+  return !success;
+}
+
+/** The contract's own reason for refusing (OfferGone, Closed...), so the page can explain it. */
+function revertName(e: unknown): string | null {
+  const data = (e as BaseError)?.walk?.((x) => typeof (x as { data?: unknown }).data === "string") as { data?: Hex } | null;
+  if (!data?.data) return null;
+  try {
+    return decodeErrorResult({ abi: ERRORS, data: data.data }).errorName;
+  } catch {
+    return null;
+  }
+}
+
+/** The checkout shows which step the person is on while Google's windows open one after another. */
+let progress: ((text: string) => void) | null = null;
+export function onGoogleProgress(cb: ((text: string) => void) | null) {
+  progress = cb;
+}
+
+/** Called when the Google session can no longer be renewed, so the page shows sign-in again. */
+let expired: (() => void) | null = null;
+export function onGoogleExpired(cb: () => void) {
+  expired = cb;
 }
 
 export const isGoogle = (a: unknown): a is GoogleAccount => !!a && (a as { kind?: string }).kind === "google";
@@ -157,6 +201,7 @@ async function fresh(): Promise<Session> {
     return next;
   } catch {
     write(SESSION, null);
+    expired?.();
     throw new Error("Your Google sign-in expired. Sign in with Google again. Nothing was charged.");
   }
 }
@@ -183,29 +228,54 @@ function accountFrom(session: Session): GoogleAccount {
       if (!r?.data?.signature) throw new Error("The signature did not come back. Try again.");
       return r.data.signature as Hex;
     },
-    // Circle runs one call per confirmation, so a payment (approve, then buy) asks twice.
+    // Circle runs one call per confirmation, so a payment (allow USDC, then buy) can ask twice.
     async send(calls, failure) {
-      let last: { transactionHash: Hex; logs: Log[] } | null = null;
+      // Skip an approval the wallet already gave: one confirmation instead of two, and nothing to redo after a retry.
+      const todo: { to: Address; data: Hex }[] = [];
       for (const call of calls) {
-        const { userToken } = await fresh();
-        type Tx = { id: string; state: string; txHash: string | null; errorReason: string | null };
-        const before = new Set((await api<{ txs: Tx[] }>({ action: "txs", userToken, walletId: session.walletId })).txs.map((t) => t.id));
-        const { challengeId } = await api<{ challengeId: string }>({ action: "exec", userToken, walletId: session.walletId, to: call.to, data: call.data });
-        await confirm(challengeId);
-        let hash: Hex | null = null;
-        for (let i = 0; i < 60 && !hash; i++) {
-          await new Promise((r) => setTimeout(r, 1500));
-          const { txs } = await api<{ txs: Tx[] }>({ action: "txs", userToken, walletId: session.walletId });
-          const t = txs.find((x) => !before.has(x.id));
-          if (t?.state === "FAILED" || t?.state === "CANCELLED" || t?.state === "DENIED") throw new Error(`${failure}${t.errorReason ? ` (${t.errorReason})` : ""}`);
-          if (t?.txHash) hash = t.txHash as Hex;
+        if (call.data.startsWith(APPROVE)) {
+          const [spender, amount] = decodeAbiParameters([{ type: "address" }, { type: "uint256" }], `0x${call.data.slice(10)}`);
+          const has = await publicClient.readContract({ address: call.to, abi: erc20Abi, functionName: "allowance", args: [session.address, spender] }).catch(() => 0n);
+          if (has >= amount) continue;
         }
-        if (!hash) throw new Error("The payment is taking longer than usual. Check your wallet in a minute before trying again.");
-        const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 90_000 });
-        if (receipt.status !== "success") throw new Error(failure);
+        todo.push(call);
+      }
+      let last: { transactionHash: Hex; logs: Log[] } | null = null;
+      for (const [i, call] of todo.entries()) {
+        progress?.(todo.length > 1 ? `Step ${i + 1} of ${todo.length}: ${call.data.startsWith(APPROVE) ? "allow the payment" : "pay"}. Confirm in the Google window.` : "Confirm in the Google window.");
+        // Check the call first, so a closed sale or a changed offer is explained before anything is signed.
+        await publicClient.call({ account: session.address, to: call.to, data: call.data }).catch((e) => {
+          throw new Error(revertName(e) ?? failure);
+        });
+        const { userToken } = await fresh();
+        type Tx = { id: string; state: string; txHash: string | null; errorReason: string | null; refId: string | null; direction: string | null; contractAddress: string | null };
+        const before = new Set((await api<{ txs: Tx[] }>({ action: "txs", userToken, walletId: session.walletId }).catch(() => ({ txs: [] as Tx[] }))).txs.map((t) => t.id));
+        const refId = `tifo-${crypto.randomUUID()}`;
+        const { challengeId } = await api<{ challengeId: string }>({ action: "exec", userToken, walletId: session.walletId, to: call.to, data: call.data, refId });
+        await confirm(challengeId);
+        progress?.("Sent. Waiting for Arc to confirm…");
+        let hash: Hex | null = null;
+        for (let n = 0; n < 80 && !hash; n++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const { txs } = await api<{ txs: Tx[] }>({ action: "txs", userToken, walletId: session.walletId }).catch(() => ({ txs: [] as Tx[] }));
+          // Our reference first; failing that, a new outgoing call to the same contract. Never an incoming transfer.
+          const t =
+            txs.find((x) => x.refId === refId) ??
+            txs.find((x) => !before.has(x.id) && x.direction !== "INBOUND" && x.contractAddress?.toLowerCase() === call.to.toLowerCase());
+          if (!t) continue;
+          if (t.state === "FAILED" || t.state === "CANCELLED" || t.state === "DENIED") throw new Error(`${failure}${t.errorReason ? ` (${t.errorReason})` : ""}`);
+          if (t.txHash && (t.state === "COMPLETE" || t.state === "CONFIRMED")) hash = t.txHash as Hex;
+        }
+        if (!hash) throw new PendingError();
+        const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 }).catch(() => {
+          throw new PendingError();
+        });
+        // A smart wallet's call runs inside a bundle: the bundle can succeed while this wallet's call failed.
+        if (receipt.status !== "success" || opFailed(receipt.logs, session.address)) throw new Error(failure);
         last = { transactionHash: receipt.transactionHash, logs: receipt.logs };
       }
-      return last!;
+      if (!last) throw new Error(failure);
+      return last;
     },
   };
 }

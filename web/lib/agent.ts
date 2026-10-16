@@ -6,7 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { rebalance } from "@tifo/core";
 import { tifoAccountAbi, tifoPromoAbi } from "./abi";
 import { planFor, type Plan } from "./autopilot";
-import { accountOf } from "./tifoAccount";
+import { accountOf, dropOwner } from "./tifoAccount";
 import { FACTORY, USDC, chain, publicClient, transport, usd } from "./chain";
 import { matchBySlug, shortTeam } from "./matches";
 import { checkResult } from "./results";
@@ -275,9 +275,10 @@ export async function autopilotTick(force?: Address): Promise<TickResult[]> {
   const owners = new Set<Address>();
   for (const seller of sellers) {
     try {
-      const owner = (await publicClient.readContract({ address: seller, abi: tifoAccountAbi, functionName: "owner" }).catch(() => null)) as Address | null;
-      if (owner && (await accountOf(owner))?.toLowerCase() === seller) owners.add(owner.toLowerCase() as Address);
-      else if (await accountOf(seller)) owners.add(seller);
+      // The person behind the drop: the account's owner, whichever factory the account is on, or the wallet itself.
+      // Autopilot runs for them once they have an account on the current factory.
+      const owner = (await dropOwner(seller)).toLowerCase() as Address;
+      if (await accountOf(owner)) owners.add(owner);
     } catch (e) {
       out.push({ promo: seller, action: `autopilot error: ${(e as Error).message.slice(0, 200)}` });
     }

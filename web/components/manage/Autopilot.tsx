@@ -259,8 +259,8 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
           <button
             className="btn sm"
             style={{ marginTop: 12 }}
-            disabled={BigInt(a.balance) === 0n || status.kind === "working"}
-            onClick={() => run("Moved to your wallet.", () => withdrawFromAccountWithCircle(acct, a.address, acct.address as Address, BigInt(a.balance)))}
+            disabled={BigInt(a.ownBalance ?? a.balance) === 0n || status.kind === "working"}
+            onClick={() => run("Moved to your wallet.", () => withdrawFromAccountWithCircle(acct, a.address, acct.address as Address, BigInt(a.ownBalance ?? a.balance)))}
           >
             Send it to this wallet now
           </button>
@@ -278,7 +278,7 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
               {answered.map((p) => (
                 <div key={p.id} className="mini-row">
                   <span>{p.meta ? `${shortTeam(p.meta.teamA)} v ${shortTeam(p.meta.teamB)}` : "Proposal"} · {$(p.cap)}</span>
-                  <b>{p.status === "approved" ? "Approved" : "Declined"}</b>
+                  <b>{p.status === "approved" ? "Approved" : p.status === "expired" ? "Expired: the match started" : "Declined"}</b>
                 </div>
               ))}
             </>

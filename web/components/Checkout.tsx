@@ -4,12 +4,13 @@ import DeliveryForm from "./DeliveryForm";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
-import { keccak256, toHex, type Address, type Hex } from "viem";
+import { keccak256, parseAbiItem, toHex, type Address, type Hex } from "viem";
 import { erc20Abi, tifoPromoAbi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
 import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import GoogleButton from "@/components/GoogleButton";
+import { onGoogleProgress } from "@/lib/googleWallet";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
 import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { lastFew } from "@/lib/offer";
@@ -55,6 +56,33 @@ function newOrder(): { secret: Hex; orderRef: Hex } {
   return { secret, orderRef: keccak256(secret) };
 }
 
+/** A payment that was sent but not yet confirmed. Kept so a second tap reuses the same order (the contract refuses a
+ * repeat), and so the page can find the order once it lands. */
+type Pending = { secret: Hex; orderRef: Hex; side: 0 | 1; qty: number; at: number };
+const pendingKey = (promo: string) => `tifo.pending.${promo.toLowerCase()}`;
+function readPending(promo: string): Pending | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(pendingKey(promo)) ?? "null") as Pending | null;
+    return p && Date.now() - p.at < 30 * 60_000 ? p : null;
+  } catch {
+    return null;
+  }
+}
+function writePending(promo: string, p: Pending | null) {
+  try {
+    if (p) localStorage.setItem(pendingKey(promo), JSON.stringify(p));
+    else localStorage.removeItem(pendingKey(promo));
+  } catch {
+    // storage blocked: the contract still refuses a repeated order reference
+  }
+}
+/** The transaction that recorded this order, if it has landed. */
+async function findSale(promo: Address, orderRef: Hex): Promise<Hex | null> {
+  const to = await publicClient.getBlockNumber();
+  const logs = await publicClient.getLogs({ address: promo, event: parseAbiItem("event Sale(address indexed buyer, uint8 side, uint256 amount, uint16 rateBps, uint256 held, uint256 toSeller, bytes32 orderRef)"), fromBlock: to > 20_000n ? to - 20_000n : 0n, toBlock: to });
+  return logs.find((l) => l.args.orderRef?.toLowerCase() === orderRef.toLowerCase())?.transactionHash ?? null;
+}
+
 export default function Checkout({ promo, teams, colors, rates: listed, liability, cap, floorBps, drawBps, spots, priceUsd, product, shop, closed, digital, contact, slots, reach, moving, lastMove, refNeeded = 0 }: Props) {
   const router = useRouter();
   // The agent moved the offer between page load and payment: show the new one and let the buyer decide again.
@@ -84,6 +112,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [nairaOn, setNairaOn] = useState(false); // paying in naira (through Bachs) is set up on this deployment
   const [naira, setNaira] = useState(false);
   const [nairaPrice, setNairaPrice] = useState(""); // the naira for what is left to pay, charges included
+  const [nairaFits, setNairaFits] = useState(true); // false when the naira float can't cover this amount today
   const [usdcOpen, setUsdcOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
@@ -100,9 +129,17 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   }, [closed]);
   useEffect(() => {
     // Opened from another buyer's link (?ref=<their wallet>): this purchase counts toward their free order.
-    const r = new URLSearchParams(location.search).get("ref");
+    // It is remembered for this drop, so it survives a trip to the naira payment page and back.
+    const key = `tifo.ref.${promo.toLowerCase()}`;
+    let r = new URLSearchParams(location.search).get("ref");
+    try {
+      if (r && /^0x[0-9a-fA-F]{40}$/.test(r)) localStorage.setItem(key, r);
+      else r = localStorage.getItem(key);
+    } catch {
+      // storage blocked: only the link itself counts
+    }
     if (refNeeded > 0 && r && /^0x[0-9a-fA-F]{40}$/.test(r)) setReferrer(r as Address);
-  }, [refNeeded]);
+  }, [refNeeded, promo]);
   useEffect(() => {
     if (status.kind !== "done" || !refNeeded || !payer) return;
     const read = () =>
@@ -114,6 +151,19 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     const t = setInterval(read, 15_000);
     return () => clearInterval(t);
   }, [status.kind, refNeeded, payer, promo]);
+  useEffect(() => {
+    // A payment that was still confirming when the page closed: if it landed, show the order as paid.
+    const p = readPending(promo);
+    if (!p) return;
+    findSale(promo, p.orderRef)
+      .then((hash) => {
+        if (!hash) return;
+        writePending(promo, null);
+        saveOrder(promo, { hash, secret: p.secret });
+        setStatus({ kind: "done", hash, secret: p.secret, side: p.side, qty: p.qty });
+      })
+      .catch(() => {});
+  }, [promo]);
   useEffect(() => {
     // Back from the Bachs page (it adds ?checkout_id= to the address): ask once whether the naira payment landed, then tidy the address.
     const id = new URLSearchParams(location.search).get("checkout_id");
@@ -152,7 +202,11 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
     let live = true;
     fetch(`/api/naira/start?usd=${Math.ceil(Math.round(shortfall * 1e6) / 1e4) / 100}`)
       .then((r) => r.json())
-      .then((j) => live && setNairaPrice(j.ngn ? `₦${Number(j.ngn).toLocaleString("en-US")}` : ""))
+      .then((j) => {
+        if (!live) return;
+        setNairaFits(!!j.enabled);
+        setNairaPrice(j.enabled && j.ngn ? `₦${Number(j.ngn).toLocaleString("en-US")}` : "");
+      })
       .catch(() => {});
     return () => {
       live = false;
@@ -182,6 +236,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 
   /** A bookable service pays against the slot's own reference, so the contract refuses a second booking of it. */
   function order(): { secret: Hex; orderRef: Hex } {
+    const p = readPending(promo);
+    if (p && p.side === side && !booking) return { secret: p.secret, orderRef: p.orderRef };
     const o = newOrder();
     return booking && slot !== null ? { secret: o.secret, orderRef: slotRef(promo, slot) } : o;
   }
@@ -199,6 +255,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       }
       setStatus({ kind: "working", text: `Confirm with ${bio}…` });
       const { secret, orderRef } = order();
+      writePending(promo, { secret, orderRef, side, qty, at: Date.now() });
+      onGoogleProgress((text) => setStatus({ kind: "working", text }));
       try {
         done(await buyWithCircle(acct, promo, side, amount, orderRef, rates[side], referrer), secret);
       } catch (e) {
@@ -207,11 +265,20 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
         return setStatus({ kind: "idle" });
       }
     } catch (e) {
+      // Already paid under this order (a slow payment that landed): show it instead of an error.
+      const p = readPending(promo);
+      if (p && /DuplicateOrder/i.test(String((e as Error)?.message))) {
+        const hash = await findSale(promo, p.orderRef).catch(() => null);
+        if (hash) return done(hash, p.secret);
+      }
       fail(e);
+    } finally {
+      onGoogleProgress(null);
     }
   }
 
   function done(hash: Hex, secret: Hex) {
+    writePending(promo, null);
     setTap(null);
     saveOrder(promo, { hash, secret });
     setPayer(acct?.address ?? null);
@@ -475,7 +542,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                     <p className="fine">Your Tifo wallet already has {money(Number(balance) / 1e6)} towards this, so you only pay the rest.</p>
                   )}
                   <div className="pay-ways">
-                    {nairaOn && (
+                    {nairaOn && nairaFits && (
                       <button onClick={() => setNaira(true)}>
                         <b>{nairaPrice ? `Pay ${nairaPrice}` : "Pay in naira"}</b>
                         <span>Bank transfer or card in naira</span>
@@ -543,6 +610,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
 const GONE = "That offer just moved as other fans bought. Check the new offer and pay again.";
 
 function friendly(msg: string) {
+  if (/still confirming/i.test(msg)) return msg; // sent but not confirmed yet: never tell them to pay again
   if (/OfferGone/i.test(msg)) return GONE;
   if (/DuplicateOrder/i.test(msg)) return "This order already went through, or that time was just booked by someone else. You were not charged twice. Refresh to see the free times.";
   if (/OverCap/i.test(msg)) return "The shop's budget for this offer is used up at this size. Try fewer items or the other offer.";

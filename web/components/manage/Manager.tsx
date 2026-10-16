@@ -80,7 +80,7 @@ export default function Manager() {
           <button key={t} className={view === t ? "on" : ""} onClick={() => go(t)}>
             {l}
             {t === "drops" && data.totals.live > 0 && <span className="pill live">{data.totals.live}</span>}
-            {t === "autopilot" && (data.account?.proposals.filter((p) => p.status === "waiting").length ?? 0) > 0 && <span className="pill ac">1</span>}
+            {t === "autopilot" && (data.account?.proposals.filter((p) => p.status === "waiting").length ?? 0) > 0 && <span className="pill ac">{data.account?.proposals.filter((p) => p.status === "waiting").length}</span>}
           </button>
         ))}
       </nav>

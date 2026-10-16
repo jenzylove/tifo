@@ -67,7 +67,9 @@ export async function POST(req: Request) {
     }
     case "exec": {
       if (!token || !uuid(b.walletId) || typeof b.to !== "string" || !isAddress(b.to) || !hex(b.data)) return NextResponse.json({ error: "bad request" }, { status: 400 });
-      const r = await circle("/user/transactions/contractExecution", { token, body: { walletId: b.walletId, contractAddress: b.to, callData: b.data, feeLevel: "MEDIUM" } });
+      // The refId lets the browser find exactly this transaction afterwards, not an incoming transfer or another call.
+      const refId = typeof b.refId === "string" && /^[A-Za-z0-9-]{8,64}$/.test(b.refId) ? b.refId : undefined;
+      const r = await circle("/user/transactions/contractExecution", { token, body: { walletId: b.walletId, contractAddress: b.to, callData: b.data, feeLevel: "MEDIUM", ...(refId ? { refId } : {}) } });
       return r.ok ? NextResponse.json({ challengeId: r.data.challengeId }) : fail(r);
     }
     case "sign": {
@@ -79,7 +81,16 @@ export async function POST(req: Request) {
       if (!token || !uuid(b.walletId)) return NextResponse.json({ error: "bad request" }, { status: 400 });
       const r = await circle(`/transactions?walletIds=${b.walletId}&pageSize=10`, { token });
       if (!r.ok) return fail(r);
-      const txs = ((r.data.transactions as Record<string, unknown>[]) ?? []).map((t) => ({ id: t.id, state: t.state, txHash: t.txHash ?? null, createDate: t.createDate, errorReason: t.errorReason ?? null }));
+      const txs = ((r.data.transactions as Record<string, unknown>[]) ?? []).map((t) => ({
+        id: t.id,
+        state: t.state,
+        txHash: t.txHash ?? null,
+        createDate: t.createDate,
+        errorReason: t.errorReason ?? null,
+        refId: t.refId ?? null,
+        direction: t.transactionType ?? t.operation ?? null,
+        contractAddress: t.contractAddress ?? null,
+      }));
       return NextResponse.json({ txs });
     }
     default:
