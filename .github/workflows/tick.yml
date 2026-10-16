@@ -1,7 +1,7 @@
 name: agent tick
 # Keeps the agent awake. One run calls the app every two minutes for about five hours, then starts the next run.
 # Each call settles what is due: propose results once two sources agree, finalize after the correction window,
-# push refunds, return leftover reserve. The first call of a run also lets the agent plan each seller's next drop.
+# push refunds, return leftover reserve. About once an hour the call also lets the agent plan each seller's next drop.
 # GitHub delays scheduled runs by hours, so the schedule below is only a restart if the chain of runs ever breaks.
 on:
   schedule:
@@ -34,7 +34,9 @@ jobs:
               curl -sS -m 240 -H "Authorization: Bearer ${PRACTICE_TICK_SECRET:-$TICK_SECRET}" "$PRACTICE_URL/api/tick" | head -c 1000 || true
               echo
             fi
-            path="/api/tick"
+            # Plan each seller's next drop about once an hour; settle on every call.
+            n=$(( ${n:-0} + 1 ))
+            if [ $(( n % 30 )) -eq 0 ]; then path="/api/tick?plan=1"; else path="/api/tick"; fi
             sleep 120
           done
       - name: Start the next run

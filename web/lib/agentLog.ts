@@ -24,7 +24,24 @@ const LABEL: Record<string, string> = {
   "offer off": "Kept the offer off",
   referral: "Counted a referral",
   remainder: "Sent the rest back to the seller",
+  proposed: "Proposed the result",
+  final: "Settled the match",
+  refunds: "Paid winning buyers back",
+  corrected: "Result corrected by Tifo",
 };
+
+/** The agent writes "A", "B" or "Draw" for a result; say which team that is. */
+function explain(kind: string, text: string, p: PromoSummary): string {
+  if (kind === "remainder" && !text) return "The match is settled, so what was left of the money set aside went back to the seller.";
+  const team = (o: string) => (o === "A" ? p.meta.teamA : o === "B" ? p.meta.teamB : null);
+  if ((kind === "proposed" || kind === "final" || kind === "corrected") && /^(A|B|Draw|Void)$/.test(text.trim())) {
+    const o = text.trim();
+    const res = team(o) ? `${team(o)} won ${p.meta.teamA} v ${p.meta.teamB}` : o === "Draw" ? `${p.meta.teamA} v ${p.meta.teamB} was a draw` : "The match did not count, so every buyer is refunded";
+    if (kind === "corrected") return `${res}. The result was corrected during the 15 minute window.`;
+    return kind === "proposed" ? `${res}. Proposed on chain. For 15 minutes a separate Tifo key can correct it if it is wrong, then it is final.` : `${res}. Final, so the money back goes out to the winning side.`;
+  }
+  return text;
+}
 
 export async function agentLog(limit = 200): Promise<{ entries: LogEntry[]; drops: number; sellers: number }> {
   const promos = (await listPromos()).filter((p) => !isCheckDrop(p.meta));
@@ -39,11 +56,11 @@ export async function agentLog(limit = 200): Promise<{ entries: LogEntry[]; drop
         entries.push({
           at: j.at,
           what: LABEL[j.kind] ?? j.kind.charAt(0).toUpperCase() + j.kind.slice(1),
-          why: j.text || (j.kind === "remainder" ? "The match is settled, so what was left of the money set aside went back to the seller." : ""),
+          why: explain(j.kind, j.text, p),
           shop: p.meta.shop ?? "A shop",
           drop: p.address,
           where: p.address,
-          alone: true,
+          alone: j.kind !== "corrected", // a correction comes from Tifo's separate key, not the agent
         });
       }
     }),

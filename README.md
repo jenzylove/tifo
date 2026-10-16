@@ -39,19 +39,30 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 |---|---|
 | Live site | https://tifo.vercel.app |
 | Demo video, 2 minutes | https://youtu.be/KK74r_sll74 |
-| The agent's record, read from the chain | https://tifo.vercel.app/proof |
+| Every decision the agent made, read from the chain | https://tifo.vercel.app/agent |
+| The agent's record and every order | https://tifo.vercel.app/proof |
 | First payout on mainnet | [`0xf0a800df…e0d8b1`](https://explorer.arc.io/tx/0xf0a800df76bb0d45f03ef5f81c5f30faff67f07e45712dfa20b3d7339ce0d8b1) |
 | Try it with free test money | https://tifo-test.vercel.app |
 | Contracts on Arc mainnet | [`TifoFactory 0x7E9A6e16…f05c34`](https://explorer.arc.io/address/0x7E9A6e16015dae854cB8D0370411552AD5f05c34) |
 | What works, with transactions | [docs/BUILD_LOG.md](docs/BUILD_LOG.md) |
 | Plan and acceptance tests | [docs/PRD.md](docs/PRD.md) |
 
+## For judges: the rubric, mapped to the code
+
+| Rubric | What to look at | Where it is |
+|---|---|---|
+| **Agentic sophistication** | The agent plans each drop with Claude (match, share back, balancing, buyers needed, referrals) and explains why. It runs every two minutes on its own: it rebalances offers as sales come in, reads results from ESPN, TheSportsDB and Polymarket and acts only when two agree, pays winners, returns the rest and sends sellers their money. Inside the weekly limit a seller sets on chain it opens the next drop by itself; above it the contract refuses, so it can only ask. It writes a daily briefing for each seller and answers questions in chat. | [`web/lib/dropPlan.ts`](web/lib/dropPlan.ts), [`web/lib/agent.ts`](web/lib/agent.ts), [`web/lib/results.ts`](web/lib/results.ts), [`web/lib/brief.ts`](web/lib/brief.ts), [`.github/workflows/tick.yml`](.github/workflows/tick.yml), [`contracts/src/TifoAccount.sol`](contracts/src/TifoAccount.sol) |
+| **Proof the agent did it** | Every decision is written into the drop's contract with its reason, and the [agent log](https://tifo.vercel.app/agent) lists them all, newest first, each linked to Arc. Nobody can edit them. | `note()` and `getJournal()` in [`TifoPromo.sol`](contracts/src/TifoPromo.sol), [`web/lib/agentLog.ts`](web/lib/agentLog.ts) |
+| **Traction** | Real shops and buyers on Arc mainnet with real USDC. Every number on [/proof](https://tifo.vercel.app/proof) and [/agent](https://tifo.vercel.app/agent) is read from the chain; our own test drops are listed separately and left out of every count. | [`web/app/proof/page.tsx`](web/app/proof/page.tsx), `isCheckDrop` in [`web/lib/promos.ts`](web/lib/promos.ts) |
+| **Circle tools** | Two ways in, both Circle: Google sign-in on user-controlled wallets and passkeys on Modular Wallets, with Gas Station paying passkey wallets' gas. Card and bank top-ups through Onramp, USDC from other chains through Bridge Kit. | See [Circle and Arc](#circle-and-arc) |
+| **Innovation** | Match-day cashback a small shop can run safely: the most it can cost is fixed on chain before posting, refunds are held in the drop until full time, and results settle with no one clicking. Referrals make an order free, paid for by the extra sales. Shipped orders are held until the buyer confirms. | [`TifoPromo.sol`](contracts/src/TifoPromo.sol), [`TifoReferral.t.sol`](contracts/test/TifoReferral.t.sol) |
+
 ---
 
 ## How it works
 
-- **One link.** A seller adds a product, a price and how many they have (or starts from an Instagram post: a screenshot, the caption or the link). The agent plans the whole drop and says why: the match, how much back (any share from 10% to 100%), whether it balances the offer, whether the offer waits for a few buyers, and whether to turn on referrals. The seller posts it or changes what they like. One passkey confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
-- **Buying.** Buyers open the link, pick a team and pay the normal price in USDC with a passkey wallet made in seconds. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
+- **One link.** A seller adds a product, a price and how many they have (or starts from an Instagram post: a screenshot, the caption or the link). The agent plans the whole drop and says why: the match, how much back (any share from 10% to 100%), whether it balances the offer, whether the offer waits for a few buyers, and whether to turn on referrals. The seller posts it or changes what they like. One confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
+- **Buying.** Buyers open the link, pick a team and pay the normal price in USDC with a wallet made in seconds: continue with Google, or use a passkey. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
 - **The cost is known up front.** The most a drop can cost is stock × price × share, shown before posting. Fans split between two teams and only one side wins, so a 25% back offer usually costs about what a 10% off sale does.
 - **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every winner and returns what is left. On a draw every buyer gets a small thank you. Polymarket's market usually resolves hours after the match, so most results are settled by ESPN and TheSportsDB agreeing.
 - **The seller gets paid.** After each sale and after full time, the agent sends the seller's share to their payout wallet.
@@ -98,7 +109,8 @@ The hackathon's required reading, [Agents and Ledgers in 2026](https://thecantee
 | Service | How Tifo uses it |
 |---|---|
 | [Arc](https://www.arc.network) | Every contract, payment, refund and payout, on mainnet. USDC is the gas, so fees are a fraction of a cent. |
-| Circle Modular Wallets | A passkey wallet for every seller and buyer, made in seconds with Face ID or a fingerprint. |
+| Circle user-controlled wallets | "Continue with Google": a USDC wallet on Arc for sellers and buyers who have never used crypto. Payments are confirmed in Circle's window. Server side in [`web/app/api/ucw/route.ts`](web/app/api/ucw/route.ts), browser side in [`web/lib/googleWallet.ts`](web/lib/googleWallet.ts). |
+| Circle Modular Wallets | A passkey wallet made in seconds with Face ID or a fingerprint ([`web/lib/circleWallet.ts`](web/lib/circleWallet.ts)). |
 | Circle Gas Station | Sponsors every user operation, so nobody needs a second token. |
 | USDC | The only money in the system: sales, refunds, payouts. |
 | Arc Onramp Kit | Card or bank payment inside the checkout. |
