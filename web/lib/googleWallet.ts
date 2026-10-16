@@ -6,8 +6,13 @@ import type { Address, Hex, Log } from "viem";
 import { publicClient } from "./chain";
 
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-export const CIRCLE_APP_ID = process.env.NEXT_PUBLIC_CIRCLE_APP_ID ?? "";
-export const googleEnabled = () => GOOGLE_CLIENT_ID.length > 0 && CIRCLE_APP_ID.length > 0;
+export const googleEnabled = () => GOOGLE_CLIENT_ID.length > 0;
+let appId: Promise<string> | null = null;
+const CIRCLE_APP_ID = () =>
+  (appId ??= api<{ appId: string }>({ action: "config" }).then((r) => r.appId).catch((e) => {
+    appId = null;
+    throw e;
+  }));
 
 const SESSION = "tifo.google";
 const DEVICE = "tifo.google.device";
@@ -71,7 +76,7 @@ async function sdk(onLogin?: (e: Error | undefined, r: LoginResult | undefined) 
     const { W3SSdk } = await import("@circle-fin/w3s-pw-web-sdk");
     const device = read<{ deviceToken: string; deviceEncryptionKey: string }>(DEVICE);
     const configs = {
-      appSettings: { appId: CIRCLE_APP_ID },
+      appSettings: { appId: await CIRCLE_APP_ID() },
       ...(device && onLogin ? { loginConfigs: { deviceToken: device.deviceToken, deviceEncryptionKey: device.deviceEncryptionKey, google: googleLogin() } } : {}),
     };
     return new W3SSdk(configs as never, onLogin as never);
@@ -86,7 +91,7 @@ export async function startGoogle(): Promise<void> {
   const { deviceToken, deviceEncryptionKey } = await api<{ deviceToken: string; deviceEncryptionKey: string }>({ action: "device", deviceId });
   write(DEVICE, { deviceId, deviceToken, deviceEncryptionKey });
   write(RETURN, location.pathname + location.search);
-  s.updateConfigs({ appSettings: { appId: CIRCLE_APP_ID }, loginConfigs: { deviceToken, deviceEncryptionKey, google: googleLogin() } } as never, () => {});
+  s.updateConfigs({ appSettings: { appId: await CIRCLE_APP_ID() }, loginConfigs: { deviceToken, deviceEncryptionKey, google: googleLogin() } } as never, () => {});
   await s.performLogin("Google" as never);
 }
 

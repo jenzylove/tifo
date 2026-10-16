@@ -36,6 +36,11 @@ export async function POST(req: Request) {
     NextResponse.json({ error: r.message ?? "Circle did not answer.", code: r.code }, { status: r.status >= 400 && r.status < 600 ? r.status : 502 });
 
   switch (b.action) {
+    case "config": {
+      // The App ID is public (the browser needs it); reading it here saves setting it by hand for each network.
+      const r = await circle("/config/entity");
+      return r.ok ? NextResponse.json({ appId: r.data.appId }, { headers: { "cache-control": "public, max-age=3600" } }) : fail(r);
+    }
     case "device": {
       if (typeof b.deviceId !== "string" || b.deviceId.length > 200) return NextResponse.json({ error: "bad request" }, { status: 400 });
       const r = await circle("/users/social/token", { body: { deviceId: b.deviceId } });
