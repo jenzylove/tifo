@@ -8,6 +8,7 @@ import { keccak256, toHex, type Address, type Hex } from "viem";
 import { erc20Abi, tifoPromoAbi } from "@/lib/abi";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, USDC, chain, explorerTx, publicClient } from "@/lib/chain";
+import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import { NeedsTap, biometric, buyWithCircle, circleEnabled, connectCircle, preparePasskey, savedCredential, usdcBalance, walletError } from "@/lib/circleWallet";
 import { offerLabel, precheck, stepDown, walletSide } from "@/lib/precheck";
 import { lastFew } from "@/lib/offer";
@@ -161,6 +162,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const back = (s: 0 | 1) => (total * rates[s]) / 10_000;
   const enough = balance !== null && balance >= amount;
   const busy = status.kind === "working";
+  const ready = usePasskeyReady();
 
   async function wallet(mode: "register" | "login") {
     setStatus({ kind: "working", text: mode === "register" ? "Creating your wallet…" : "Signing in…" });
@@ -449,10 +451,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 <section>
                   <h5>Your Tifo wallet</h5>
                   <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Any money back lands here.</p>
-                  <button className="btn block" disabled={busy} onClick={() => wallet(hasSaved ? "login" : "register")}>
-                    {hasSaved ? `Sign in with ${bio}` : `Create a wallet with ${bio}`}
+                  <button className="btn block" disabled={busy || !ready} onClick={() => wallet(hasSaved ? "login" : "register")}>
+                    {!ready ? "Getting ready…" : hasSaved ? `Sign in with ${bio}` : `Create a wallet with ${bio}`}
                   </button>
-                  <button className="link fine" onClick={() => wallet(hasSaved ? "register" : "login")}>
+                  <button className="link fine" disabled={busy || !ready} onClick={() => wallet(hasSaved ? "register" : "login")}>
                     {hasSaved ? "Create a new wallet instead" : "I already have one"}
                   </button>
                 </section>
@@ -515,7 +517,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                       </div>
                     )}
                   </div>
-                  <button className="link fine switch" disabled={busy} onClick={() => wallet("login")}>
+                  <button className="link fine switch" disabled={busy || !ready} onClick={() => wallet("login")}>
                     Money in another Tifo wallet? Switch
                   </button>
                 </section>

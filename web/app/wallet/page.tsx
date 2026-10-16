@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { isAddress, parseUnits, type Address } from "viem";
 import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerAddr, explorerTx } from "@/lib/chain";
+import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import { biometric, circleEnabled, connectCircle, preparePasskey, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import { handleTap, type Retry } from "@/lib/tap";
 
@@ -13,6 +14,7 @@ const money = (u: bigint) => `$${(Number(u) / 1e6).toFixed(2)}`;
 export default function WalletPage() {
   const acct = useAccount();
   const [bio, setBio] = useState("Face ID or fingerprint");
+  const ready = usePasskeyReady();
   const [balance, setBalance] = useState<bigint | null>(null);
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
@@ -92,12 +94,12 @@ export default function WalletPage() {
         <p className="empty panel">Passkey wallets are not set up on this site.</p>
       ) : !acct ? (
         <section className="panel" style={{ display: "grid", gap: 10 }}>
-          <button className="btn block" disabled={busy} onClick={() => open("login")}>
-            Sign in with {bio}
+          <button className="btn block" disabled={busy || !ready} onClick={() => open("login")}>
+            {ready ? `Sign in with ${bio}` : "Getting ready…"}
           </button>
           <p className="fine">
             Your device shows every Tifo wallet saved on it. Pick the one you want. No wallet yet?{" "}
-            <button className="link" onClick={() => open("register")}>Create one</button>
+            <button className="link" disabled={!ready} onClick={() => open("register")}>Create one</button>
           </p>
         </section>
       ) : (

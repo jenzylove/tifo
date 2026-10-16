@@ -6,6 +6,7 @@ import { setAccount, useAccount } from "@/lib/account";
 import { NETWORK, explorerTx } from "@/lib/chain";
 import Books from "./Books";
 import { handleTap, type Retry } from "@/lib/tap";
+import { usePasskeyReady } from "@/lib/usePasskeyReady";
 import { biometric, circleEnabled, connectCircle, preparePasskey, savedCredential, sendUsdcWithCircle, usdcBalance, walletError } from "@/lib/circleWallet";
 import type { Brief } from "@/lib/brief";
 import type { ManagerData } from "@/lib/manager";
@@ -415,6 +416,7 @@ function SignIn() {
   const [err, setErr] = useState("");
   const [hasSaved, setHasSaved] = useState(false);
   const [bio, setBio] = useState("Face ID or fingerprint");
+  const ready = usePasskeyReady();
   useEffect(() => {
     setHasSaved(!!savedCredential());
     setBio(biometric());
@@ -444,10 +446,10 @@ function SignIn() {
           <p className="status err">Wallets aren&apos;t configured on this deployment.</p>
         ) : (
           <>
-            <button className="btn" disabled={!!busy} onClick={() => go(hasSaved ? "login" : "register")}>
-              {hasSaved ? "Sign in" : "Create my wallet"}
+            <button className="btn" disabled={!!busy || !ready} onClick={() => go(hasSaved ? "login" : "register")}>
+              {!ready ? "Getting ready…" : hasSaved ? "Sign in" : "Create my wallet"}
             </button>
-            <button className="link" disabled={!!busy} onClick={() => go(hasSaved ? "register" : "login")}>
+            <button className="link" disabled={!!busy || !ready} onClick={() => go(hasSaved ? "register" : "login")}>
               {hasSaved ? "Create a new wallet instead" : "I already have one"}
             </button>
           </>
