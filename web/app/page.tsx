@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import Duties from "@/components/Duties";
 import Reveal from "@/components/Reveal";
+import { agentLog } from "@/lib/agentLog";
 import { dropCards } from "@/lib/board";
 import { usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
@@ -23,7 +24,9 @@ export default async function Landing() {
   const paidState = paid ? await promoState(paid.p.address).catch(() => null) : null;
   const settled = cards.filter((c) => c.phase === "settled").length;
   const orders = cards.reduce((t, c) => t + c.fans, 0);
-  const byAgent = cards.filter((c) => c.p.meta.byAgent).length;
+  const decisions = await agentLog()
+    .then((l) => l.entries.length)
+    .catch(() => 0);
   const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
   const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
   const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#d92b3a", "#2b5fd9"];
@@ -149,10 +152,10 @@ export default async function Landing() {
             <b>{settled}</b>
             <span>settled by the agent</span>
           </div>
-          <div>
-            <b>{byAgent}</b>
-            <span>opened by the agent alone</span>
-          </div>
+          <a href="/agent">
+            <b>{decisions}</b>
+            <span>agent decisions on chain</span>
+          </a>
         </Reveal>
       </div>
 

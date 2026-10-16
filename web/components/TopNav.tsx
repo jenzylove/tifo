@@ -34,7 +34,7 @@ export default function TopNav() {
   return (
     <nav ref={box}>
       <a href="/drops" className="hide-sm">Live drops</a>
-      <a href="/proof" className="hide-sm">Proof</a>
+      <a href="/agent" className="hide-sm">Agent log</a>
       {signedIn && <a href="/manage" className="hide-sm">Your shop</a>}
       <a href="/manage?new=1" className="btn sm">Make a drop</a>
       <button className="menu-btn" aria-label="Menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -48,6 +48,7 @@ export default function TopNav() {
           {signedIn && <a href="/manage">Your shop</a>}
           <a href="/wallet">Wallet</a>
           <a href="/proof">Proof</a>
+          <a href="/agent">Agent log</a>
           {signedIn && (
             <button className="link" onClick={signOut}>
               Sign out

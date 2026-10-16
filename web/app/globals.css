@@ -149,11 +149,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent-deep); }
 .section-head { max-width: 640px; margin: 0 auto 46px; text-align: center; display: grid; gap: 14px; justify-items: center; }
 .section-head p { color: var(--muted); font-size: 1.08rem; }
 .facts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 90px; }
-.facts div { padding: 28px 18px; text-align: center; display: grid; gap: 4px; }
-.facts div + div { border-left: 1px solid var(--line); }
+.facts > * { padding: 28px 18px; text-align: center; display: grid; gap: 4px; }
+.facts > * + * { border-left: 1px solid var(--line); }
 .facts b { font-size: clamp(1.7rem, 3.4vw, 2.5rem); font-weight: 800; letter-spacing: -.05em; line-height: 1; font-variant-numeric: tabular-nums; }
 .facts span { color: var(--muted); font-size: .88rem; }
-@media (max-width: 700px) { .facts { grid-template-columns: 1fr 1fr; } .facts div:nth-child(3) { border-left: 0; } .facts div:nth-child(n + 3) { border-top: 1px solid var(--line); } }
+.facts a { color: inherit; text-decoration: none; }
+.facts a span { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 700px) { .facts { grid-template-columns: 1fr 1fr; } .facts > :nth-child(3) { border-left: 0; } .facts > :nth-child(n + 3) { border-top: 1px solid var(--line); } }
 .duties { display: grid; }
 .duty { display: grid; grid-template-columns: 90px 1fr 1.25fr; gap: 26px; align-items: start; padding: 34px 0; border-top: 1px solid var(--line); transition: padding .4s var(--ease); }
 .duty:last-child { border-bottom: 1px solid var(--line); }
@@ -634,3 +636,7 @@ html, body { overflow-x: clip; }
 .orb.sm { width: 18px; height: 18px; }
 .agent-eyebrow { justify-content: center; margin: 18px 0 -6px; animation: rise .7s var(--ease) both .1s; }
 .google-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--line); }
+.agent-log { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 10px; }
+.agent-log li { padding: 14px 16px; }
+.agent-log li p { margin: 8px 0 0; }
+.agent-log-head { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
