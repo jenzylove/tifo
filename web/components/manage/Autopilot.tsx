@@ -93,7 +93,9 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
     </>
   );
 
-  if (!a)
+  // An account from an earlier version of the contracts keeps its history, but the agent only runs current accounts.
+  const old = !!a && a.current === false;
+  if (!a || old)
     return (
       <>
         <div className="mgr-head">
@@ -103,6 +105,12 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
           </div>
         </div>
         <div className="panel launch" style={{ maxWidth: 640 }}>
+          {old && (
+            <p className="status">
+              Your account is from an earlier version of Tifo, so your manager can&apos;t run drops from it. Turn autopilot on again below to move to
+              the current version. Your past drops and books stay as they are.
+            </p>
+          )}
           <h3>Set your rule</h3>
           {rule}
           <p className="fine">
