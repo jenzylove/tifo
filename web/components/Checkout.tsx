@@ -471,7 +471,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           disabled={side === null || busy || (booking && slot === null)}
           onClick={() => (circleEnabled() && acct && enough && !tap ? pay() : setSheet(true))}
         >
-          {side === null ? "Pick a side to continue" : booking && slot === null ? "Pick a time to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
+          {side === null ? "Choose your club to continue" : booking && slot === null ? "Pick a time to continue" : acct && enough ? `Pay ${money(total)} with ${bio}` : `Pay ${money(total)}`}
         </button>
       )}
       {acct && !sheet && balance !== null && (
