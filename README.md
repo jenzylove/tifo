@@ -51,10 +51,10 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 
 | Rubric | What to look at | Where it is |
 |---|---|---|
-| **Agentic sophistication** | The agent plans each drop with Claude (match, share back, balancing, buyers needed, referrals) and explains why. It runs every two minutes on its own: it rebalances offers as sales come in, reads results from ESPN, TheSportsDB and Polymarket and acts only when two agree, pays winners, returns the rest and sends sellers their money. Inside the weekly limit a seller sets on chain it opens the next drop by itself; above it the contract refuses, so it can only ask. It writes a daily briefing for each seller and answers questions in chat. | [`web/lib/dropPlan.ts`](web/lib/dropPlan.ts), [`web/lib/agent.ts`](web/lib/agent.ts), [`web/lib/results.ts`](web/lib/results.ts), [`web/lib/brief.ts`](web/lib/brief.ts), [`.github/workflows/tick.yml`](.github/workflows/tick.yml), [`contracts/src/TifoAccount.sol`](contracts/src/TifoAccount.sol) |
+| **Agentic sophistication** | The agent plans each drop with Claude (match, share back, balancing, buyers needed, referrals) and explains why. It runs every two minutes on its own: it rebalances offers as sales come in, reads results from ESPN, TheSportsDB and Polymarket and acts only when two agree, pays fans of the winning club back, returns the rest and sends sellers their money. Inside the weekly limit a seller sets on chain it opens the next drop by itself; above it the contract refuses, so it can only ask. It writes a daily briefing for each seller and answers questions in chat. | [`web/lib/dropPlan.ts`](web/lib/dropPlan.ts), [`web/lib/agent.ts`](web/lib/agent.ts), [`web/lib/results.ts`](web/lib/results.ts), [`web/lib/brief.ts`](web/lib/brief.ts), [`.github/workflows/tick.yml`](.github/workflows/tick.yml), [`contracts/src/TifoAccount.sol`](contracts/src/TifoAccount.sol) |
 | **Proof the agent did it** | Every decision is written into the drop's contract with its reason, and the [agent log](https://tifo.vercel.app/agent) lists them all, newest first, each linked to Arc. Nobody can edit them. | `note()` and `getJournal()` in [`TifoPromo.sol`](contracts/src/TifoPromo.sol), [`web/lib/agentLog.ts`](web/lib/agentLog.ts) |
 | **Traction** | Real shops and buyers on Arc mainnet with real USDC. Every number on [/proof](https://tifo.vercel.app/proof) and [/agent](https://tifo.vercel.app/agent) is read from the chain; our own test drops are listed separately and left out of every count. | [`web/app/proof/page.tsx`](web/app/proof/page.tsx), `isCheckDrop` in [`web/lib/promos.ts`](web/lib/promos.ts) |
-| **Circle tools** | Two ways in, both Circle: Google sign-in on user-controlled wallets and passkeys on Modular Wallets, with Gas Station paying passkey wallets' gas. Card and bank top-ups through Onramp, USDC from other chains through Bridge Kit. | See [Circle and Arc](#circle-and-arc) |
+| **Circle tools** | Two ways in, both Circle: Google sign-in on user-controlled wallets and passkeys on Modular Wallets, with Gas Station paying passkey wallets' gas. Card and bank top-ups through Circle's Onramp (built in, behind Circle's identity check), USDC from other chains through Bridge Kit. | See [Circle and Arc](#circle-and-arc) |
 | **Innovation** | Match-day cashback a small shop can run safely: the most it can cost is fixed on chain before posting, refunds are held in the drop until full time, and results settle with no one clicking. Referrals make an order free, paid for by the extra sales. Shipped orders are held until the buyer confirms. | [`TifoPromo.sol`](contracts/src/TifoPromo.sol), [`TifoReferral.t.sol`](contracts/test/TifoReferral.t.sol) |
 
 ---
@@ -62,9 +62,9 @@ Tifo turns the match into the promotion and hands the money to an agent. The sel
 ## How it works
 
 - **One link.** A seller adds a product, a price and how many they have (or starts from an Instagram post: a screenshot, the caption or the link). The agent plans the whole drop and says why: the match, how much back (any share from 10% to 100%), whether it balances the offer, whether the offer waits for a few buyers, and whether to turn on referrals. The seller posts it or changes what they like. One confirmation opens the drop and the seller's account on Arc, with a weekly limit and a payout wallet.
-- **Buying.** Buyers open the link, pick a team and pay the normal price in USDC with a wallet made in seconds: continue with Google, or use a passkey. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
+- **Buying.** Buyers open the link, choose the club they support and pay the normal price in USDC with a wallet made in seconds: continue with Google, or use a passkey. No seed phrase, no gas. Each sale locks only what could be owed back inside the drop and sends the rest on to the seller.
 - **The cost is known up front.** The most a drop can cost is stock × price × share, shown before posting. Fans split between two teams and only one side wins, so a 25% back offer usually costs about what a 10% off sale does.
-- **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every winner and returns what is left. On a draw every buyer gets a small thank you. Polymarket's market usually resolves hours after the match, so most results are settled by ESPN and TheSportsDB agreeing.
+- **Full time.** The agent checks ESPN, TheSportsDB and Polymarket, proposes the result once two agree, waits a 15 minute correction window, then pays every refund owed and returns what is left. On a draw every buyer gets a small thank you. Polymarket's market usually resolves hours after the match, so most results are settled by ESPN and TheSportsDB agreeing.
 - **The seller gets paid.** After each sale and after full time, the agent sends the seller's share to their payout wallet.
 - **Referrals.** With referrals on, a buyer who brings the number of new buyers the seller set gets everything they paid back after the match, whoever wins. Each referred sale sets aside a share of that buyer's price on chain, so the extra sales pay for the free order.
 - **Shipped products** keep the payment inside the drop until the buyer confirms it arrived. Buyers add their delivery address after paying, sealed for the seller, who signs with their wallet to see it. **Bookable services** sell each time slot once, enforced on chain. **Digital products** open on the page as soon as the buyer pays.
@@ -74,7 +74,7 @@ flowchart LR
     S["Seller"] -->|"first drop, one passkey tap"| F["TifoFactory"]
     F --> A["TifoAccount<br/>weekly limit, payout wallet"]
     F --> P["TifoPromo<br/>one drop"]
-    B["Buyer"] -->|"pays in USDC, picks a team"| P
+    B["Buyer"] -->|"pays in USDC, chooses a club"| P
     P -->|"what could be owed back stays here"| P
     P -->|"the rest"| A
     G["Agent"] -->|"payOut"| A
@@ -85,7 +85,7 @@ flowchart LR
 
 ## What the agent decides
 
-It sizes the drop, picks the match and chooses the offer, using the seller's past drops and live odds; code checks every number before anything moves. Inside the seller's weekly limit it opens the next drop by itself. Above it, it can only write a proposal that the seller approves or declines. It settles every drop and pays the winners, and it sends the seller their money. Every decision is written on chain with its reason, and the seller's Books page lists every dollar in and out with that reason beside it.
+It sizes the drop, picks the match and chooses the offer, using the seller's past drops and how closely matched the two clubs are; code checks every number before anything moves. Inside the seller's weekly limit it opens the next drop by itself. Above it, it can only write a proposal that the seller approves or declines. It settles every drop and pays the winners, and it sends the seller their money. Every decision is written on chain with its reason, and the seller's Books page lists every dollar in and out with that reason beside it.
 
 What it cannot do is set in the contracts: it cannot raise the limit, choose where the seller's money goes, or take money for itself.
 

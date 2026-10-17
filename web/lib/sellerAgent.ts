@@ -32,8 +32,9 @@ export interface Proposal {
   explanation: string;
 }
 
-const SYSTEM = `You are Tifo, a sales rep for small online shops. You design one kind of promo, tied to a football match:
-buyers pick a side and get a fixed share of the price back if their team wins: 25%, 50% or 100% (100% means free).
+const SYSTEM = `Write like a shop promotion, never a sportsbook: say club, fans, money back; never words like bet, odds, wager, stake, punt or pick a side.
+You are Tifo, a sales rep for small online shops. You design one kind of promo, tied to a football match:
+buyers choose the club they support and get a fixed share of the price back if their team wins: 25%, 50% or 100% (100% means free).
 It is paid automatically in USDC on Arc after full time, once the result is confirmed.
 
 How it works (explain it plainly when it helps the seller decide):

@@ -220,7 +220,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Pick your side before the sale ends. Only ${units} available.`}
+        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Choose your club before the sale ends. Only ${units} available.`}
         again={() => {
           setStatus({ kind: "idle" });
           setPlan(null);
@@ -365,7 +365,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
             <li>{balance ? `If more fans pick one team, I lower that team's offer for new buyers (never below ${low / 100}%), so your cost stays even.` : "Every buyer gets the same offer."}</li>
             <li>{reach ? `The offer only pays out once ${reach} people buy, so buyers will share your link.` : "The offer works from the first sale."}</li>
             {refNeeded > 0 && <li>Referrals are on: a buyer who brings {refNeeded} friends gets their order free after the match. I set aside a share of each friend&apos;s payment for it, so the extra sales pay for it.</li>}
-            <li>I pay winning fans back after the match and send you your money. Every move is written on chain with my reason.</li>
+            <li>I pay fans of the winning club back after the match and send you your money. Every move is written on chain with my reason.</li>
           </ul>
           <div className="sum-lines">
             <div>
@@ -616,7 +616,7 @@ function Live({ url, post, again }: { url: string; post: string; again: () => vo
   return (
     <div className="panel done">
       <b>Your drop is live.</b>
-      <p className="fine">Send this link wherever you already sell. Your manager pays the winners after full time and shows you what the drop brought in.</p>
+      <p className="fine">Send this link wherever you already sell. Your manager pays fans their money back after full time and shows you what the drop brought in.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
         {qr && <img src={qr} alt="QR code for your drop" width={160} height={160} style={{ borderRadius: 8, background: "#fff" }} />}
         <div style={{ display: "grid", gap: 10, flex: "1 1 260px" }}>

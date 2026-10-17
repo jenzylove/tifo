@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 const ITEMS: [string, string][] = [
   ["Plans your promos", "It reads what you sell and how your past drops went, picks a big match, the share back that fits your margin and whether to run referrals, and tells you why. You post it or change it."],
   ["Keeps your cost capped", "You see the most a promo can cost before it goes live, and a contract holds the money, not the AI, so it can never go over that figure."],
-  ["Pays winners and pays you", "After the match it checks the result against independent sources, pays winning fans back by itself and sends you the rest. After every sale it sends your share to your wallet."],
+  ["Pays fans back and pays you", "After the match it checks the result against independent sources, pays fans of the winning club back by itself and sends you the rest. After every sale it sends your share to your wallet."],
   ["Keeps your books", "Every dollar in and out is written down with the reason: sales, refunds, payouts and what each promo brought in against what it cost."],
   ["Handles delivery and referrals", "Buyers add their address after paying and you see it next to each order; their payment waits until they have it. Buyers who bring friends get their order free, paid for by the extra sales."],
   ["Runs by itself, if you let it", "Give it a weekly limit and it runs your next promos for you. Anything bigger, it asks first. It can never take money out for itself."],

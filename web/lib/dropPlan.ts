@@ -38,7 +38,8 @@ export async function candidates(): Promise<Match[]> {
     .slice(0, 40);
 }
 
-const SYSTEM = `You plan a match day promo for a small online seller on Tifo. Buyers pay the normal price, pick a team, and get
+const SYSTEM = `Write like a shop promotion, never a sportsbook: say club, fans, money back; never words like bet, odds, wager, stake, punt or pick a side.
+You plan a match day promo for a small online seller on Tifo. Buyers pay the normal price, choose the club they support, and get
 back_pct of the price back if their team wins (100 means free). The seller's most possible cost is units x price x back_pct / 100.
 It usually costs much less: buyers split between the teams and only one side wins.
 

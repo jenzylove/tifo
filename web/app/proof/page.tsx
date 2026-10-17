@@ -35,7 +35,7 @@ export default async function Proof() {
         <div className="kpi"><span>Seller wallets and accounts</span><b>{sellers.size}</b></div>
         <div className="kpi"><span>Distinct fan wallets</span><b>{buyers.size}</b></div>
         <div className="kpi"><span>Paid in by fans</span><b>{usd(volume)}</b></div>
-        <div className="kpi"><span>Refunded to winners</span><b>{usd(paidBack)}</b></div>
+        <div className="kpi"><span>Money back paid to fans</span><b>{usd(paidBack)}</b></div>
       </div>
       <h3 className="proof-h">What the agent did with the money</h3>
       <div className="stats">
@@ -56,7 +56,10 @@ export default async function Proof() {
             <a href={explorerAddr(p.address)} target="_blank" rel="noreferrer">contract on Arc</a>
           </h3>
           <p className="fine">
-            Result: {st.finalOutcome === "None" ? (st.proposed === "None" ? "pending" : `proposed ${st.proposed}`) : st.finalOutcome} · {orders.length} orders · refunded{" "}
+            Result: {(() => {
+              const name = (o: string) => (o === "A" ? `${shortTeam(p.meta.teamA)} won` : o === "B" ? `${shortTeam(p.meta.teamB)} won` : o === "Draw" ? "draw" : o === "Void" ? "called off" : o);
+              return st.finalOutcome === "None" ? (st.proposed === "None" ? "pending" : `checking (${name(st.proposed)})`) : name(st.finalOutcome);
+            })()} · {orders.length} orders · refunded{" "}
             {usd(st.refundedTotal)} · reserve {usd(st.reserve)} of {usd(st.cap)} cap
           </p>
           <ol>

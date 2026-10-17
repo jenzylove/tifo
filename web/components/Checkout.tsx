@@ -364,7 +364,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
               className="btn sm ac"
               onClick={async () => {
                 const url = `${location.origin}/p/${promo}?ref=${payer}`;
-                const text = `I just got ${product} from ${shop}. Get yours here and pick your team:`;
+                const text = `I just got ${product} from ${shop}. Get yours here and choose your club:`;
                 try {
                   if (navigator.share) await navigator.share({ text, url });
                   else await navigator.clipboard.writeText(`${text} ${url}`);
@@ -395,7 +395,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   return (
     <div className="buybox">
       <div className="promo">
-        <h4>Pick your side</h4>
+        <h4>Choose your club</h4>
         {reach && reach.have < reach.need && (
           <div className="reach">
             <div className="reach-bar" aria-hidden>
@@ -438,8 +438,8 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           {locked !== null
             ? `This wallet already took the ${teams[locked]} offer, so more orders ride on ${teams[locked]} too.`
             : moving
-              ? "Pick the team you think will win. Offers move as fans pick sides; yours is locked when you pay."
-              : "Pick the team you think will win. You keep what you bought either way."}
+              ? "Choose the club you support. The offer can change as more fans buy; yours is locked when you pay."
+              : "Choose the club you support. You keep what you bought either way."}
         </p>
       </div>
 

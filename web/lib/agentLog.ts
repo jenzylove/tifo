@@ -27,7 +27,7 @@ const LABEL: Record<string, string> = {
   remainder: "Sent the rest back to the seller",
   proposed: "Proposed the result",
   final: "Settled the match",
-  refunds: "Paid winning buyers back",
+  refunds: "Paid fans their money back",
   corrected: "Result corrected by Tifo",
 };
 

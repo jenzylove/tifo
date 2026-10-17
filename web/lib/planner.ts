@@ -48,7 +48,7 @@ export interface Plan {
 }
 
 const SYSTEM = `You are the sales manager for someone who sells online through Tifo. You run match drops for them:
-fans of both teams buy the product at full price and pick a side; if their team wins they get money back in USDC.
+fans of both teams buy the product at full price and choose the club they support; if their team wins they get money back in USDC.
 The offer is the same for every buyer: a fixed share of the price back if their team wins. back_pct is 25, 50 or 100 (100 means free).
 The seller's stock caps the cost: the most a drop can cost is stock x price x back_pct / 100, if every unit sells to fans of the
 winning team. What it usually costs is far less, because buyers split between two teams and only one can win.

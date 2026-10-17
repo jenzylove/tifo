@@ -251,7 +251,7 @@ export default async function DropPage({ params }: { params: Promise<{ address: 
         <details>
           <summary>How this works</summary>
           <p>
-            You pay the normal price and pick the team you think will win. {free ? "If your team wins, the whole price comes back to your wallet." : `If your team wins, ${share / 100}% of the price comes back to your wallet.`} The offer runs while the shop's budget lasts, and you see exactly what you get before you pay.{" "}
+            You pay the normal price and choose the club you support. {free ? "If your team wins, the whole price comes back to your wallet." : `If your team wins, ${share / 100}% of the price comes back to your wallet.`} The offer runs while the shop's budget lasts, and you see exactly what you get before you pay.{" "}
             {digital ? "Your purchase opens on this page as soon as you pay." : p.meta.slots?.length ? `You pick a time when you pay, then message ${shopName} on WhatsApp with anything they need before it.` : deliveries ? `${shopName} delivers it, and your payment waits in this drop until you confirm you have it.` : `${shopName} delivers as usual.`} You keep what you bought whatever happens.
           </p>
         </details>

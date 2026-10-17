@@ -45,7 +45,7 @@ export default async function Landing() {
           <b>Live</b>
           {paidState && bigEnough ? (
             <span>
-              The last winners got <strong>{usd(paidState.refundedTotal)}</strong> back<em>. See the proof</em>
+              Fans of the last winning club got <strong>{usd(paidState.refundedTotal)}</strong> back<em>. See the proof</em>
             </span>
           ) : (
             <span>
@@ -70,7 +70,7 @@ export default async function Landing() {
           </span>
         </h1>
         <p className="sub">
-          Its first job is bringing you sales on match days: it plans a promo around a big game, pays winning fans back and sends you the rest. It also
+          Its first job is bringing you sales on match days: it plans a promo around a big game, pays fans of the winning club back and sends you the rest. It also
           keeps your books, pays you after every sale and collects delivery addresses, and it only spends inside the limit you set.
         </p>
         <div className="ctas">
@@ -116,7 +116,7 @@ export default async function Landing() {
             </div>
           </div>
           <p className="cap">
-            <b>Step 2</b>Share the link wherever you already sell. Fans pick a side and pay.
+            <b>Step 2</b>Share the link wherever you already sell. Fans choose their club and pay.
           </p>
         </div>
         <div className="step">
@@ -127,11 +127,11 @@ export default async function Landing() {
               ))}
             </div>
             <div className="row">
-              Paid back to winners <small>up to ${budget}</small>
+              Money back to fans <small>up to ${budget}</small>
             </div>
           </div>
           <p className="cap">
-            <b>Step 3</b>Your agent pays the winners, sends you your money and writes every dollar in your books.
+            <b>Step 3</b>Your agent pays fans their money back, sends you your money and writes every dollar in your books.
           </p>
         </div>
       </div>

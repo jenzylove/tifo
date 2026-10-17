@@ -36,12 +36,12 @@ export default async function AgentLog() {
         <div className="kpi"><span>Decisions on chain</span><b>{log.entries.length}</b></div>
         <div className="kpi"><span>Done with nobody clicking</span><b>{alone}</b></div>
         <div className="kpi"><span>Results settled by itself</span><b>{record.settled} of {record.due}</b></div>
-        <div className="kpi"><span>Paid back to winning buyers</span><b>{usd(record.paidBack)}</b></div>
+        <div className="kpi"><span>Money back paid to fans</span><b>{usd(record.paidBack)}</b></div>
         <div className="kpi"><span>Asked the seller first</span><b>{record.asked}</b></div>
       </div>
       <p className="fine">
         How it works: the agent runs every two minutes. It plans each shop&apos;s drop, watches sales, reads match results from three sources and
-        pays only when two agree, sends winners their money back and returns the rest to the shop. Inside the weekly limit a shop sets on chain it
+        pays only when two agree, sends fans of the winning club their money back and returns the rest to the shop. Inside the weekly limit a shop sets on chain it
         acts alone; above it the contract refuses, so it can only ask. Our own test drops are left out.
       </p>
       {log.entries.length === 0 ? (

@@ -29,7 +29,7 @@ export async function dropCards(filter?: (seller: string) => boolean, limit = 24
       const phase = settled ? "settled" : st.proposed !== "None" ? "result" : now >= st.closesAt ? "live" : "open";
       const note = settled
         ? st.finalOutcome === "A" || st.finalOutcome === "B"
-          ? `${usd(st.refundedTotal)} paid back to winning fans`
+          ? `${usd(st.refundedTotal)} paid back to fans`
           : st.finalOutcome === "Draw"
             ? st.refundedTotal > 0n
               ? `Draw: ${usd(st.refundedTotal)} thank you paid to every buyer`

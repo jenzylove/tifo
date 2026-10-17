@@ -395,7 +395,7 @@ function Money({ data }: { data: ManagerData }) {
             <b>{$(t.held)}</b>
           </div>
           <div className="mini-row">
-            <span>Refunded to winning fans</span>
+            <span>Money back to fans</span>
             <b>{$(t.refunded)}</b>
           </div>
           <div className="mini-row">

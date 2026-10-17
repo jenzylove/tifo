@@ -26,7 +26,7 @@ export default function Books({ books, heading = "Books" }: { books: BooksData; 
           <b>{$(books.moneyIn)}</b>
         </div>
         <div className="kpi">
-          <span>Paid back to winners</span>
+          <span>Money back to fans</span>
           <b>{$(books.paidBack)}</b>
         </div>
         <div className="kpi">
