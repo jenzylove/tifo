@@ -5,7 +5,7 @@ import type { Address } from "viem";
 import { tifoAccountAbi } from "./abi";
 import { publicClient, usd } from "./chain";
 import { shortTeam } from "./matches";
-import { isCheckDrop, listPromos, promoJournal, promoState, type PromoSummary } from "./promos";
+import { isCheckDrop, isOwnSeller, listPromos, promoJournal, promoState, type PromoSummary } from "./promos";
 import { accountState } from "./tifoAccount";
 
 export interface LogEntry {
@@ -45,16 +45,30 @@ function explain(kind: string, text: string, p: PromoSummary): string {
   return text;
 }
 
-export async function agentLog(limit = 200): Promise<{ entries: LogEntry[]; drops: number; sellers: number }> {
-  const promos = (await listPromos()).filter((p) => !isCheckDrop(p.meta));
+type Log = { entries: LogEntry[]; drops: number; sellers: number };
+let lastGood: Log | undefined;
+
+/** The agent's decisions. If a read fails, the last complete log is served; with none, the error is thrown (never an empty log). */
+export async function agentLog(limit = 200): Promise<Log> {
+  try {
+    return (lastGood = await readLog(limit));
+  } catch (e) {
+    if (!lastGood) throw e;
+    console.error("agent log read failed, serving the last good one", (e as Error).message);
+    return lastGood;
+  }
+}
+
+async function readLog(limit: number): Promise<Log> {
+  const promos = (await listPromos()).filter((p) => !isCheckDrop(p.meta) && !isOwnSeller(p));
   const byAddress = new Map(promos.map((p) => [p.address.toLowerCase(), p] as const));
   const entries: LogEntry[] = [];
 
   await Promise.all(
     promos.map(async (p) => {
-      const st = await promoState(p.address).catch(() => null);
-      if (!st?.journalCount) return;
-      for (const j of await promoJournal(p.address, st.journalCount).catch(() => [])) {
+      const st = await promoState(p.address);
+      if (!st.journalCount) return;
+      for (const j of await promoJournal(p.address, st.journalCount)) {
         entries.push({
           at: j.at,
           what: LABEL[j.kind] ?? j.kind.charAt(0).toUpperCase() + j.kind.slice(1),

@@ -4,6 +4,7 @@ import { erc20Abi, type Address } from "viem";
 import { USDC, explorerAddr, publicClient, usd } from "./chain";
 import { shortTeam } from "./matches";
 import { listPromos, promoJournal, promoOrders, promoState, type PromoMeta } from "./promos";
+import { knownProfit } from "./portfolio";
 import { readDeliveries } from "./shipments";
 import { accountOf, accountState, olderAccountsOf, type AccountState } from "./tifoAccount";
 
@@ -172,7 +173,7 @@ export async function managerData(seller: Address): Promise<ManagerData> {
         bySide: [orders.filter((o) => o.side === 0).length, orders.filter((o) => o.side === 1).length],
         byAgent: !!p.meta.byAgent,
         reconciled: held === st.reserve,
-        extraSalesToBreakEven: p.meta.profitUsd && p.meta.profitUsd > 0 ? Math.ceil(Number(st.refundedTotal) / 1e6 / p.meta.profitUsd) : null,
+        extraSalesToBreakEven: knownProfit(p.meta) ? Math.ceil(Number(st.refundedTotal) / 1e6 / knownProfit(p.meta)!) : null,
       };
     }),
   );

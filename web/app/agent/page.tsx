@@ -1,6 +1,6 @@
 import { agentLog } from "@/lib/agentLog";
 import { explorerAddr, NETWORK, usd } from "@/lib/chain";
-import { isCheckDrop, listPromos, promoOrders, promoState } from "@/lib/promos";
+import { isCheckDrop, isOwnSeller, isOwnWallet, listPromos, ownRefundsPaid, promoOrders, promoState } from "@/lib/promos";
 import { agentRecord } from "@/lib/record";
 
 export const dynamic = "force-dynamic";
@@ -8,19 +8,40 @@ export const metadata = { title: "Agent log · Tifo", description: "Every decisi
 
 const when = (at: number) => new Date(at * 1000).toUTCString().slice(5, 22) + " UTC";
 
-export default async function AgentLog() {
-  const promos = (await listPromos()).filter((p) => !isCheckDrop(p.meta));
+async function load() {
+  const promos = (await listPromos()).filter((p) => !isCheckDrop(p.meta) && !isOwnSeller(p));
   const [log, rows] = await Promise.all([
     agentLog(),
     Promise.all(
       promos.map(async (p) => {
         const st = await promoState(p.address);
-        const orders = await promoOrders(p.address, st.ordersCount);
-        return { p, st, volume: orders.reduce((t, o) => t + o.amount, 0n) };
+        const all = await promoOrders(p.address, st.ordersCount);
+        // Our own wallets' orders are not usage.
+        const orders = all.filter((o) => !isOwnWallet(o.buyer));
+        return { p, st: { ...st, refundedTotal: st.refundedTotal - ownRefundsPaid(st, all) }, volume: orders.reduce((t, o) => t + o.amount, 0n) };
       }),
     ),
   ]);
-  const record = await agentRecord(rows);
+  return { log, record: await agentRecord(rows) };
+}
+
+export default async function AgentLog() {
+  let data: Awaited<ReturnType<typeof load>>;
+  try {
+    data = await load();
+  } catch (e) {
+    console.error("agent log read failed", e);
+    return (
+      <section className="wrap">
+        <div className="pagehead">
+          <span className="eyebrow">Read live from Arc {NETWORK}</span>
+          <h1>Agent log</h1>
+          <p>The chain is slow to answer right now, so the numbers are updating. Please refresh in a moment.</p>
+        </div>
+      </section>
+    );
+  }
+  const { log, record } = data;
   const alone = log.entries.filter((e) => e.alone).length;
   return (
     <section className="wrap">

@@ -3,6 +3,7 @@ import { isAddress, getAddress } from "viem";
 import { z } from "zod";
 import { limit, tooMany } from "@/lib/ratelimit";
 import { floatRoom, formatKobo, nairaConfig, nairaMissing, priceKobo, startCheckout, usdToUnits, why } from "@/lib/naira";
+import { lowFloat } from "@/lib/guest";
 
 export const maxDuration = 60;
 
@@ -16,10 +17,13 @@ export async function GET(req: Request) {
   if (!cfg) return NextResponse.json({ enabled: false, missing: nairaMissing() }, { headers: no });
   const usd = new URL(req.url).searchParams.get("usd");
   const units = usd === null ? null : usdToUnits(Number(usd));
-  // Offer naira only when the float can pay this amount out today (at least one dollar when no amount is asked).
+  // When the float cannot pay this amount out today (at least one dollar when no amount is asked), naira stays on the
+  // page as busy, so the buyer knows to come back, and the shortfall is logged for whoever tops the float up.
   const room = await floatRoom().catch(() => 0n);
-  if (room < (units ?? 1_000_000n)) return NextResponse.json({ enabled: false, missing: [] }, { headers: no });
-  const out: { enabled: true; rate: number; maxUsd: number; ngn?: string } = { enabled: true, rate: cfg.rate, maxUsd: cfg.maxUsd };
+  const need = units ?? 1_000_000n;
+  const busy = room < need;
+  if (busy) await lowFloat(need, room).catch(() => {});
+  const out: { enabled: true; rate: number; maxUsd: number; ngn?: string; busy?: true } = { enabled: true, rate: cfg.rate, maxUsd: cfg.maxUsd, ...(busy ? { busy: true as const } : {}) };
   if (units !== null) out.ngn = formatKobo(priceKobo(units, cfg.rate, cfg.feeBps, cfg.feeCapKobo));
   return NextResponse.json(out, { headers: no });
 }
@@ -34,7 +38,7 @@ const ERRORS = {
   disabled: [503, "Naira payments are not set up yet."],
   bad_amount: [400, "That amount is not available in naira."],
   too_large: [400, "That is more than naira payments cover in one go. Add less here, or pay another way."],
-  float_short: [503, "Naira payments are paused right now. Pay another way."],
+  float_short: [503, "Naira checkout is busy. Try again in a few minutes, or pay another way."],
   provider: [502, "Naira payments could not start. Nothing was charged. Try again in a minute."],
 } as const;
 

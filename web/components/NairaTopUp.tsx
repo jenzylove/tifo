@@ -30,7 +30,7 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
       .then((r) => r.json())
       .then((j) => {
         if (!live) return;
-        if (!j.enabled || !j.ngn) return setState("paused");
+        if (!j.enabled || !j.ngn || j.busy) return setState("paused");
         if (amount > j.maxUsd) {
           setErr(`The most you can add in naira at once is ${money(j.maxUsd)}. Add less here, or pay another way.`);
           return setState("error");
@@ -134,7 +134,7 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
           <>
             {note === "" && <p className="status">Waiting for your payment. Finish it on the Bachs page, and this page carries on by itself.</p>}
             {note === "unpaid" && <p className="status err">That payment has not gone through yet. You can open the payment page and try again, or pay another way.</p>}
-            {note === "short" && <p className="status">Naira payments are paused right now. If you already paid, keep this page open and your money is sent as soon as they are back. Or pay another way.</p>}
+            {note === "short" && <p className="status">Naira checkout is busy right now. If you already paid, keep this page open and your money is sent as soon as it frees up. Or pay another way.</p>}
             {note === "stopped" && <p className="status">We stopped checking after 30 minutes. If you paid, your balance updates once the payment is confirmed.</p>}
             <button className="link fine" onClick={() => open(paying.url)}>
               Open the payment page again
@@ -144,7 +144,7 @@ export default function NairaTopUp({ address, promo, amountUsd, onClose }: { add
 
         {done && <p className="status ok">Money added to your wallet. Tap Continue, then confirm to finish your order.</p>}
 
-        {state === "paused" && <p className="status err">Naira payments are paused right now. Pay another way.</p>}
+        {state === "paused" && <p className="status err">Naira checkout is busy. Try again in a few minutes, or pay another way.</p>}
 
         {state === "error" && (
           <>

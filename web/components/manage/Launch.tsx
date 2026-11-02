@@ -14,6 +14,8 @@ import { shortTeam as short } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 import { FULL } from "@/lib/offer";
 import ImageUpload from "./ImageUpload";
+import SharePack, { type PackDrop } from "./SharePack";
+import { useCustomers } from "./useCustomers";
 
 interface ApiMatch {
   slug: string;
@@ -56,7 +58,7 @@ const HOLD_SECS = 7 * 86_400; // physical products: payment waits for delivery (
 const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const offer = (pct: number) => (pct >= 100 ? "Free if your team wins" : `${pct}% back if your team wins`);
 
-export default function Launch({ account, sellerName, tifoAccount, prefill, onLaunched }: { account: SmartAccount; sellerName: string | null; tifoAccount?: Address; prefill?: Prefill; onLaunched: () => void }) {
+export default function Launch({ account, sellerName, tifoAccount, prefill, onLaunched, onCustomers }: { account: SmartAccount; sellerName: string | null; tifoAccount?: Address; prefill?: Prefill; onLaunched: () => void; onCustomers?: () => void }) {
   const [matches, setMatches] = useState<ApiMatch[] | null>(null);
   const [name, setName] = useState(sellerName ?? "");
   const [product, setProduct] = useState("");
@@ -102,7 +104,8 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
 
   const priceUsd = Number(price);
   const costUsd = Math.max(0, Number(cost) || 0);
-  const profitUsd = priceUsd > 0 ? priceUsd - costUsd : 0;
+  // Only known when the seller said what one costs them. Blank means unknown, never a 100% margin.
+  const profitUsd: number | null = priceUsd > 0 && cost.trim() !== "" ? Math.max(0, priceUsd - costUsd) : null;
   const slotTimes = slots.filter((x) => x && Date.parse(x) > Date.now());
   // A bookable service has exactly as many units as times on offer.
   const units = kind === "booking" ? slotTimes.length : Math.max(0, Math.min(MAX_STOCK, Math.floor(Number(stock) || 0)));
@@ -122,7 +125,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
   const odds = m?.odds ?? null;
   const usual = odds && priceUsd > 0 ? (units * priceUsd * (tier / FULL) * (odds.pA + odds.pB)) / 2 : null;
   const likePct = usual !== null && units > 0 ? Math.round((usual / (units * priceUsd)) * 100) : null;
-  const breakEven = profitUsd > 0 ? Math.ceil(cap / profitUsd) : null;
+  const breakEven = profitUsd ? Math.ceil(cap / profitUsd) : null;
   // Room for this drop and one more like it, unless the seller says otherwise.
   const weeklyDefault = Math.max(10, Math.ceil(cap * 2));
   const weeklyUsd = Math.max(0, Number(weekly) || weeklyDefault);
@@ -156,7 +159,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       const r = await fetch("/api/plan-drop", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ product: product.trim(), priceUsd, units, kind, profitUsd: costUsd > 0 ? profitUsd : null, shop: name.trim() || null }),
+        body: JSON.stringify({ product: product.trim(), priceUsd, units, kind, profitUsd: profitUsd || null, shop: name.trim() || null }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
@@ -192,7 +195,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
       const meta = JSON.stringify({
         slug: m.slug, league: m.league, teamA: m.teamA, teamB: m.teamB, kickoff: m.kickoff,
         shop: name.trim(), product: product.trim(), priceUsd, image: image || undefined, description: description.trim() || undefined,
-        profitUsd: profitUsd > 0 ? profitUsd : undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
+        profitUsd: profitUsd || undefined, delivery: sealed, contact: kind !== "digital" && contact.trim() ? contact.trim() : undefined,
         slots: kind === "booking" ? slotTimes.map((x) => new Date(x).toISOString()).sort() : undefined,
         shape: tier >= FULL ? "free" : "back", backBps: tier, stock: units, baseRates: [tier, tier], minBps: low, maxBps: tier, effectiveBps: tier >= FULL ? 0 : tier,
         minBuyers: reach || undefined, refNeeded: refNeeded || undefined, reason: plan?.reason || undefined,
@@ -220,7 +223,9 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
     return (
       <Live
         url={`${location.origin}/p/${status.promo}`}
-        post={`${product.trim()}: ${tier >= FULL ? "it's free" : `${tier / 100}% back`} if your team wins. ${short(m.teamA)} or ${short(m.teamB)}? Choose your club before the sale ends. Only ${units} available.`}
+        account={account}
+        drop={{ address: status.promo!, shop: name.trim(), product: product.trim(), teamA: m.teamA, teamB: m.teamB, backBps: tier, kickoff: m.kickoff }}
+        onCustomers={onCustomers}
         again={() => {
           setStatus({ kind: "idle" });
           setPlan(null);
@@ -380,7 +385,7 @@ export default function Launch({ account, sellerName, tifoAccount, prefill, onLa
                 </b>
               </div>
             )}
-            {breakEven !== null && costUsd > 0 && (
+            {breakEven !== null && (
               <div>
                 <span>Pays for itself after</span>
                 <b>
@@ -605,8 +610,9 @@ function FromPost({ onFill }: { onFill: (x: FromPostResult) => void }) {
   );
 }
 
-/** The drop is live: the link, a QR for a counter or a story, and a post that is ready to send. */
-function Live({ url, post, again }: { url: string; post: string; again: () => void }) {
+/** The drop is live: the link, a QR for a counter or a story, and the share pack: one message for a status, one per customer. */
+function Live({ url, account, drop, onCustomers, again }: { url: string; account: SmartAccount; drop: PackDrop; onCustomers?: () => void; again: () => void }) {
+  const api = useCustomers(account);
   const [qr, setQr] = useState("");
   const [copied, setCopied] = useState("");
   useEffect(() => {
@@ -616,22 +622,20 @@ function Live({ url, post, again }: { url: string; post: string; again: () => vo
   return (
     <div className="panel done">
       <b>Your drop is live.</b>
-      <p className="fine">Send this link wherever you already sell. Your manager pays fans their money back after full time and shows you what the drop brought in.</p>
+      <p className="fine">Your buyers are the people who already buy from you. Send it to them first.</p>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
         {qr && <img src={qr} alt="QR code for your drop" width={160} height={160} style={{ borderRadius: 8, background: "#fff" }} />}
         <div style={{ display: "grid", gap: 10, flex: "1 1 260px" }}>
           <code style={{ wordBreak: "break-all", userSelect: "all" }}>{url}</code>
           {copied === "failed" && <p className="fine">This browser blocked copying. Press and hold the link above to copy it.</p>}
-          <p style={{ margin: 0 }}>{post}</p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn sm" onClick={() => copy("link", url)}>{copied === "link" ? "Link copied" : "Copy link"}</button>
-            <button className="btn sm ghost" onClick={() => copy("post", `${post} ${url}`)}>{copied === "post" ? "Post copied" : "Copy post"}</button>
-            <a className="btn sm ghost" href={`https://x.com/intent/post?text=${encodeURIComponent(post)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noreferrer">Post on X</a>
             {qr && <a className="btn sm ghost" href={qr} download="tifo-drop-qr.png">Save QR</a>}
             <a className="btn sm ghost" href={url} target="_blank" rel="noreferrer">Open the page</a>
           </div>
         </div>
       </div>
+      <SharePack api={api} drop={drop} onAddCustomers={onCustomers} />
       <button className="link" onClick={again}>Set up another</button>
     </div>
   );

@@ -4,7 +4,7 @@ import { isAddress } from "viem";
 import { managerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
 import { runSellerChat, type SellerContext } from "@/lib/sellerAgent";
-import { limit, tooMany } from "@/lib/ratelimit";
+import { limitShared, tooMany } from "@/lib/ratelimit";
 
 export const maxDuration = 120;
 
@@ -14,7 +14,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  const rl = limit(req, "chat", 12, 10 * 60_000);
+  const rl = await limitShared(req, "chat", 12, 10 * 60_000);
   if (!rl.ok) return tooMany(rl.retryAfter);
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "bad request" }, { status: 400 });

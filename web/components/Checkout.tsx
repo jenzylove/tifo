@@ -19,6 +19,7 @@ import { connect } from "@/lib/wallet";
 import CardTopUp from "./CardTopUp";
 import BridgeTopUp from "./BridgeTopUp";
 import NairaTopUp from "./NairaTopUp";
+import GuestNaira, { guestKey } from "./GuestNaira";
 import TimePicker from "./TimePicker";
 import Purchase, { saveOrder } from "./Purchase";
 import { inAppBrowser, openOutside, type InApp } from "@/lib/inapp";
@@ -113,6 +114,9 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const [naira, setNaira] = useState(false);
   const [nairaPrice, setNairaPrice] = useState(""); // the naira for what is left to pay, charges included
   const [nairaFits, setNairaFits] = useState(true); // false when the naira float can't cover this amount today
+  const [guestOn, setGuestOn] = useState(false); // paying in naira with no wallet (a WhatsApp number) is set up
+  const [guest, setGuest] = useState(false);
+  const [guestOrder, setGuestOrder] = useState<string | null>(null); // a naira order this phone started on this drop
   const [usdcOpen, setUsdcOpen] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [inApp, setInApp] = useState<InApp>(null); // opened inside Telegram, Instagram, Facebook...: passkeys do not work there
@@ -123,10 +127,17 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   useEffect(() => {
     fetch("/api/onramp/sessions").then((r) => r.json()).then((j) => setCardOn(!!j.enabled)).catch(() => {});
     fetch("/api/naira/start").then((r) => r.json()).then((j) => setNairaOn(!!j.enabled)).catch(() => {});
+    fetch("/api/naira/guest/start").then((r) => r.json()).then((j) => setGuestOn(!!j.enabled)).catch(() => {});
+    try {
+      const g = JSON.parse(localStorage.getItem(guestKey(promo)) ?? "null") as { id: string; at: number } | null;
+      if (g && /^chk_[A-Za-z0-9]+$/.test(g.id) && Date.now() - g.at < 7 * 24 * 3600_000) setGuestOrder(g.id);
+    } catch {
+      // storage blocked
+    }
     setHasSaved(!!savedCredential());
     setBio(biometric());
     if (circleEnabled() && !closed) preparePasskey().catch(() => {});
-  }, [closed]);
+  }, [closed, promo]);
   useEffect(() => {
     // Opened from another buyer's link (?ref=<their wallet>): this purchase counts toward their free order.
     // It is remembered for this drop, so it survives a trip to the naira payment page and back.
@@ -204,7 +215,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
       .then((r) => r.json())
       .then((j) => {
         if (!live) return;
-        setNairaFits(!!j.enabled);
+        setNairaFits(!!j.enabled && !j.busy);
         setNairaPrice(j.enabled && j.ngn ? `₦${Number(j.ngn).toLocaleString("en-US")}` : "");
       })
       .catch(() => {});
@@ -218,6 +229,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
   const enough = balance !== null && balance >= amount;
   const busy = status.kind === "working";
   const ready = usePasskeyReady();
+  const guestOk = guestOn && !booking && !acct; // no wallet on this device: pay in naira with a phone number instead
 
   async function wallet(mode: "register" | "login") {
     setStatus({ kind: "working", text: mode === "register" ? "Creating your wallet…" : "Signing in…" });
@@ -492,9 +504,25 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 </button>
               </header>
 
+              {guestOk && (
+                <section>
+                  <h5>Pay in naira, no wallet needed</h5>
+                  <p className="fine">Bank transfer or card with your WhatsApp number. No app and no sign up.</p>
+                  <button
+                    className="btn block"
+                    disabled={busy}
+                    onClick={() => {
+                      setSheet(false);
+                      setGuest(true);
+                    }}
+                  >
+                    Pay in naira
+                  </button>
+                </section>
+              )}
               {!circleEnabled() ? null : inApp && !acct ? (
                 <section className="inapp">
-                  <h5>Open this page in {inApp.ios ? "Safari" : "Chrome"} to pay</h5>
+                  <h5>{guestOk ? `Or use a Tifo wallet in ${inApp.ios ? "Safari" : "Chrome"}` : `Open this page in ${inApp.ios ? "Safari" : "Chrome"} to pay`}</h5>
                   <p className="fine">
                     You opened the link inside {inApp.name}. Phones do not allow {bio} in {inApp.name}&apos;s built-in browser, so the wallet cannot be made here.
                     It takes one tap to continue in {inApp.ios ? "Safari" : "Chrome"}.
@@ -517,7 +545,7 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                 </section>
               ) : !acct ? (
                 <section>
-                  <h5>Your Tifo wallet</h5>
+                  <h5>{guestOk ? "Or use a Tifo wallet" : "Your Tifo wallet"}</h5>
                   <p className="fine">Made in seconds with {bio}. No seed phrase, no gas. Any money back lands here.</p>
                   <GoogleButton disabled={busy} />
                   <button className="btn block" disabled={busy || !ready} onClick={() => wallet(hasSaved ? "login" : "register")}>
@@ -542,10 +570,10 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
                     <p className="fine">Your Tifo wallet already has {money(Number(balance) / 1e6)} towards this, so you only pay the rest.</p>
                   )}
                   <div className="pay-ways">
-                    {nairaOn && nairaFits && (
-                      <button onClick={() => setNaira(true)}>
-                        <b>{nairaPrice ? `Pay ${nairaPrice}` : "Pay in naira"}</b>
-                        <span>Bank transfer or card in naira</span>
+                    {nairaOn && (
+                      <button disabled={!nairaFits} onClick={() => setNaira(true)}>
+                        <b>{nairaPrice && nairaFits ? `Pay ${nairaPrice}` : "Pay in naira"}</b>
+                        <span>{nairaFits ? "Bank transfer or card in naira" : "Naira checkout is busy, try again in a few minutes"}</span>
                       </button>
                     )}
                     {cardOn && (
@@ -599,6 +627,14 @@ export default function Checkout({ promo, teams, colors, rates: listed, liabilit
           document.body,
         )}
       {bridge && acct && <BridgeTopUp recipient={acct.address} neededUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setBridge(false)} />}
+      {guest && side !== null && (
+        <GuestNaira promo={promo} side={side} qty={qty} team={teams[side]} offer={offerLabel(rates[side], teams[side])} referrer={referrer} onClose={() => setGuest(false)} />
+      )}
+      {guestOrder && !acct && (
+        <p className="fine" style={{ textAlign: "center" }}>
+          <a href={`/naira/paid?checkout_id=${guestOrder}`}>See your naira order</a>
+        </p>
+      )}
       {naira && acct && <NairaTopUp address={acct.address} promo={promo} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setNaira(false)} />}
       {card && acct && <CardTopUp address={acct.address} amountUsd={Math.max(total - Number(balance ?? 0n) / 1e6, 1)} onClose={() => setCard(false)} />}
       {status.kind === "working" && <p className="status">{status.text}</p>}

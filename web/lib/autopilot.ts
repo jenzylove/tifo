@@ -1,6 +1,7 @@
 // When the agent plans for a seller: it gathers what is on chain, applies the plain guards, and asks the planner.
 import "server-only";
 import type { Address } from "viem";
+import { customerCount } from "./customerStore";
 import { managerData } from "./manager";
 import { shortTeam, upcomingMatches } from "./matches";
 import { planFrom, type Plan } from "./planner";
@@ -29,5 +30,7 @@ async function decide(owner: Address): Promise<Plan> {
   if (running) return skip(`Your ${shortTeam(running.meta.teamA)} v ${shortTeam(running.meta.teamB)} drop is still running. I will plan the next one when it settles.`);
   if (data.account.proposals.some((p) => p.status === "waiting")) return skip("I am waiting for your answer on my last proposal.");
   const fixtures = (await upcomingMatches(Date.now() + 3 * 3600_000, Date.now() + 6 * 86_400_000)).filter((m) => m.odds).slice(0, 25);
-  return planFrom({ name: data.name, account: data.account, drops: data.drops, fixtures });
+  // Stop loss and steady budget live in the planner (lib/portfolio.ts); the customer count shapes its advice.
+  const customers = await customerCount(owner).catch(() => 0);
+  return planFrom({ name: data.name, account: data.account, drops: data.drops, fixtures, customers });
 }

@@ -10,7 +10,8 @@ import { accountOf, dropOwner } from "./tifoAccount";
 import { FACTORY, USDC, chain, publicClient, transport, usd } from "./chain";
 import { matchBySlug, shortTeam } from "./matches";
 import { checkResult } from "./results";
-import { listPromos, promoJournal, promoOrders, promoState, type PromoSummary } from "./promos";
+// The agent reads on-chain state fresh and strictly: a failed read stops the work, it never reads as "no drops".
+import { listPromosStrict as listPromos, promoJournal, promoOrders, promoStateFresh as promoState, type PromoSummary } from "./promos";
 import { dueAction, readDeliveries } from "./shipments";
 
 function wallet() {
@@ -112,7 +113,8 @@ const LOW_GAS = 500_000_000_000_000_000n; // 0.5 USDC (Arc's native USDC has 18 
 export const MIN_DELIVERY_ACT = 500_000n; // $0.50: smaller held amounts are left for the buyer or seller to settle
 
 /** One pass over every promo: settle what's ready, finalize what's past the window, push refunds, settle deliveries. */
-export async function tick(): Promise<TickResult[]> {
+export async function tick(budgetMs = Infinity): Promise<TickResult[]> {
+  const stopAt = Date.now() + budgetMs;
   const out: TickResult[] = [];
   const now = Math.floor(Date.now() / 1000);
   const promos = await listPromos();
@@ -127,6 +129,11 @@ export async function tick(): Promise<TickResult[]> {
   let writes = 0;
   for (const i of order) {
     const p = promos[i];
+    // Out of time: stop starting work. The scheduler calls again in two minutes and picks up where this left off.
+    if (Date.now() >= stopAt) {
+      out.push({ promo: p.address, action: "deferred: out of time for this pass" });
+      continue;
+    }
     if (writes >= MAX_WRITES) {
       out.push({ promo: p.address, action: "deferred: this pass's transactions are used up" });
       continue;
@@ -147,7 +154,7 @@ export async function tick(): Promise<TickResult[]> {
       out.push({ promo: p.address, action: `delivery error: ${(e as Error).message.slice(0, 200)}` });
     }
   }
-  out.push(...(await payoutsTick().catch((e) => [{ promo: FACTORY, action: `payout error: ${(e as Error).message.slice(0, 200)}` }])));
+  if (Date.now() < stopAt) out.push(...(await payoutsTick().catch((e) => [{ promo: FACTORY, action: `payout error: ${(e as Error).message.slice(0, 200)}` }])));
   return out;
 }
 

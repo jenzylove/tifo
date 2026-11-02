@@ -49,7 +49,7 @@ export interface PromoSummary {
  * They stay on chain and are listed apart on /proof, but they are not shown to shoppers and never counted as usage.
  */
 export function isCheckDrop(meta: Pick<PromoMeta, "product" | "shop">): boolean {
-  const mark = (name: string) => /not for sale|\bcheck\b|testnet run|^(practice shop|ada studio)$/i.test(name);
+  const mark = (name: string) => /not for sale|\bcheck\b|testnet run|^(practice shop|ada studio|test)$/i.test((name ?? "").trim());
   return mark(meta.product ?? "") || mark(meta.shop ?? "");
 }
 
@@ -61,14 +61,75 @@ export function isCheckDrop(meta: Pick<PromoMeta, "product" | "shop">): boolean 
 const HIDDEN = new Set(((process.env.HIDDEN_DROPS ?? "").match(/0x[0-9a-fA-F]{40}/g) ?? []).map((a) => a.toLowerCase()));
 const isHidden = (p: PromoSummary) => HIDDEN.has(p.address.toLowerCase()) || HIDDEN.has(p.seller.toLowerCase());
 
-export async function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
+/**
+ * The operator's own wallets (SELF_WALLETS, server only, comma separated). Drops they sell and orders they place are
+ * never counted as usage on /proof or the home page: our own testing is not traction.
+ */
+const SELF = new Set(((process.env.SELF_WALLETS ?? "").match(/0x[0-9a-fA-F]{40}/g) ?? []).map((a) => a.toLowerCase()));
+export const isOwnWallet = (a: string) => SELF.has(a.toLowerCase());
+export const isOwnSeller = (p: Pick<PromoSummary, "seller">) => isOwnWallet(p.seller);
+
+/** Refund money that went to the operator's own wallets on a settled A or B result (orders are paid in order, up to the cursor). */
+export function ownRefundsPaid(st: Pick<PromoState, "finalOutcome" | "refundCursor">, orders: Order[]): bigint {
+  const win = st.finalOutcome === "A" ? 0 : st.finalOutcome === "B" ? 1 : -1;
+  return orders.reduce((t, o, i) => (isOwnWallet(o.buyer) && o.side === win && i < st.refundCursor ? t + o.refund : t), 0n);
+}
+
+// Reads that feed the public pages are kept for a short while and, when the node fails, the last good answer is served
+// instead of an empty one. A failed read must never look like "no drops". Callers that move money use the strict
+// variants, which never serve old data.
+const FRESH_MS = 20_000;
+const RETRY_MS = 400;
+interface Slot<T> {
+  at: number;
+  value?: T;
+  pending?: Promise<T>;
+}
+const slots = new Map<string, Slot<unknown>>();
+
+async function once<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch {
+    await new Promise((r) => setTimeout(r, RETRY_MS));
+    return read();
+  }
+}
+
+/** Fresh value if young enough, else read (retrying once); if that fails, the last good value; if there is none, the error. */
+export async function cachedRead<T>(key: string, read: () => Promise<T>, maxAgeMs = FRESH_MS): Promise<T> {
+  const slot = (slots.get(key) as Slot<T> | undefined) ?? { at: 0 };
+  slots.set(key, slot);
+  if (slot.value !== undefined && Date.now() - slot.at < maxAgeMs) return slot.value;
+  slot.pending ??= once(read).finally(() => (slot.pending = undefined));
+  try {
+    const v = await slot.pending;
+    slot.value = v;
+    slot.at = Date.now();
+    return v;
+  } catch (e) {
+    if (slot.value !== undefined) {
+      console.error("read failed, serving the last good result", (e as Error).message);
+      return slot.value;
+    }
+    throw e;
+  }
+}
+
+/** Every promo on the source, or an error. Used where a failed read must stop the work instead of looking like an empty list. */
+export async function listPromosStrict(src: Source = mainSource): Promise<PromoSummary[]> {
   const all = await Promise.all(
-    [src.factory, ...(src.older ?? [])].filter((f) => !/^0x0+$/.test(f)).map((f) => fromFactory(f, src.client).catch(() => [] as PromoSummary[])),
+    [src.factory, ...(src.older ?? [])].filter((f) => !/^0x0+$/.test(f)).map((f) => once(() => fromFactory(f, src.client))),
   );
   return all
     .flat()
     .filter((p) => !isHidden(p))
     .sort((a, b) => b.closesAt - a.closesAt);
+}
+
+/** The same list for pages: cached for a few seconds, the last good list when the node fails, an error only when there never was one. */
+export function listPromos(src: Source = mainSource): Promise<PromoSummary[]> {
+  return cachedRead(`list:${src.factory}`, () => listPromosStrict(src));
 }
 
 async function fromFactory(FACTORY: Address, publicClient: Source["client"]): Promise<PromoSummary[]> {
@@ -119,7 +180,13 @@ export interface PromoState {
   refNeeded: number; // friends a buyer must bring for a free order; 0 when the drop has no referrals
 }
 
-export async function promoState(address: Address, src: Source = mainSource): Promise<PromoState> {
+/** For pages: cached briefly, the last good state if the node fails. */
+export function promoState(address: Address, src: Source = mainSource): Promise<PromoState> {
+  return cachedRead(`state:${src.factory}:${address.toLowerCase()}`, () => promoStateFresh(address, src));
+}
+
+/** For the agent: always read now, and throw if the read fails. */
+export async function promoStateFresh(address: Address, src: Source = mainSource): Promise<PromoState> {
   const c = { address, abi: tifoPromoAbi } as const;
   const r = await src.client.multicall({
     allowFailure: false,
@@ -181,7 +248,11 @@ export interface JournalEntry {
   text: string;
 }
 
-export async function promoOrders(address: Address, count: number): Promise<Order[]> {
+export function promoOrders(address: Address, count: number): Promise<Order[]> {
+  return cachedRead(`orders:${address.toLowerCase()}:${count}`, () => readOrders(address, count));
+}
+
+async function readOrders(address: Address, count: number): Promise<Order[]> {
   const out: Order[] = [];
   for (let start = 0; start < count; start += 200) {
     const page = await publicClient.readContract({ address, abi: tifoPromoAbi, functionName: "getOrders", args: [BigInt(start), 200n] });
@@ -191,8 +262,11 @@ export async function promoOrders(address: Address, count: number): Promise<Orde
   return out;
 }
 
-export async function promoJournal(address: Address, count: number): Promise<JournalEntry[]> {
-  if (!count) return [];
+export function promoJournal(address: Address, count: number): Promise<JournalEntry[]> {
+  return count ? cachedRead(`journal:${address.toLowerCase()}:${count}`, () => readJournal(address, count)) : Promise.resolve([]);
+}
+
+async function readJournal(address: Address, count: number): Promise<JournalEntry[]> {
   const page = await publicClient.readContract({ address, abi: tifoPromoAbi, functionName: "getJournal", args: [0n, BigInt(count)] });
   return page.map((e) => ({ at: Number(e.at), kind: e.kind, text: e.text }));
 }

@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Address } from "viem";
 import { managerData } from "./manager";
 import { shortTeam, upcomingMatches } from "./matches";
+import { knownProfit } from "./portfolio";
 import { MODEL } from "./sellerAgent";
 
 const client = new Anthropic();
@@ -50,7 +51,7 @@ export async function managerBrief(seller: Address, fresh = false): Promise<Brie
   const context = {
     seller: data.name,
     totals: { sales: $(data.totals.sales), received: $(data.totals.received), held_for_refunds: $(data.totals.held), refunded_to_fans: $(data.totals.refunded), fans: data.totals.fans, orders: data.totals.orders, live_drops: data.totals.live },
-    drops: data.drops.slice(0, 8).map((d) => ({ match: `${shortTeam(d.meta.teamA)} v ${shortTeam(d.meta.teamB)}`, product: d.meta.product, phase: d.phase, outcome: d.outcome, orders_by_side: d.bySide, sales: $(d.sales), held: $(d.held), refunded: $(d.refunded), profit_per_sale_usd: d.meta.profitUsd ?? null, extra_sales_needed_to_cover_refunds: d.extraSalesToBreakEven })),
+    drops: data.drops.slice(0, 8).map((d) => ({ match: `${shortTeam(d.meta.teamA)} v ${shortTeam(d.meta.teamB)}`, product: d.meta.product, phase: d.phase, outcome: d.outcome, orders_by_side: d.bySide, sales: $(d.sales), held: $(d.held), refunded: $(d.refunded), profit_per_sale_usd: knownProfit(d.meta), extra_sales_needed_to_cover_refunds: d.extraSalesToBreakEven })),
     fixtures_next_7_days: list,
     now_utc: new Date().toISOString(),
   };

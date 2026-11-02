@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { limit, tooMany } from "@/lib/ratelimit";
 import { isCheckoutId, nairaConfig, releaseFor, verifyWebhook, why } from "@/lib/naira";
+import { completeGuest, guestEnabled } from "@/lib/guest";
+import { payoutEvent } from "@/lib/guestPayout";
 
 export const maxDuration = 60;
 
@@ -27,6 +29,16 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "bad body" }, { status: 400 });
   }
+  // A guest's naira payout moved: the event names our reference, and the state is read back from Bachs.
+  if (event?.type === "payout.paid" || event?.type === "payout.failed") {
+    try {
+      const handled = await payoutEvent((event.data as { reference?: unknown } | null)?.reference);
+      return NextResponse.json(handled ? { state: "checked" } : { ignored: true });
+    } catch (e) {
+      console.error("naira payout webhook failed:", why(e));
+      return NextResponse.json({ error: "try again" }, { status: 500 });
+    }
+  }
   const id = event?.data?.checkout_id;
   if (typeof event?.type !== "string" || !WATCHED.has(event.type) || !isCheckoutId(id)) return NextResponse.json({ ignored: true });
 
@@ -34,6 +46,12 @@ export async function POST(req: Request) {
     const r = await releaseFor(id);
     // Not visible as paid yet, or the float cannot pay right now: ask Bachs to deliver this again later.
     if (r.state === "pending" || r.state === "float_short") return NextResponse.json({ retry: r.state }, { status: 503 });
+    // Not a wallet top up: it may be a guest checkout (a different reference shape), which buys the order too.
+    if (r.state === "not_paid" && guestEnabled()) {
+      const g = await completeGuest(id);
+      if (g.state === "pending" || g.state === "float_short") return NextResponse.json({ retry: g.state }, { status: 503 });
+      return NextResponse.json({ state: g.state });
+    }
     return NextResponse.json({ state: r.state });
   } catch (e) {
     console.error("naira webhook failed:", why(e));

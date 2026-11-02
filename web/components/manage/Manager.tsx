@@ -16,9 +16,10 @@ import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
 import { teamColors } from "@/lib/teams";
 import Autopilot from "./Autopilot";
+import Customers from "./Customers";
 import Launch, { type Prefill } from "./Launch";
 
-type Tab = "overview" | "drops" | "autopilot" | "money";
+type Tab = "overview" | "drops" | "customers" | "autopilot" | "money";
 const $ = (units: string | bigint | number) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function Manager() {
@@ -73,6 +74,7 @@ export default function Manager() {
           [
             ["overview", "Overview"],
             ["drops", "Match drops"],
+            ["customers", "Customers"],
             ["autopilot", "Autopilot"],
             ["money", "Books"],
           ] as [Tab, string][]
@@ -109,6 +111,7 @@ export default function Manager() {
               sellerName={data.name}
               tifoAccount={data.account?.current ? data.account.address : undefined}
               prefill={prefill}
+              onCustomers={() => go("customers")}
               onLaunched={() => {
                 // Stay on this tab: a first drop would otherwise flip the view to Overview and hide the new link.
                 setTab("drops");
@@ -121,7 +124,8 @@ export default function Manager() {
             </div>
           </>
         )}
-        {view === "autopilot" && <Autopilot data={data} acct={acct} reload={load} />}
+        {view === "customers" && <Customers acct={acct} data={data} />}
+        {view === "autopilot" && <Autopilot data={data} acct={acct} reload={load} goCustomers={() => go("customers")} />}
         {view === "money" && <Money data={data} />}
       </div>
     </div>

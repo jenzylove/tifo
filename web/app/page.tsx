@@ -6,7 +6,7 @@ import { dropCards } from "@/lib/board";
 import { usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
 import { offerLabel } from "@/lib/precheck";
-import { promoState } from "@/lib/promos";
+import { isOwnSeller, isOwnWallet, ownRefundsPaid, promoOrders, promoState } from "@/lib/promos";
 import { teamColors } from "@/lib/teams";
 
 export const dynamic = "force-dynamic";
@@ -15,18 +15,32 @@ const HEAD = ["Turn", "any", "big", "match", "into"];
 const i = (n: number) => ({ ["--i" as string]: n }) as CSSProperties;
 
 export default async function Landing() {
-  const cards = await dropCards(undefined, 24).catch(() => []);
+  // A failed read shows a dash and a calm note, never a zero. Our own shop and wallets are not counted.
+  const data = await (async () => {
+    const cards = (await dropCards(undefined, 24)).filter((c) => !isOwnSeller(c.p));
+    const counted = await Promise.all(
+      cards.map(async (c) => {
+        const st = await promoState(c.p.address);
+        const all = await promoOrders(c.p.address, st.ordersCount);
+        const own = all.filter((o) => isOwnWallet(o.buyer)).length;
+        return { c, st, orders: all.length - own, clean: own === 0 };
+      }),
+    );
+    const decisions = await agentLog().then((l) => l.entries.length);
+    return { cards, counted, decisions };
+  })().catch((e) => (console.error("home read failed", e), null));
+  const cards = data?.cards ?? [];
   // The three product cards show an example seller so the idea reads at a glance. The announcement and the strip
   // of numbers under them are read from the chain and nothing else.
   const freeDrops = cards.filter((c) => c.p.meta.shape === "free");
   const live = freeDrops.find((c) => c.phase === "open") ?? freeDrops[0] ?? cards[0];
-  const paid = cards.find((c) => c.phase === "settled" && c.note?.includes("paid back"));
-  const paidState = paid ? await promoState(paid.p.address).catch(() => null) : null;
-  const settled = cards.filter((c) => c.phase === "settled").length;
-  const orders = cards.reduce((t, c) => t + c.fans, 0);
-  const decisions = await agentLog()
-    .then((l) => l.entries.length)
-    .catch(() => 0);
+  // Only a drop none of our own wallets bought into can headline the refunds.
+  const paidRow = data?.counted.find((r) => r.c.phase === "settled" && r.c.note?.includes("paid back") && r.clean);
+  const paidState = paidRow?.st ?? null;
+  const dash = (n: number | undefined) => (data ? String(n) : "updating");
+  const settled = data?.counted.filter((r) => r.c.phase === "settled").length;
+  const orders = data?.counted.reduce((t, r) => t + r.orders, 0);
+  const decisions = data?.decisions;
   const A = live ? shortTeam(live.p.meta.teamA) : "Arsenal";
   const B = live ? shortTeam(live.p.meta.teamB) : "Chelsea";
   const [ca, cb] = live ? teamColors(live.p.meta.teamA, live.p.meta.teamB) : ["#d92b3a", "#2b5fd9"];
@@ -141,19 +155,19 @@ export default async function Landing() {
       <div className="wrap">
         <Reveal className="facts">
           <div>
-            <b>{cards.length}</b>
+            <b>{dash(data?.cards.length)}</b>
             <span>drops opened</span>
           </div>
           <div>
-            <b>{orders}</b>
+            <b>{dash(orders)}</b>
             <span>orders placed</span>
           </div>
           <div>
-            <b>{settled}</b>
+            <b>{dash(settled)}</b>
             <span>settled by the agent</span>
           </div>
           <a href="/agent">
-            <b>{decisions}</b>
+            <b>{dash(decisions)}</b>
             <span>agent decisions on chain</span>
           </a>
         </Reveal>

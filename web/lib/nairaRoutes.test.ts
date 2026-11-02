@@ -206,14 +206,18 @@ describe("start", () => {
     }
   });
 
-  it("GET turns naira off when the float cannot pay that amount out, so nobody meets a dead end", async () => {
+  it("GET keeps naira on but busy when the float cannot pay that amount out, so the buyer knows to come back", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     h.floatRoom.mockResolvedValue(0n);
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start"))).json()).toMatchObject({ enabled: false });
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start"))).json()).toMatchObject({ enabled: true, busy: true });
     h.floatRoom.mockResolvedValue(5_000_000n);
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5"))).json()).toMatchObject({ enabled: true });
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5.01"))).json()).toMatchObject({ enabled: false });
+    const fits = await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5"))).json();
+    expect(fits).toMatchObject({ enabled: true });
+    expect(fits).not.toHaveProperty("busy");
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=5.01"))).json()).toMatchObject({ enabled: true, busy: true });
     h.floatRoom.mockRejectedValue(new Error("rpc down"));
-    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=2"))).json()).toMatchObject({ enabled: false });
+    expect(await (await startInfo(new Request("https://tifo.example/api/naira/start?usd=2"))).json()).toMatchObject({ enabled: true, busy: true });
+    spy.mockRestore();
   });
 
   it("rejects a request that is not valid, without starting anything", async () => {

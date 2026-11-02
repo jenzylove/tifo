@@ -221,6 +221,16 @@ export function paymentState(s: BachsSession | null | undefined): Payment {
   if (!s || typeof s !== "object") return "not_paid";
   const ref = parseReference(s.reference);
   if (!ref) return "not_paid"; // not one of ours, or damaged: never pay on it
+  return paidAgainst(s, ref.ngn);
+}
+
+/**
+ * The same rule as paymentState, for a reference of another shape (the guest checkout): the caller parses its own
+ * reference and passes the price in kobo written in it. Only "paid" when at least that much naira arrived.
+ */
+export function paidAgainst(s: BachsSession | null | undefined, ngn: bigint): Payment {
+  if (!s || typeof s !== "object" || ngn <= 0n) return "not_paid";
+  const ref = { ngn };
   const open = lower(s.status) === "open";
   const c = s.charge;
   if (!c || typeof c !== "object") return open ? "pending" : "not_paid";
@@ -245,10 +255,10 @@ export function isPaid(s: BachsSession | null | undefined): boolean {
 const CHECKOUT_ID = /^chk_[A-Za-z0-9]+$/;
 export const isCheckoutId = (id: unknown): id is string => typeof id === "string" && CHECKOUT_ID.test(id);
 
-async function bachs(cfg: NairaConfig, path: string, body?: unknown): Promise<{ status: number; json: unknown }> {
+async function bachs(cfg: NairaConfig, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<{ status: number; json: unknown }> {
   const res = await fetch(cfg.base + path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { authorization: `Bearer ${cfg.key}`, "content-type": "application/json", accept: "application/json" },
+    headers: { authorization: `Bearer ${cfg.key}`, "content-type": "application/json", accept: "application/json", ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
     cache: "no-store",
@@ -256,8 +266,11 @@ async function bachs(cfg: NairaConfig, path: string, body?: unknown): Promise<{ 
   return { status: res.status, json: await res.json().catch(() => null) };
 }
 
+/** A raw Bachs call for the payout side (lib/guestPayout.ts). GET without a body, POST with one. */
+export const bachsCall = (cfg: NairaConfig, path: string, body?: unknown, extra?: Record<string, string>) => bachs(cfg, path, body, extra);
+
 /** Bachs's own record of one checkout. Null when Bachs has never heard of it. */
-async function fetchSession(cfg: NairaConfig, id: string): Promise<BachsSession | null> {
+export async function fetchSession(cfg: NairaConfig, id: string): Promise<BachsSession | null> {
   const r = await bachs(cfg, `/v1/checkout-sessions/${id}`);
   if (r.status === 404) return null;
   if (r.status !== 200 || !r.json || typeof r.json !== "object") throw new Error(`Bachs answered ${r.status}`);
@@ -266,10 +279,10 @@ async function fetchSession(cfg: NairaConfig, id: string): Promise<BachsSession 
 
 // ------------------------------------------------------------------------------------------------ the float
 
-const usdcBalance = (who: Address) => publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [who] }) as Promise<bigint>;
+export const usdcBalance = (who: Address) => publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [who] }) as Promise<bigint>;
 const floatRead = (cfg: NairaConfig, functionName: "perRelease" | "perDay" | "releasedToday") =>
   publicClient.readContract({ address: cfg.float, abi: tifoFloatAbi, functionName });
-const alreadyReleased = (cfg: NairaConfig, ref: Hex) => publicClient.readContract({ address: cfg.float, abi: tifoFloatAbi, functionName: "released", args: [ref] });
+export const alreadyReleased = (cfg: NairaConfig, ref: Hex) => publicClient.readContract({ address: cfg.float, abi: tifoFloatAbi, functionName: "released", args: [ref] });
 
 /** The agent's key is the float's releaser. Same wallet as lib/agent.ts, built here so that file stays untouched. */
 function agentWallet() {
@@ -322,7 +335,7 @@ export async function startCheckout({ wallet, usdUnits, promo, origin }: { walle
 
   const ngn = priceKobo(usdUnits, cfg.rate, cfg.feeBps, cfg.feeCapKobo);
   const back = `${origin.replace(/\/$/, "")}${promo ? `/p/${promo}` : "/"}`; // Bachs adds ?checkout_id= to the success address
-  const r = await bachs(cfg, "/v1/checkout-sessions", {
+  const opened = await openSession(cfg, {
     pricing: { currency: "NGN", amount: formatKobo(ngn) },
     reference: makeReference({ wallet, usdcUnits: usdUnits, ngn }),
     success_url: back,
@@ -332,17 +345,24 @@ export async function startCheckout({ wallet, usdUnits, promo, origin }: { walle
     customer_bears_fee: false, // the naira price already has the charge in it, so Bachs must not add it again
     metadata: { wallet, usdc_units: usdUnits.toString(), ...(promo ? { promo } : {}) },
   });
+  if (!opened) return { ok: false, error: "provider" };
+  return { ok: true, ...opened, ngn: formatKobo(ngn), rate: cfg.rate };
+}
+
+/** Creates a Bachs hosted checkout. Null when Bachs refuses or answers with anything that is not a real checkout. */
+export async function openSession(cfg: NairaConfig, body: Record<string, unknown>): Promise<{ checkoutUrl: string; checkoutId: string } | null> {
+  const r = await bachs(cfg, "/v1/checkout-sessions", body);
   const j = (r.json ?? {}) as { checkout_id?: unknown; checkout_url?: unknown };
   if (r.status !== 201 && r.status !== 200) {
     console.error("naira: Bachs refused the checkout", r.status);
-    return { ok: false, error: "provider" };
+    return null;
   }
   let url: URL | null = null;
   try {
     url = new URL(String(j.checkout_url));
   } catch {}
-  if (!isCheckoutId(j.checkout_id) || !url || url.protocol !== "https:") return { ok: false, error: "provider" };
-  return { ok: true, checkoutUrl: url.toString(), checkoutId: j.checkout_id, ngn: formatKobo(ngn), rate: cfg.rate };
+  if (!isCheckoutId(j.checkout_id) || !url || url.protocol !== "https:") return null;
+  return { checkoutUrl: url.toString(), checkoutId: j.checkout_id };
 }
 
 // ------------------------------------------------------------------------------------------------ release
@@ -390,11 +410,18 @@ async function release(checkoutId: string): Promise<ReleaseResult> {
   if (await alreadyReleased(cfg, id)) return { state: "already" };
   if ((await usdcBalance(cfg.float)) < ref.usdcUnits) return { state: "float_short" };
 
+  return releaseFloat(id, ref.wallet, ref.usdcUnits);
+}
+
+/** The float pays `amount` to `to` once for `id`. Shared by the wallet top up and the guest checkout, one transaction at a time. */
+export function releaseFloat(id: Hex, to: Address, amount: bigint): Promise<ReleaseResult> {
+  const cfg = nairaConfig();
+  if (!cfg) return Promise.reject(new Error("Naira payments are not set up."));
   return oneAtATime(async (): Promise<ReleaseResult> => {
     const w = agentWallet();
     let hash: Hex;
     try {
-      const { request } = await publicClient.simulateContract({ account: w.account, address: cfg.float, abi: tifoFloatAbi, functionName: "release", args: [id, ref.wallet, ref.usdcUnits] });
+      const { request } = await publicClient.simulateContract({ account: w.account, address: cfg.float, abi: tifoFloatAbi, functionName: "release", args: [id, to, amount] });
       hash = await w.writeContract(request);
     } catch (e) {
       const name = revertName(e);

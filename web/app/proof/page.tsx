@@ -1,29 +1,53 @@
-import { isCheckDrop, listPromos, promoJournal, promoOrders, promoState } from "@/lib/promos";
+import { isCheckDrop, isOwnSeller, isOwnWallet, listPromos, ownRefundsPaid, promoJournal, promoOrders, promoState } from "@/lib/promos";
 import { explorerAddr, NETWORK, usd } from "@/lib/chain";
 import { shortTeam } from "@/lib/matches";
 import { agentRecord } from "@/lib/record";
 
 export const dynamic = "force-dynamic";
 
-export default async function Proof() {
+async function load() {
   const everything = await listPromos();
-  // Our own system checks are listed at the bottom and left out of every number on this page.
-  const promos = everything.filter((p) => !isCheckDrop(p.meta));
+  // Our own system checks and our own shop are listed at the bottom and left out of every number on this page.
+  const real = everything.filter((p) => !isCheckDrop(p.meta));
+  const promos = real.filter((p) => !isOwnSeller(p));
+  const own = real.filter(isOwnSeller);
   const checks = everything.filter((p) => isCheckDrop(p.meta));
   const rows = await Promise.all(
     promos.map(async (p) => {
       const st = await promoState(p.address);
-      const [orders, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
-      return { p, st, orders, journal };
+      const [all, journal] = await Promise.all([promoOrders(p.address, st.ordersCount), promoJournal(p.address, st.journalCount)]);
+      // Orders from our own wallets are not usage: out of the list, the counts and the refund total.
+      const orders = all.filter((o) => !isOwnWallet(o.buyer));
+      return { p, st: { ...st, refundedTotal: st.refundedTotal - ownRefundsPaid(st, all) }, orders, journal };
     }),
   );
+  const record = await agentRecord(rows.map((r) => ({ p: r.p, st: r.st, volume: r.orders.reduce((t, o) => t + o.amount, 0n) })));
+  return { promos, own, checks, rows, record };
+}
+
+export default async function Proof() {
+  let data: Awaited<ReturnType<typeof load>>;
+  try {
+    data = await load();
+  } catch (e) {
+    console.error("proof read failed", e);
+    return (
+      <section className="wrap">
+        <div className="pagehead">
+          <span className="eyebrow">Read live from Arc {NETWORK}</span>
+          <h1>Proof</h1>
+          <p>The chain is slow to answer right now, so the numbers are updating. Please refresh in a moment.</p>
+        </div>
+      </section>
+    );
+  }
+  const { promos, own, checks, rows, record } = data;
   const orders = rows.flatMap((r) => r.orders);
   const buyers = new Set(orders.map((o) => o.buyer.toLowerCase()));
   const sellers = new Set(promos.map((p) => p.seller.toLowerCase()));
   const volume = orders.reduce((t, o) => t + o.amount, 0n);
   const paidBack = rows.reduce((t, r) => t + r.st.refundedTotal, 0n);
   const decisions = rows.reduce((t, r) => t + r.journal.length, 0);
-  const record = await agentRecord(rows.map((r) => ({ p: r.p, st: r.st, volume: r.orders.reduce((t, o) => t + o.amount, 0n) })));
   return (
     <section className="wrap">
       <div className="pagehead">
@@ -77,6 +101,21 @@ export default async function Proof() {
           </ol>
         </div>
       ))}
+      {own.length > 0 && (
+        <details className="ask" style={{ marginTop: 24 }}>
+          <summary>
+            {own.length} {own.length === 1 ? "drop" : "drops"} from our own shop, not counted above
+          </summary>
+          <ol>
+            {own.map((p) => (
+              <li key={p.address}>
+                {shortTeam(p.meta.teamA)} v {shortTeam(p.meta.teamB)} · {p.meta.product} ·{" "}
+                <a href={explorerAddr(p.address)} target="_blank" rel="noreferrer">contract on Arc</a>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
       {checks.length > 0 && (
         <details className="ask" style={{ marginTop: 24 }}>
           <summary>

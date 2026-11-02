@@ -10,11 +10,12 @@ import type { Plan } from "@/lib/autopilot";
 import type { ManagerData } from "@/lib/manager";
 import { shortTeam } from "@/lib/matches";
 import { handleTap, type Retry } from "@/lib/tap";
+import s from "./customers.module.css";
 
 const $ = (units: string | number) => `$${(Number(units) / 1e6).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const units = (usd: number) => BigInt(Math.round(usd * 1e6));
 
-export default function Autopilot({ data, acct, reload }: { data: ManagerData; acct: SmartAccount; reload: () => void }) {
+export default function Autopilot({ data, acct, reload, goCustomers }: { data: ManagerData; acct: SmartAccount; reload: () => void; goCustomers?: () => void }) {
   const a = data.account;
   const [base, setBase] = useState(a ? Number(a.baseWeekly) / 1e6 : 25);
   const [share, setShare] = useState(a ? a.weeklyBps / 100 : 10);
@@ -204,12 +205,28 @@ export default function Autopilot({ data, acct, reload }: { data: ManagerData; a
               </p>
             )}
             <p className="summary">{plan.reason}</p>
+            {plan.halted && plan.advice && plan.advice.length > 0 && (
+              <ul className={s.advice}>
+                {plan.advice.map((x) => (
+                  <li key={x.kind}>
+                    <span>{x.text}</span>
+                    {x.kind === "customers" && goCustomers && (
+                      <button className="btn sm" onClick={goCustomers}>
+                        Customers
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
             <p className="fine">
               {plan.act === "open"
                 ? "This is inside your rule, so it opens the drop on its next round without asking."
                 : plan.act === "propose"
                   ? "This is over your rule, so it will send you a proposal instead of acting."
-                  : "It is not opening anything right now."}
+                  : plan.halted
+                    ? "It has stopped opening drops. It starts again once one of your drops sells."
+                    : "It is not opening anything right now."}
             </p>
           </>
         )}

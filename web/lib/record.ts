@@ -19,7 +19,21 @@ export interface AgentRecord {
   agreed: number; // of those, how many the seller approved
 }
 
-export async function agentRecord(rows: { p: PromoSummary; st: PromoState; volume: bigint }[]): Promise<AgentRecord> {
+type Row = { p: PromoSummary; st: PromoState; volume: bigint };
+let lastGood: AgentRecord | undefined;
+
+/** The record for these rows. If the chain read fails, the last good record is served; with none, the error is thrown (never zeros). */
+export async function agentRecord(rows: Row[]): Promise<AgentRecord> {
+  try {
+    return (lastGood = await readRecord(rows));
+  } catch (e) {
+    if (!lastGood) throw e;
+    console.error("agent record read failed, serving the last good one", (e as Error).message);
+    return lastGood;
+  }
+}
+
+async function readRecord(rows: Row[]): Promise<AgentRecord> {
   const now = Date.now() / 1000;
   const sellers = [...new Set(rows.map((r) => r.p.seller.toLowerCase() as Address))];
   // A seller that is an account answers payout(); a plain wallet, or an account from before payouts, does not.

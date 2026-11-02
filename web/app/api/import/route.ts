@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { z } from "zod";
 import { importPost, publicUrl } from "@/lib/importPost";
-import { limit, tooMany } from "@/lib/ratelimit";
+import { limitShared, tooMany } from "@/lib/ratelimit";
 
 export const maxDuration = 60;
 
@@ -14,7 +14,7 @@ const Body = z.object({
 
 // Fill a new drop from a post the seller already made. Optional: sellers without one fill the form themselves.
 export async function POST(req: Request) {
-  const rl = limit(req, "import", 10, 10 * 60_000);
+  const rl = await limitShared(req, "import", 10, 10 * 60_000);
   if (!rl.ok) return tooMany(rl.retryAfter);
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success || (!p.data.image && !p.data.text?.trim() && !p.data.url)) return NextResponse.json({ error: "Add a screenshot, the caption or the post's link." }, { status: 400 });
